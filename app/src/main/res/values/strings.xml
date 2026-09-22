@@ -47,7 +47,7 @@
     <string name="upd_found">发现新版本 %1$s</string>
     <string name="upd_btn_download">下载并安装 %1$s</string>
     <string name="upd_downloading">下载中 %1$d%%</string>
-    <string name="upd_install_now">下载完成，正在打开安装界面…\n安装后请重新打开一次无障碍服务（系统装包后会自动清掉它）。</string>
+    <string name="upd_install_now">下载完成，正在打开安装界面…\n装完即用，无需重开无障碍服务。</string>
     <string name="upd_need_perm">需要先允许本应用「安装未知应用」，已为你打开设置页；允许后回来再点一次。</string>
     <string name="upd_failed">检查失败：%1$s</string>
     <string name="upd_dl_failed">下载失败：%1$s</string>
