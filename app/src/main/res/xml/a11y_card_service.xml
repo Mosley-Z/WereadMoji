@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 无障碍服务声明。
+     · 只用于五点：① 添加 TYPE_ACCESSIBILITY_OVERLAY 窗口；② 读事件自带的包名+类名判断是否在桌面；
+       ③ 读桌面 ViewPager 的 scrollX 判断当前在第几页（非第 1 页时卡片让位）；
+       ④ 读 systemui 通知栏事件的面板消失标记，判断通知栏是否已下拉（下拉时卡片让位）；
+       ⑤ 读桌面发出的"点按了图标"事件，让卡片在书架等面板上让位（§25）。
+     · canRetrieveWindowContent 保持 false —— 不抓取任何窗口内容。
+     · 2026-09-22 第 3 轮起加了 typeWindowContentChanged：ELauncher 的桌面第 2 页和
+       「设置」页都是**同一个 ViewPager 的不同页**（点设置时前台 Activity 完全不变），
+       只有这条事件能看见翻页（§22）。排查期间还临时订阅过 typeViewClicked / typeWindowsChanged，
+       结论拿到后已撤掉，保持订阅面最小。
+     · 2026-09-22 第 5 轮的通知栏让位（§24）**不需要**任何新事件类型：复用的就是
+       typeWindowStateChanged 里 systemui 那条（展开 cct=0 / 收起 cct=0x20），订阅面不变。
+     · 2026-09-22 第 6 轮重新加回 typeViewClicked（§25）：书架 / 桌面第 2 页的**页码信号
+       与第 1 页同形、永远分不开**，唯一可靠的分辨依据就是"用户点了桌面图标"这一个动作
+       （实测 3/3 命中 `TYPE_VIEW_CLICKED pkg=<桌面> cls=android.widget.ImageView`）。
+       typeWindowsChanged 仍不订阅（实测无用）。 -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeViewClicked"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault"
+    android:canRetrieveWindowContent="false"
+    android:description="@string/a11y_desc"
+    android:notificationTimeout="100"
+    android:settingsActivity="com.inkread.weekread.SettingsActivity" />

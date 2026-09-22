@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FFFFFFFF"
+    android:orientation="vertical">
+
+    <!-- 页面选项卡：本周 / 本月 / 本书 / 本记。
+         v0.4.1：50dp → 44dp，把厚度让给中间的内容区 -->
+    <com.inkread.weekread.TabBarView
+        android:id="@+id/tabbar"
+        android:layout_width="match_parent"
+        android:layout_height="44dp" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#FF000000" />
+
+    <!-- 周期步进选择器：周 ← 2026年9月15日–9月21日 → ；月 ←← ← 2026年9月 → →→
+         按拍板 ④ 只在 App 内出现（桌面卡片塞不下）。48dp ≈ 66px，够手指按。 -->
+    <com.inkread.weekread.PeriodPickerView
+        android:id="@+id/picker"
+        android:layout_width="match_parent"
+        android:layout_height="44dp" />
+
+    <!-- 本记页的「全部 / 只看想法」原本是这里的一条 44dp 页签（v0.4.4），
+         v0.4.5 起并进卡片内的按钮行（卡片最左那一格「筛选」），这一条整条撤掉，
+         把 60px 全部让给正文。 -->
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#FFD8D8D8" />
+
+    <!-- 卡片主体（App 内走 setFullscreen(true) 的大版排版） -->
+    <com.inkread.weekread.WeekCardView
+        android:id="@+id/card"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#FFD8D8D8" />
+
+    <!-- 两个独立按钮：刷新 / 设置。
+         v0.4.1：「导出」搬进本记页内（只对那一页有意义），三个按钮变两个；
+         同时整条瘦身（按钮 46→40dp，上下 padding 10/12 → 8/8），把高度让给中间的内容区。 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingLeft="12dp"
+        android:paddingRight="12dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp">
+
+        <Button
+            android:id="@+id/btn_refresh"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:background="@drawable/btn_ink"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:stateListAnimator="@null"
+            android:text="@string/btn_refresh"
+            android:textColor="@color/btn_ink_text"
+            android:textSize="17sp" />
+
+        <Button
+            android:id="@+id/btn_settings"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_marginLeft="12dp"
+            android:layout_weight="1"
+            android:background="@drawable/btn_ink"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:stateListAnimator="@null"
+            android:text="@string/btn_settings"
+            android:textColor="@color/btn_ink_text"
+            android:textSize="17sp" />
+    </LinearLayout>
+
+</LinearLayout>

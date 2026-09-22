@@ -1,0 +1,23 @@
+# ---- 构建产物（build.sh 的输出，不入库）----
+build/
+dist/*.apk.idsig
+# 本地增量校验用的状态文件，只对本机构建有意义
+dist/.last_version_code
+
+# ---- Gradle：本工程不使用 Gradle ----
+# 构建走 tools/build.sh（免 Gradle，仅需 JDK 17 + Android SDK build-tools + Python）。
+# 下面几个文件是早期试水时的残留，内容已过期（app/build.gradle 停在 versionCode 2 /
+# versionName 0.2.0），保留在本地仅作参考，不入库以免误导。
+build.gradle
+settings.gradle
+gradle.properties
+app/build.gradle
+.gradle/
+local.properties
+
+# ---- 编辑器 / 系统 ----
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db

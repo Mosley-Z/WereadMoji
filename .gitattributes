@@ -1,0 +1,22 @@
+# 统一换行符：仓库内一律存 LF。
+#
+# 为什么必须显式声明：本项目主要在 Windows 上开发，但 tools/build.sh 是要在
+# Linux / macOS 上跑的。若 git 按 Windows 习惯把 LF 存成 CRLF，别人 clone 后
+# 会得到 `#!/usr/bin/env bash\r`，直接报 "bad interpreter" 而无法构建。
+* text=auto eol=lf
+
+*.sh    text eol=lf
+*.py    text eol=lf
+*.java  text eol=lf
+*.xml   text eol=lf
+*.md    text eol=lf
+*.txt   text eol=lf
+*.json  text eol=lf
+*.properties text eol=lf
+
+# 二进制，别碰
+*.png     binary
+*.jpg     binary
+*.apk     binary
+*.idsig   binary
+*.keystore binary

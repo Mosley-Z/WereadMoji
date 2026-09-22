@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.inkread.weekread">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 在线更新：下载完新版本后要拉起系统安装器。Android 8.0 起还需用户在
+         系统设置里为本应用单独打开「允许安装未知应用」，App 会引导过去。 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 注意：不再需要 SET_WALLPAPER / SYSTEM_ALERT_WINDOW / READ_EXTERNAL_STORAGE。
+         桌面卡片走 TYPE_ACCESSIBILITY_OVERLAY（由 CardA11yService 自己持有窗口），
+         不需要悬浮窗权限，也不读外部存储。 -->
+
+    <!-- Android 11 起 queryIntentActivities 受「包可见性」过滤：不声明这里，
+         连 CATEGORY_HOME 的桌面都查不到（实测返回空表，卡片会被判定成"不在桌面"而永不显示）。 -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_app"
+        android:roundIcon="@mipmap/ic_app"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="@string/settings_name"
+            android:theme="@android:style/Theme.Material.Light" />
+
+        <!-- 「怎么用」：把面向使用者的说明内置进来（v0.4.2），文案在 res/raw/help.txt -->
+        <activity
+            android:name=".HelpActivity"
+            android:exported="false"
+            android:label="@string/help_title"
+            android:theme="@android:style/Theme.Material.Light" />
+
+        <!-- 在线更新：把下载好的 APK 交给系统安装器。
+             不能用 file:// URI（Android 7.0 起会抛 FileUriExposedException），
+             而标准解法 FileProvider 在 AndroidX 里 —— 本工程无 AndroidX，故自实现。
+             exported=false + grantUriPermissions=true：只通过临时授权给安装器读。 -->
+        <provider
+            android:name=".ApkProvider"
+            android:authorities="com.inkread.weekread.apk"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+
+        <!-- 桌面悬浮卡片的宿主（唯一的呈现方式）。
+             窗口类型 TYPE_ACCESSIBILITY_OVERLAY，无需 SYSTEM_ALERT_WINDOW；
+             监听窗口切换事件只为判断"在不在桌面"，canRetrieveWindowContent 保持 false。 -->
+        <service
+            android:name=".CardA11yService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/a11y_card_service" />
+        </service>
+
+    </application>
+</manifest>

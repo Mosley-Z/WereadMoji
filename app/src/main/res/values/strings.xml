@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">微读墨记</string>
+    <string name="settings_name">微读墨记 · 设置</string>
+    <string name="widget_desc">本周微信读书阅读统计</string>
+    <string name="widget_title">本周阅读</string>
+
+    <string name="label_api_key">微信读书 API Key</string>
+    <string name="hint_api_key">粘贴 API Key（wrk- 开头）</string>
+    <string name="btn_save">保存并返回</string>
+    <string name="btn_paste">粘贴</string>
+    <string name="btn_test">测试连接</string>
+    <string name="btn_help">怎么用</string>
+    <string name="btn_refresh">刷新</string>
+    <string name="btn_settings">设置</string>
+
+    <string name="help_title">微读墨记 · 怎么用</string>
+
+    <string name="label_card">桌面卡片</string>
+    <string name="label_card_switch">在桌面显示阅读卡片</string>
+    <string name="label_card_period">卡片显示周期（卡片左上角点一下也能临时切）</string>
+    <string name="label_period_week">本周</string>
+    <string name="label_period_month">本月</string>
+    <string name="label_period_book">本书</string>
+    <string name="label_period_note">本记</string>
+    <string name="btn_export">导出</string>
+    <string name="btn_open_a11y">打开系统无障碍设置</string>
+
+    <!-- v0.4.3：设置页拆「初始化 / 自定义」两页 -->
+    <string name="label_a11y_group">桌面卡片无障碍</string>
+    <string name="label_export_tpl">本记导出模板</string>
+    <string name="label_export_tpl_tip">只影响「本记」页导出图片的样式，改完即时生效。</string>
+    <string name="label_paper">纸张底纹</string>
+    <string name="label_nsize">字号</string>
+    <string name="label_show_sign">导出图显示署名（书名 · 作者）</string>
+    <string name="label_show_date">导出图显示章节与划线日期</string>
+
+    <string name="a11y_desc">用于把「微读墨记」的阅读卡片（本周 / 本月 / 本书进度）显示在桌面空位上。不读取任何屏幕内容，仅在桌面显示，切到其它应用时自动隐藏。</string>
+
+    <string name="settings_hint">获取 API Key：浏览器打开 weread.qq.com/r/weread-skills，点「快速配置」登录微信读书，再点「获取 API Key」复制（wrk- 开头），粘贴到上面保存。\n\nKey 只存在本机，仅用于读取你自己的阅读统计，不会上传。</string>
+    <!-- v0.5.0：版本与更新（在线更新） -->
+    <string name="label_update">版本与更新</string>
+    <string name="btn_check_update">检查更新</string>
+    <string name="upd_current">当前版本 %1$s（%2$d）</string>
+    <string name="upd_checking">正在检查…</string>
+    <string name="upd_latest">已是最新版本。</string>
+    <string name="upd_found">发现新版本 %1$s</string>
+    <string name="upd_btn_download">下载并安装 %1$s</string>
+    <string name="upd_downloading">下载中 %1$d%%</string>
+    <string name="upd_install_now">下载完成，正在打开安装界面…\n安装后请重新打开一次无障碍服务（系统装包后会自动清掉它）。</string>
+    <string name="upd_need_perm">需要先允许本应用「安装未知应用」，已为你打开设置页；允许后回来再点一次。</string>
+    <string name="upd_failed">检查失败：%1$s</string>
+    <string name="upd_dl_failed">下载失败：%1$s</string>
+</resources>

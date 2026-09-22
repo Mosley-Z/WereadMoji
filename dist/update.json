@@ -1,0 +1,13 @@
+{
+  "versionCode": 22,
+  "versionName": "0.5.0",
+  "tag": "v0.5.0",
+  "notes": "新增「检查更新」与在线更新：设置页可直接下载并安装新版本",
+  "apk": "dist/weread-stats-0.5.0-debug.apk",
+  "size": 243502,
+  "sha256": "1d8f9f796f29632a42a592695692281758a49e407d997a561d0bf6100e8c0628",
+  "urls": [
+    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v0.5.0/dist/weread-stats-0.5.0-debug.apk",
+    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v0.5.0/dist/weread-stats-0.5.0-debug.apk"
+  ]
+}

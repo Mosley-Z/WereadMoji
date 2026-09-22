@@ -1,0 +1,465 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  v0.4.3：按使用流程拆成「初始化 / 自定义」两页，顶部 SegTabView 切换。
+
+  · 初始化页 = 让 App 真正跑起来的全部步骤，按你要做的先后排：
+      ① 微信读书 API Key（含取 Key 的说明文字）
+      ② 桌面卡片无障碍
+      ③ 桌面卡片（开关 + 显示周期 + 状态）
+      ④ 「怎么用」
+  · 自定义页 = 纯个性化：本记导出模板（即时生效，无保存按钮）。
+  两个页面是同一个 ScrollView 里的两个容器，切页只切 visibility。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FFFFFFFF"
+    android:orientation="vertical">
+
+    <!-- 顶部页签：初始化 | 自定义 -->
+    <com.inkread.weekread.SegTabView
+        android:id="@+id/seg"
+        android:layout_width="match_parent"
+        android:layout_height="44dp" />
+
+    <ScrollView
+        android:id="@+id/sv_settings"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingLeft="16dp"
+            android:paddingRight="16dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="14dp">
+
+            <!-- ============================================================
+                 初始化页
+                 ============================================================ -->
+            <LinearLayout
+                android:id="@+id/page_init"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <!-- ================= ① 微信读书 API Key ================= -->
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_api_key"
+                    android:textColor="#FF000000"
+                    android:textSize="17sp" />
+
+                <!-- Key 输入 + 「粘贴」（v0.4.2）：墨水屏手打 27 位 Key 太痛苦，直接读剪贴板 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <EditText
+                        android:id="@+id/et_key"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:hint="@string/hint_api_key"
+                        android:inputType="text"
+                        android:maxLines="1"
+                        android:textColor="#FF000000"
+                        android:textColorHint="#FF9A9A9A"
+                        android:textSize="15sp" />
+
+                    <Button
+                        android:id="@+id/btn_paste"
+                        android:layout_width="wrap_content"
+                        android:layout_height="44dp"
+                        android:layout_marginLeft="8dp"
+                        android:background="@drawable/btn_ink"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:paddingLeft="16dp"
+                        android:paddingRight="16dp"
+                        android:stateListAnimator="@null"
+                        android:text="@string/btn_paste"
+                        android:textColor="@color/btn_ink_text"
+                        android:textSize="15sp" />
+                </LinearLayout>
+
+                <!-- 保存 / 测试连接（v0.4.2）：填完立刻验一次，别靠猜 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btn_save"
+                        android:layout_width="0dp"
+                        android:layout_height="46dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/btn_ink"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:stateListAnimator="@null"
+                        android:text="@string/btn_save"
+                        android:textColor="@color/btn_ink_text"
+                        android:textSize="17sp" />
+
+                    <Button
+                        android:id="@+id/btn_test"
+                        android:layout_width="0dp"
+                        android:layout_height="46dp"
+                        android:layout_marginLeft="10dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/btn_ink"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:stateListAnimator="@null"
+                        android:text="@string/btn_test"
+                        android:textColor="@color/btn_ink_text"
+                        android:textSize="17sp" />
+                </LinearLayout>
+
+                <!-- 取 Key 的说明（v0.4.3：从页尾搬到 Key 区下方，就近说明） -->
+                <TextView
+                    android:id="@+id/tv_hint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:autoLink="web"
+                    android:lineSpacingExtra="4dp"
+                    android:text="@string/settings_hint"
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="13sp" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="12dp"
+                    android:background="#FFD8D8D8" />
+
+                <!-- ================= ② 桌面卡片无障碍 ================= -->
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/label_a11y_group"
+                    android:textColor="#FF000000"
+                    android:textSize="17sp" />
+
+                <Button
+                    android:id="@+id/btn_a11y"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/btn_ink"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:stateListAnimator="@null"
+                    android:text="@string/btn_open_a11y"
+                    android:textColor="@color/btn_ink_text"
+                    android:textSize="15sp" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="12dp"
+                    android:background="#FFD8D8D8" />
+
+                <!-- ================= ③ 桌面卡片 ================= -->
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/label_card"
+                    android:textColor="#FF000000"
+                    android:textSize="17sp" />
+
+                <CheckBox
+                    android:id="@+id/cb_card"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="@string/label_card_switch"
+                    android:textColor="#FF000000"
+                    android:textSize="15sp" />
+
+                <!-- 卡片显示周期（① B：这里定默认，卡片左上角点按可临时切换） -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/label_card_period"
+                    android:textColor="#FF000000"
+                    android:textSize="15sp" />
+
+                <RadioGroup
+                    android:id="@+id/rg_period"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <RadioButton
+                        android:id="@+id/rb_period_week"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/label_period_week"
+                        android:textColor="#FF000000"
+                        android:textSize="15sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_period_month"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/label_period_month"
+                        android:textColor="#FF000000"
+                        android:textSize="15sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_period_book"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/label_period_book"
+                        android:textColor="#FF000000"
+                        android:textSize="15sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_period_note"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/label_period_note"
+                        android:textColor="#FF000000"
+                        android:textSize="15sp" />
+                </RadioGroup>
+
+                <TextView
+                    android:id="@+id/tv_status"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:lineSpacingExtra="3dp"
+                    android:text=""
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="13sp" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="12dp"
+                    android:background="#FFD8D8D8" />
+
+                <!-- ================= ④ 怎么用 ================= -->
+
+                <Button
+                    android:id="@+id/btn_help"
+                    android:layout_width="match_parent"
+                    android:layout_height="46dp"
+                    android:layout_marginTop="12dp"
+                    android:background="@drawable/btn_ink"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:stateListAnimator="@null"
+                    android:text="@string/btn_help"
+                    android:textColor="@color/btn_ink_text"
+                    android:textSize="17sp" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="12dp"
+                    android:background="#FFD8D8D8" />
+
+                <!-- ================= ⑤ 版本与更新（v0.5.0） ================= -->
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/label_update"
+                    android:textColor="#FF000000"
+                    android:textSize="17sp" />
+
+                <TextView
+                    android:id="@+id/tv_version"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="13sp" />
+
+                <!-- 一个按钮走完全程：检查 → 下载并安装 → 下载中 xx% -->
+                <Button
+                    android:id="@+id/btn_update"
+                    android:layout_width="match_parent"
+                    android:layout_height="46dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/btn_ink"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:stateListAnimator="@null"
+                    android:text="@string/btn_check_update"
+                    android:textColor="@color/btn_ink_text"
+                    android:textSize="17sp" />
+
+                <TextView
+                    android:id="@+id/tv_update_status"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:lineSpacingExtra="3dp"
+                    android:text=""
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <!-- ============================================================
+                 自定义页
+                 ============================================================ -->
+            <LinearLayout
+                android:id="@+id/page_custom"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_export_tpl"
+                    android:textColor="#FF000000"
+                    android:textSize="17sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/label_export_tpl_tip"
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/label_paper"
+                    android:textColor="#FF000000"
+                    android:textSize="15sp" />
+
+                <RadioGroup
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <RadioButton
+                        android:id="@+id/rb_paper_plain"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="素白"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_paper_journal"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="手账"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_paper_card"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="卡纸"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+                </RadioGroup>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="@string/label_nsize"
+                    android:textColor="#FF000000"
+                    android:textSize="15sp" />
+
+                <RadioGroup
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <RadioButton
+                        android:id="@+id/rb_nsize_s"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="小字"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_nsize_m"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="中字"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_nsize_l"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="大字"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+                </RadioGroup>
+
+                <CheckBox
+                    android:id="@+id/cb_note_sign"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:buttonTint="#FF000000"
+                    android:text="@string/label_show_sign"
+                    android:textColor="#FF000000"
+                    android:textSize="14sp" />
+
+                <CheckBox
+                    android:id="@+id/cb_note_date"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:buttonTint="#FF000000"
+                    android:text="@string/label_show_date"
+                    android:textColor="#FF000000"
+                    android:textSize="14sp" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>
