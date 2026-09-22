@@ -1,0 +1,109 @@
+# 打 tag 即自动发布 GitHub Release，并把 APK 作为附件挂上去。
+#
+# 为什么需要它：App 内的在线更新走 jsDelivr + raw 两个源（实测设备侧 github.com
+# 被阻断，所以不能用 releases/download 那类地址）。也就是说 Release 不是更新链路的
+# 必要条件。但 Release 是给「人」看的 —— 别人来到仓库想下载安装包时，
+# 光有 tag 的 source code 是拿不到 APK 的。
+#
+# 不需要配置任何密钥：用的是 GitHub 自动注入的 GITHUB_TOKEN（见下方 permissions）。
+#
+# 触发方式：
+#   1) push 形如 v* 的 tag —— 日常发版只需这一条
+#   2) Actions 页面手动 Run workflow 并填 tag —— 用于补建历史版本的 Release
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要补建 Release 的 tag（例如 v0.5.0）"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 取出该 tag 对应的源码
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: 校验 APK 与 update.json 一致
+        run: |
+          set -euo pipefail
+          APK="$(ls dist/*.apk | head -1)"
+          WANT_SHA="$(sed -n 's/.*"sha256": *"\([0-9a-f]\{64\}\)".*/\1/p' dist/update.json)"
+          WANT_SIZE="$(sed -n 's/.*"size": *\([0-9][0-9]*\).*/\1/p' dist/update.json)"
+          GOT_SHA="$(sha256sum "$APK" | cut -d' ' -f1)"
+          GOT_SIZE="$(wc -c < "$APK" | tr -d ' \r\n')"
+          echo "APK       : $APK"
+          echo "清单 sha256: $WANT_SHA"
+          echo "实际 sha256: $GOT_SHA"
+          echo "清单 size  : $WANT_SIZE"
+          echo "实际 size  : $GOT_SIZE"
+          if [ "$WANT_SHA" != "$GOT_SHA" ]; then
+            echo "::error::sha256 与 update.json 不一致，拒绝发布（清单与 APK 不是同批产物？）"
+            exit 1
+          fi
+          if [ "$WANT_SIZE" != "$GOT_SIZE" ]; then
+            echo "::error::size 与 update.json 不一致，拒绝发布"
+            exit 1
+          fi
+          echo "校验通过"
+
+      - name: 组装 Release 说明
+        run: |
+          set -euo pipefail
+          VN="$(grep -E '^VERSION_NAME=' version.properties | cut -d= -f2- | tr -d ' \r')"
+          VC="$(grep -E '^VERSION_CODE=' version.properties | cut -d= -f2- | tr -d ' \r')"
+          NOTES="$(grep -E '^NOTES=' version.properties | cut -d= -f2- | tr -d '\r')"
+          APK="$(ls dist/*.apk | head -1)"
+          SIZE="$(wc -c < "$APK" | tr -d ' \r\n')"
+          SHA="$(sha256sum "$APK" | cut -d' ' -f1)"
+          {
+            echo "$NOTES"
+            echo
+            echo "| 项 | 值 |"
+            echo "| --- | --- |"
+            echo "| 版本 | \`$VN\`（versionCode $VC） |"
+            echo "| 安装包 | \`$(basename "$APK")\` |"
+            echo "| 体积 | $SIZE 字节 |"
+            echo "| SHA-256 | \`$SHA\` |"
+            echo
+            echo "### 怎么装"
+            echo
+            echo "下载下面的 APK，在设备上允许「安装未知应用」后点开安装。"
+            echo
+            echo "**已装旧版的不必手动下载** —— App 内「设置 → 版本与更新 → 检查更新」"
+            echo "可以一键升级。装了 0.5.0 及以上版本的用户都支持在线更新。"
+            echo
+            echo "> 本 APK 用仓库内的 \`keystore/debug.keystore\` 自签，与 App 内在线更新下载到的包"
+            echo "> 签名完全一致，因此无论从哪个渠道安装都能相互覆盖升级，不会冲突。"
+            echo
+            echo "构建与发版流程见 [README](https://github.com/Mosley-Z/WereadMoji#构建)。"
+          } > /tmp/release-notes.md
+          echo "--- 说明预览 ---"
+          cat /tmp/release-notes.md
+
+      - name: 创建 Release 并附上 APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG 已存在，跳过（如需重建请先在网页上删除）"
+            exit 0
+          fi
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file /tmp/release-notes.md \
+            dist/*.apk
+          echo "已创建 Release $TAG"

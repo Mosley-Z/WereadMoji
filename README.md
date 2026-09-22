@@ -182,11 +182,18 @@ bash tools/build.sh
 1. 改 `version.properties` 里的 `VERSION_NAME` / `VERSION_CODE` / `NOTES`
    （`VERSION_CODE` 必须**递增**，App 靠它判断有没有新版）
 2. `bash tools/build.sh`
+   —— 产物出在 `dist/`：APK + `update.json`（含体积与 sha256），并自动校验 `VERSION_CODE` 递增
 3. `git add -A && git commit && git push`
-4. 在 GitHub 上给这次提交打 tag：`v<VERSION_NAME>`
+4. 打 tag 并推送：`git tag -a v<VERSION_NAME> -m "..." && git push origin v<VERSION_NAME>`
+
+第 4 步会触发 [`.github/workflows/release.yml`](.github/workflows/release.yml)，
+自动创建 Release 并把 APK 挂成附件（发布前会先校验 APK 的 sha256 与 `update.json` 一致，
+不一致就拒绝发布）。不需要配置任何密钥，用的是 GitHub 自带的 `GITHUB_TOKEN`。
 
 > **为什么要打 tag**：App 的下载地址用 tag 引用。jsDelivr 与 raw 对 tag 都是永久缓存且立刻可用；
 > 若用分支引用，CDN 缓存会导致新 APK 读不到。
+>
+> 补建历史版本的 Release：在 Actions 页面手动 Run workflow，填入 tag 即可。
 
 ### 为什么不用 Gradle
 
@@ -220,6 +227,7 @@ app/src/main/
 tools/build.sh              免 Gradle 构建脚本
 version.properties          版本号唯一来源
 dist/                       构建产物 + update.json
+.github/workflows/          打 tag 自动发 Release（附 APK）
 ```
 
 ---
