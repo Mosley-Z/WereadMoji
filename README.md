@@ -68,13 +68,19 @@ App 全屏页与设置页（「版本与更新」就是在那里检查更新）�
 
 ## 安装
 
+> ⚠️ **装过 `v0.5.1` 或更早版本的，请务必先升级到 `v0.5.2`。**
+> 早期版本的发布签名密钥曾不慎公开，官方已在 `v0.5.2` 换用新密钥。
+> 这是**签名迁移的过渡版**，也是老设备能**免卸载**直接升级的唯一通道 ——
+> 走 App 内「设置 → 版本与更新 → 检查更新」，或手动装下面这个 APK 都可以。
+> 升过一次之后，之后所有官方更新恢复正常。
+
 ### 方式一：下载 APK
 
 最新版本见 [Releases](https://github.com/Mosley-Z/WereadMoji/releases)。
-国内网络若打不开 GitHub 页面，可直接用 CDN 直链（`v0.5.0` 起）：
+国内网络若打不开 GitHub 页面，可直接用 CDN 直链：
 
 ```
-https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v0.5.0/dist/weread-stats-0.5.0-debug.apk
+https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v0.5.2/dist/weread-stats-0.5.2.apk
 ```
 
 也可以让 App 自己更新：装过一次之后，设置页「版本与更新」里点「检查更新」即可。
@@ -131,11 +137,11 @@ App 会读取仓库里的一个版本清单 `update.json`，与自身 `versionCo
 
 ```json
 {
-  "versionCode": 22,
-  "versionName": "0.5.0",
-  "notes": "新增「检查更新」与在线更新：设置页可直接下载并安装新版本",
-  "apk": "dist/weread-stats-0.5.0-debug.apk",
-  "size": 245000,
+  "versionCode": 24,
+  "versionName": "0.5.2",
+  "notes": "更换发布签名密钥的过渡版，请尽快升级以完成签名迁移",
+  "apk": "dist/weread-stats-0.5.2.apk",
+  "size": 247598,
   "sha256": "..."
 }
 ```
@@ -148,7 +154,7 @@ App 会读取仓库里的一个版本清单 `update.json`，与自身 `versionCo
 | 用途 | 主源 | 理由 |
 |---|---|---|
 | 版本清单 | `raw.githubusercontent.com/…/main/update.json` | raw 的缓存只有几分钟，能立刻反映新版本 |
-| APK | `cdn.jsdelivr.net/gh/…@v0.5.0/…apk` | 用 tag 引用可永久缓存 + CDN 加速；APK 内容本就不可变，正合适 |
+| APK | `cdn.jsdelivr.net/gh/…@v0.5.2/…apk` | 用 tag 引用可永久缓存 + CDN 加速；APK 内容本就不可变，正合适 |
 
 jsDelivr 对**分支**引用的缓存长达数小时到数天。若清单也用 `@main`，会出现「新版本已发布但设备查不到」的滞后。
 两者互为回落，任一源不可用仍能更新。
@@ -171,11 +177,35 @@ jsDelivr 对**分支**引用的缓存长达数小时到数天。若清单也用 
 
 ```bash
 bash tools/build.sh
-# 产物：dist/weread-stats-<版本号>-debug.apk 与 dist/update.json
+# 产物：dist/weread-stats-<版本号>.apk 与 dist/update.json
 ```
 
 脚本会自动探测 `JAVA_HOME` / `ANDROID_HOME` / `PYTHON`，也可以用环境变量覆盖。
-签名使用仓库内的 `keystore/debug.keystore`（口令即标准调试口令 `android`）。
+
+### 签名密钥（不在仓库里）
+
+**私钥绝不入库、绝不公开** —— 应用签名唯一的意义，就是证明「这个更新来自原作者」。
+私钥一旦公开这层证明便不复存在：任何人都能签出与官方包**同名、同版本、同签名者**的 APK，
+系统无法分辨。所以本仓库**不含任何 keystore**，构建脚本也**不会**回退到调试签名、
+更不会自动生成密钥 —— 缺密钥就直接失败并给出提示。
+
+自己构建时，请在仓库外的 `../_keys/`（或用 `KEYS_DIR` 指向别处）准备：
+
+| 文件 | 用途 |
+|---|---|
+| `wereadmoji-release.keystore` | release 私钥（RSA 4096，PKCS12） |
+| `release.pass` | 它的口令（纯文本单行） |
+| `lineage.bin` | 签名轮换证明（`apksigner rotate` 生成） |
+| `old/debug.keystore` | 轮换链起点（历史遗留的旧签名者） |
+| `old/pass.txt` | 旧 key 的口令 |
+
+> **自己签的包不能覆盖官方版**：签名不同，系统安装器会直接拒绝，必须先卸载官方版。
+> 想跟着官方更新，请直接用官方 APK，或走 App 内的「检查更新」。
+>
+> 为什么还需要 `lineage.bin` 和旧 key：早期版本的签名密钥曾不慎公开，官方自 `v0.5.2` 起
+> 用 [APK Signature Scheme v3 轮换](https://source.android.com/docs/security/features/apksigning/v3)
+> 迁移到新密钥，已装旧版的设备才能**免卸载**升级。若你只是自己从零构建，
+> 用自己的密钥签即可 —— 把那两项从脚本的必检清单里去掉，或指向你自己的文件。
 
 ### 发版流程
 

@@ -1,13 +1,13 @@
 {
-  "versionCode": 23,
-  "versionName": "0.5.1",
-  "tag": "v0.5.1",
-  "notes": "修正更新说明：覆盖安装不会清掉无障碍服务，装完即用",
-  "apk": "dist/weread-stats-0.5.1-debug.apk",
-  "size": 243502,
-  "sha256": "14b4dd84f93b4991de3349147a5934f36381232b3a8ff03e9ce7ff55014a3a4c",
+  "versionCode": 24,
+  "versionName": "0.5.2",
+  "tag": "v0.5.2",
+  "notes": "更换发布签名密钥的过渡版，请尽快升级以完成签名迁移",
+  "apk": "dist/weread-stats-0.5.2.apk",
+  "size": 247598,
+  "sha256": "2408d84982cc9d7585f2354b93ae4ecb4a87f15264a255385978ce3fe6a2b4ca",
   "urls": [
-    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v0.5.1/dist/weread-stats-0.5.1-debug.apk",
-    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v0.5.1/dist/weread-stats-0.5.1-debug.apk"
+    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v0.5.2/dist/weread-stats-0.5.2.apk",
+    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v0.5.2/dist/weread-stats-0.5.2.apk"
   ]
 }

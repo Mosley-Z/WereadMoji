@@ -126,8 +126,8 @@ jobs:
               echo "**已装旧版的不必手动下载** —— App 内「设置 → 版本与更新 → 检查更新」"
               echo "可以一键升级。装了 0.5.0 及以上版本的用户都支持在线更新。"
               echo
-              echo "> 本 APK 用仓库内的 \`keystore/debug.keystore\` 自签，与 App 内在线更新下载到的"
-              echo "> 包签名完全一致，因此无论从哪个渠道安装都能相互覆盖升级，不会冲突。"
+              echo "> 装过旧版的用户可直接用 App 内「设置 → 版本与更新 → 检查更新」升级，无需卸载。"
+              echo "> 自 v0.5.2 起发布密钥已更换，请尽快升级到本版本以完成签名迁移。"
               echo
               echo "构建与发版流程见 [README](https://github.com/Mosley-Z/WereadMoji#从源码构建)。"
             } > /tmp/release-notes.md

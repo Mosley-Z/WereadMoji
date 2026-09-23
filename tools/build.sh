@@ -204,21 +204,55 @@ z.close()
 print('    APK 大小: %d bytes' % os.path.getsize(dst))
 "
 
-echo "==> 6/7 对齐 + 签名"
+echo "==> 6/7 对齐 + 签名（APK Signature Scheme v3 轮换）"
 "$BT_P/zipalign.exe" -f -p 4 "$BUILD_W\\app-dex.apk" "$BUILD_W\\app-aligned.apk"
-KEYSTORE_P="$PROJ/keystore/debug.keystore"
-if [ ! -f "$KEYSTORE_P" ]; then
-  mkdir -p "$PROJ/keystore"
-  "$JAVA_BIN/keytool.exe" -genkeypair -keystore "$(w "$KEYSTORE_P")" \
-    -storepass android -keypass android -alias androiddebugkey \
-    -dname "CN=Android Debug,O=Android,C=CN" -keyalg RSA -keysize 2048 -validity 10000
-  echo "    已生成调试签名: $KEYSTORE_P"
+
+# ---- 签名密钥：只从仓库外的私有目录读取，绝不入库 ----
+# 应用签名唯一的意义 = 证明「这个更新来自原作者」。私钥一旦公开即永久失效，
+# 因此本脚本【绝不】使用调试签名、也绝不自动生成密钥；缺任何一个文件就构建失败。
+# 默认目录 $PROJ/../_keys，可用 KEYS_DIR 覆盖。
+KEYS_DIR="${KEYS_DIR:-$PROJ/../_keys}"
+KS_NEW="$KEYS_DIR/wereadmoji-release.keystore"   # release 私钥（PKCS12，离线保管）
+KS_NEW_PASS="$KEYS_DIR/release.pass"             # 它的口令（纯文本单行）
+LINEAGE="$KEYS_DIR/lineage.bin"                  # 旧 key → 新 key 的轮换证明
+KS_OLD="$KEYS_DIR/old/debug.keystore"            # 轮换链起点（历史遗留的旧签名者）
+KS_OLD_PASS="$KEYS_DIR/old/pass.txt"             # 旧 key 口令
+
+_miss=""
+for _f in "$KS_NEW" "$KS_NEW_PASS" "$LINEAGE" "$KS_OLD" "$KS_OLD_PASS"; do
+  [ -f "$_f" ] || _miss="$_miss $_f"
+done
+if [ -n "$_miss" ]; then
+  echo "错误：缺少签名密钥文件，构建中止（不会退回调试签名）。"
+  echo "      缺失:$_miss"
+  echo
+  echo "  在 $KEYS_DIR/ 下应存在："
+  echo "    wereadmoji-release.keystore  release 私钥（RSA4096）"
+  echo "    release.pass                 它的口令（纯文本单行）"
+  echo "    lineage.bin                  旧 key → 新 key 的轮换证明（apksigner rotate 生成）"
+  echo "    old/debug.keystore           轮换链起点"
+  echo "    old/pass.txt                 旧 key 口令"
+  echo "  也可用 KEYS_DIR=/path/to/keys 指定别处。详见 README「从源码构建」。"
+  exit 1
 fi
-OUT_P="$DIST/weread-stats-$VERSION_NAME-debug.apk"
+
+OUT_P="$DIST/weread-stats-$VERSION_NAME.apk"
 OUT_W="$(w "$OUT_P")"
-"$BT_P/apksigner.bat" sign --ks "$(w "$KEYSTORE_P")" --ks-pass pass:android --key-pass pass:android \
+
+# 旧 key 在前 —— v1/v2 恒由 lineage 里最老的签名者签，因此 Android 6–8（只认 v1/v2）
+# 看到的签名者与历史版本完全一致，能无缝覆盖安装；
+# 新 key 用 --next-signer + --lineage，API 28+ 走 v3 轮换拿到新证书。
+# 注意：只给新 signer 会报 "oldest signer ... is missing"，必须同时给出最老的签名者。
+"$BT_P/apksigner.bat" sign \
+  --ks "$(w "$KS_OLD")" --ks-pass "file:$(w "$KS_OLD_PASS")" --ks-key-alias androiddebugkey \
+  --next-signer \
+  --ks "$(w "$KS_NEW")" --ks-pass "file:$(w "$KS_NEW_PASS")" --ks-key-alias wereadmoji \
+  --lineage "$(w "$LINEAGE")" \
+  --rotation-min-sdk-version 28 \
   --out "$OUT_W" "$BUILD_W\\app-aligned.apk"
-"$BT_P/apksigner.bat" verify --print-certs "$OUT_W" | head -4
+
+echo "    签名方案与签名者："
+"$BT_P/apksigner.bat" verify --print-certs "$OUT_W" | head -8
 
 # ---- 7/7 生成版本清单 update.json（供 App「检查更新」读取）----
 echo
