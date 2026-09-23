@@ -46,6 +46,13 @@ fi
 [ -n "$_JAVA_BIN" ] || _JAVA_BIN="$(cygpath -u "$JAVA_HOME")/bin"
 export JAVA_HOME
 
+# JDK 版本提示（v0.5.3）：首选 17，其它版本能跑但没有实测过
+_JV="$("$_JAVA_BIN/java.exe" -version 2>&1 | head -1)"
+case "$_JV" in
+  *'"17'*) ;;
+  *) echo "⚠️  警告：JDK 不是 17（$_JV）。本项目验证过的组合是 JDK 17 + build-tools 33.0.2 + android-33。" ;;
+esac
+
 # ---- 探测 ANDROID_HOME ----
 if [ -z "$ANDROID_HOME" ] || [ ! -d "$(cygpath -u "$ANDROID_HOME" 2>/dev/null)" ]; then
   _sdk=""
@@ -83,17 +90,37 @@ fi
 [ -n "$_PY" ] || _PY="$(cygpath -u "$PYTHON")"
 
 SDK_P="$_SDK_P"
-# ---- 选 build-tools 与 platform（优先 33.0.2 / android-33）----
+# ---- 选 build-tools 与 platform ----
+# 首选「33.0.2 + android-33」= 本项目**唯一验证过**的组合（v0.5.3 起）：
+# 外部审查用 JDK 21 + build-tools 34 时 d8 直接抛 NullPointerException。
+# 旧脚本是**静默**退档，用户看不出自己没跑在验证过的组合上 —— 现在退档会打警告，
+# 也可以用 BT_VERSION / PLATFORM_VERSION 显式指定。
+BT_WANT="${BT_VERSION:-33.0.2}"
+JAR_WANT="${PLATFORM_VERSION:-33}"
 BT_P=""
-for v in 33.0.2 34.0.0 32.0.0 31.0.0 30.0.3; do
-  [ -d "$SDK_P/build-tools/$v" ] && BT_P="$SDK_P/build-tools/$v" && break
-done
-[ -n "$BT_P" ] || { echo "错误：未找到 build-tools（请用 sdkmanager 装 build-tools;33.0.2）"; exit 1; }
+if [ -d "$SDK_P/build-tools/$BT_WANT" ]; then
+  BT_P="$SDK_P/build-tools/$BT_WANT"
+else
+  for v in 33.0.2 34.0.0 32.0.0 31.0.0 30.0.3; do
+    [ -d "$SDK_P/build-tools/$v" ] && BT_P="$SDK_P/build-tools/$v" && break
+  done
+  if [ -n "$BT_P" ]; then
+    echo "⚠️  警告：未找到 build-tools $BT_WANT，退到 $(basename "$BT_P")。已验证的组合是 33.0.2。"
+  fi
+fi
+[ -n "$BT_P" ] || { echo "错误：未找到 build-tools（请用 sdkmanager 装 build-tools;$BT_WANT）"; exit 1; }
 JAR_P=""
-for v in 33 34 32 31 30; do
-  [ -f "$SDK_P/platforms/android-$v/android.jar" ] && JAR_P="$SDK_P/platforms/android-$v/android.jar" && break
-done
-[ -n "$JAR_P" ] || { echo "错误：未找到 platforms/android-*/android.jar（请用 sdkmanager 装 platforms;android-33）"; exit 1; }
+if [ -f "$SDK_P/platforms/android-$JAR_WANT/android.jar" ]; then
+  JAR_P="$SDK_P/platforms/android-$JAR_WANT/android.jar"
+else
+  for v in 33 34 32 31 30; do
+    [ -f "$SDK_P/platforms/android-$v/android.jar" ] && JAR_P="$SDK_P/platforms/android-$v/android.jar" && break
+  done
+  if [ -n "$JAR_P" ]; then
+    echo "⚠️  警告：未找到 platforms;android-$JAR_WANT，退到 $(basename "$(dirname "$JAR_P")")。已验证的组合是 android-33。"
+  fi
+fi
+[ -n "$JAR_P" ] || { echo "错误：未找到 platforms/android-*/android.jar（请用 sdkmanager 装 platforms;android-$JAR_WANT）"; exit 1; }
 
 JAVA_BIN="$_JAVA_BIN"
 PY="$_PY"

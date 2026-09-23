@@ -790,7 +790,7 @@ public class CardA11yService extends AccessibilityService {
                 view.setBook(b);
                 loadCover(b);
             } else if (PeriodRange.NOTE.equals(mode)) {
-                showNote(false);
+                if (!showNote(false)) noteSync(false);
             } else view.setStats(StatsStore.loadCard(this));
         }
         applyVisibility();
@@ -811,7 +811,7 @@ public class CardA11yService extends AccessibilityService {
                 view.setBook(b0);
                 loadCover(b0);
             } else if (PeriodRange.NOTE.equals(m0)) {
-                showNote(false);
+                if (!showNote(false)) noteSync(false);
             } else view.setStats(StatsStore.loadCard(this));
             view.setOpenListener(new WeekCardView.OpenListener() {
                 @Override
@@ -1007,7 +1007,7 @@ public class CardA11yService extends AccessibilityService {
         if (PeriodRange.BOOK.equals(mode)) {
             if (BookStore.load(this) == null) fetchBookData(StatsStore.getKey(this), false);
         } else if (PeriodRange.NOTE.equals(mode)) {
-            if (NoteStore.poolSize(this) == 0) syncNoteData(false);     // 池子空 → 立刻开始预热
+            if (!showNote(false)) noteSync(false);      // 池子空才起同步（去重 + 退避，见 noteSync）
         } else if (StatsStore.loadCard(this) == null) {
             fetchCardData();
         }
@@ -1023,20 +1023,25 @@ public class CardA11yService extends AccessibilityService {
         final String key = StatsStore.getKey(this);
         if (key.length() == 0) return;
         final String mode = StatsStore.getCardPeriod(this);
+        CardDebug.note(this, "fetch start mode=" + mode);
+        if (PeriodRange.NOTE.equals(mode)) {
+            // 本记的"刷新中"由 noteSync 自己管（v0.5.3）：如果此刻已经有另一轮同步在跑
+            // （比如 App 那边刚发起），noteSync 会直接返回 —— 那么这里**不能**先把
+            // refreshing 打开，否则没有任何回调来关它，卡片会永久停在"正在同步…"。
+            noteSync(true);                         // 手动刷新 → 重拉索引 + 多补一批书（清退避）
+            return;
+        }
         // 立刻给文字反馈：墨水屏没有涟漪动画，不写"刷新中…"用户会以为没点到
         if (view != null) view.setRefreshing(true);
-        CardDebug.note(this, "fetch start mode=" + mode);
         if (PeriodRange.BOOK.equals(mode)) {
             fetchBookData(key, true);               // 手动刷新 → 允许重拉书架（有 10 分钟最小间隔）
             return;
         }
-        if (PeriodRange.NOTE.equals(mode)) {
-            syncNoteData(true);                     // 本记：重拉索引 + 多补一批书
-            return;
-        }
+        final long gen = StatsStore.keyGen();          // R05
         WereadApi.fetchDetail(key, mode, 0, new WereadApi.Callback() {
             @Override
             public void onResult(PeriodStats stats, String rawJson, String error) {
+                if (gen != StatsStore.keyGen()) return;         // 换过 Key → 丢弃旧会话结果
                 if (stats != null) {
                     StatsStore.save(CardA11yService.this, stats);
                     // 拉取期间用户可能又切了周期 —— 只认"和当前偏好一致"的那份
@@ -1064,10 +1069,12 @@ public class CardA11yService extends AccessibilityService {
      */
     private void fetchBookData(final String key, boolean forceShelf) {
         if (key.length() == 0) return;
+        final long gen = StatsStore.keyGen();          // R05
         CardDebug.note(this, "fetch book start force=" + forceShelf);
         WereadApi.fetchBook(this, key, forceShelf, new WereadApi.BookCallback() {
             @Override
             public void onResult(BookStats b, String error) {
+                if (gen != StatsStore.keyGen()) return;         // 换过 Key → 丢弃旧会话结果
                 if (b != null) {
                     BookStore.save(CardA11yService.this, b);
                     CardDebug.note(CardA11yService.this, "fetch book ok " + b.dump());
@@ -1094,14 +1101,15 @@ public class CardA11yService extends AccessibilityService {
     // ══════════════════════ 本记（v0.4.0）══════════════════════
 
     /**
-     * 把当前该显示的那条划线放到卡片上。
+     * 把当前该显示的那条划线放到卡片上（与 App 内 {@code MainActivity.showNote} 同源）。
      *
-     * 池子为空时**不空转**：立刻起一轮同步（索引 + 预热 12 本），
-     * 卡片先显示"正在同步划线笔记…"，同步完回调里再自动换成真内容。
+     * @return true = 抽到了一条内容（调用方据此决定"要不要发起同步"）
      */
-    private void showNote(boolean manual) {
-        if (view == null) return;
-        showNoteItem(NoteStore.pick(this, manual));
+    private boolean showNote(boolean manual) {
+        if (view == null) return true;              // 没有窗口就什么都不用管
+        NoteStats n = NoteStore.pick(this, manual);
+        showNoteItem(n);
+        return n != null;
     }
 
     /**
@@ -1109,11 +1117,15 @@ public class CardA11yService extends AccessibilityService {
      */
     private void showNoteItem(NoteStats n) {
         if (view == null) return;
-        view.setNote(n);
         if (n == null) {
-            syncNoteData(false);                 // 池子空 → 立刻起一轮同步
+            // 🔴 渲染函数**绝不发起同步**（v0.5.3，R02）。上一版这里 `syncNoteData(false)`
+            // 而同步回调又会回到本函数 —— 空池时形成无界环（桌面侧与 App 侧同构，
+            // 一轮最多 43 次请求）。现在同步统一走 {@link #noteSync}。
+            if (view.getNote() != null) view.setNote(null);
             return;
         }
+        view.setNoteHint(null);
+        view.setNote(n);
         CardDebug.note(this, "note pick " + n.dump());
         // 章节名要联网反查（章节目录按书永久缓存），查到后回填并重绘 —— 不阻塞出内容
         final NoteStats fn = n;
@@ -1129,7 +1141,7 @@ public class CardA11yService extends AccessibilityService {
     private void nextNote() {
         CardDebug.note(this, "tap 换一条");
         if (view == null) return;
-        showNoteItem(NoteStore.pick(this, true));
+        if (!showNote(true)) noteSync(true);        // 手动 → 清退避立即放行
         applyVisibility();
     }
 
@@ -1137,9 +1149,41 @@ public class CardA11yService extends AccessibilityService {
     private void prevNote() {
         CardDebug.note(this, "tap 上一条");
         if (view == null) return;
-        showNoteItem(NoteStore.pickPrev(this));
+        NoteStats n = NoteStore.pickPrev(this);
+        showNoteItem(n);
+        if (n == null) noteSync(true);
         applyVisibility();
     }
+
+    /**
+     * 本记同步的**唯一入口**（v0.5.3，R02）—— 与 {@code MainActivity.noteSync} 同一套闸门：
+     * in-flight 去重（{@link NoteSync#isRunning}）+ 空/失败退避（{@link NoteSync#canAutoStart}），
+     * 手动刷新（force）清退避立即放行。
+     */
+    private void noteSync(boolean force) {
+        final String key = StatsStore.getKey(this);
+        if (key == null || key.length() == 0) {
+            if (view != null) {
+                view.setRefreshing(false);
+                view.setNoteHint("还没填 API Key");
+            }
+            return;
+        }
+        if (NoteSync.isRunning()) return;                      // 已经在同步 → 等它回调
+        if (!force && !NoteSync.canAutoStart()) {              // 退避期内 → 停在空态，别空转
+            if (view != null) {
+                view.setRefreshing(false);
+                view.setNoteHint(lastNoteState == NoteSync.STATE_ERROR
+                        ? "同步失败，请检查网络" : "还没有同步到笔记");
+            }
+            return;
+        }
+        if (force) NoteSync.clearBackoff();
+        syncNoteData(force);
+    }
+
+    /** 最近一轮本记同步的结果状态（空态文案要据此区分"失败"与"真的没有"，v0.5.3） */
+    private int lastNoteState = NoteSync.STATE_OK;
 
     /**
      * 同步「本记」的数据：索引 → 逐本预热划线。
@@ -1150,18 +1194,27 @@ public class CardA11yService extends AccessibilityService {
     private void syncNoteData(boolean force) {
         final String key = StatsStore.getKey(this);
         if (key.length() == 0) return;
+        final long gen = StatsStore.keyGen();          // R05：换 Key 后旧会话的迟到结果不许写回
         if (view != null) view.setRefreshing(true);
         NoteSync.sync(this, key, force, NoteSync.DEFAULT_PREFETCH, new NoteSync.Listener() {
             @Override
-            public void onDone(int pool, int total, String error) {
-                CardDebug.note(CardA11yService.this, "note sync pool=" + pool + "/" + total
+            public void onDone(int pool, int ideas, int total, String error, int state) {
+                CardDebug.note(CardA11yService.this, "note sync pool=" + pool + " ideas=" + ideas
+                        + "/" + total + " state=" + state
                         + (error == null ? "" : (" err=" + error)));
-                if (view != null) {
-                    view.setRefreshing(false);
-                    if (PeriodRange.NOTE.equals(StatsStore.getCardPeriod(CardA11yService.this))) {
-                        showNote(false);
-                    }
+                if (gen != StatsStore.keyGen()) return;         // 换过 Key → 丢弃
+                if (view == null) return;                       // 窗口已经摘了 → 丢弃过期 UI 回调
+                view.setRefreshing(false);
+                if (state == NoteSync.STATE_BUSY) return;       // 别的入口在跑，这轮不算数
+                lastNoteState = state;
+                if (!PeriodRange.NOTE.equals(StatsStore.getCardPeriod(CardA11yService.this))) {
+                    applyVisibility();
+                    return;                                     // 用户已切走形态 → 只记状态
                 }
+                // 拿到内容就换上；仍为空则**停在空态**（这里不会再起同步 —— 环已断）
+                boolean got = showNote(false);
+                view.setNoteHint(got ? null
+                        : (state == NoteSync.STATE_ERROR ? "同步失败，请检查网络" : "还没有同步到笔记"));
                 applyVisibility();
             }
         });

@@ -342,15 +342,40 @@ public class WereadApi {
             r.httpCode = code;
             InputStream is = (code >= 200 && code < 300) ? conn.getInputStream() : conn.getErrorStream();
             String text = readAll(is);
+            // 先把能解析的解析出来 —— 非 2xx 时 errcode 仍然有用（「测试连接」的人话文案
+            // 就是按 -2013 / -2010 分档的，见 {@link #testKey}）
+            JSONObject j = null;
+            try {
+                if (text != null && text.length() > 0) j = new JSONObject(text);
+            } catch (Exception ignored) {
+            }
+            if (j != null) {
+                r.errcode = j.optInt("errcode", 0);
+            }
+            // 🔴 **非 2xx 一律判失败**（v0.5.3，R11）。
+            // 上一版只把这段改成"读 errorStream"，之后却仅看 JSON 的 errcode —— 而
+            // `optInt("errcode", 0)` 在字段缺失时默认 0，于是「HTTP 500 + {message:…}（无 errcode）」
+            // 会被判成**成功**：r.error=null、r.json 非空 → fetchDetail 把缺统计字段的对象
+            // 解析成全零数据 → 而 PeriodStats.parse 在缺 baseTime 时会兜底成本地算出的周期起点，
+            // StatsStore.save 的 `baseTime<=0` 守卫拦不住 → **有效的旧缓存被全零数据覆盖**。
+            // 注意：**合法的空结果走 2xx**（某周确实没读书、totalReadTime=0），不受这条影响。
+            if (code < 200 || code >= 300) {
+                r.json = null;                       // 关键：错误响应绝不留给调用方当数据用
+                r.error = "HTTP " + code
+                        + (r.errcode != 0 ? (" errcode=" + r.errcode + " " + j.optString("errmsg")) : "")
+                        + (text == null || text.length() == 0 ? "" : (" " + brief(text)));
+                return r;
+            }
             if (text == null || text.length() == 0) {
                 r.error = "HTTP " + code + " 空响应";
                 return r;
             }
-            JSONObject j = new JSONObject(text);
-            int errcode = j.optInt("errcode", 0);
-            r.errcode = errcode;
-            if (errcode != 0) {
-                r.error = "errcode=" + errcode + " " + j.optString("errmsg");
+            if (j == null) {
+                r.error = "HTTP " + code + " 响应不是 JSON：" + brief(text);
+                return r;
+            }
+            if (r.errcode != 0) {
+                r.error = "errcode=" + r.errcode + " " + j.optString("errmsg");
                 return r;
             }
             r.json = j;
@@ -360,6 +385,13 @@ public class WereadApi {
             if (conn != null) conn.disconnect();
         }
         return r;
+    }
+
+    /** 错误正文的短摘要（日志/界面文案里用；压掉换行、最多 80 字） */
+    private static String brief(String s) {
+        if (s == null) return "";
+        String t = s.replace('\n', ' ').replace('\r', ' ').trim();
+        return t.length() > 80 ? t.substring(0, 80) + "…" : t;
     }
 
     /**

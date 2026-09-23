@@ -86,9 +86,48 @@ jobs:
             echo "════════════════ $T ════════════════"
             git checkout --force "$T"
 
-            APK="$(ls dist/*.apk | head -1)"
-            WANT_SHA="$(sed -n 's/.*"sha256": *"\([0-9a-f]\{64\}\)".*/\1/p' dist/update.json)"
-            WANT_SIZE="$(sed -n 's/.*"size": *\([0-9][0-9]*\).*/\1/p' dist/update.json)"
+            # ── 一切以 dist/update.json 为准（v0.5.3，R10）──
+            # 上一版是 `APK="$(ls dist/*.apk | head -1)"` —— 目录里同时留着旧版本时
+            # （build.sh 按版本名添加文件、不会删旧的），字典序会取到旧包，与指向新版的
+            # 清单 sha/size 不符 → exit 1。失败是 fail-closed（不会发错包），但发版被挡住。
+            # 清单里本来就有 `apk` 精确路径，直接读它。
+            MF=dist/update.json
+            if [ ! -f "$MF" ]; then
+              echo "::error::$T 缺少 $MF"
+              exit 1
+            fi
+            APK_REL="$(sed -n 's/.*"apk": *"\([^"]*\)".*/\1/p' "$MF" | head -1)"
+            WANT_SHA="$(sed -n 's/.*"sha256": *"\([0-9a-f]\{64\}\)".*/\1/p' "$MF" | head -1)"
+            WANT_SIZE="$(sed -n 's/.*"size": *\([0-9][0-9]*\).*/\1/p' "$MF" | head -1)"
+            MF_TAG="$(sed -n 's/.*"tag": *"\([^"]*\)".*/\1/p' "$MF" | head -1)"
+            MF_VN="$(sed -n 's/.*"versionName": *"\([^"]*\)".*/\1/p' "$MF" | head -1)"
+            MF_VC="$(sed -n 's/.*"versionCode": *\([0-9][0-9]*\).*/\1/p' "$MF" | head -1)"
+            VN="$(grep -E '^VERSION_NAME=' version.properties | cut -d= -f2- | tr -d ' \r')"
+            VC="$(grep -E '^VERSION_CODE=' version.properties | cut -d= -f2- | tr -d ' \r')"
+            NOTES="$(grep -E '^NOTES=' version.properties | cut -d= -f2- | tr -d '\r')"
+
+            # ① 路径必须落在 dist/ 内（防清单被写成越界路径），且文件真实存在
+            case "$APK_REL" in
+              dist/*) ;;
+              *) echo "::error::$T 清单里的 apk 路径越界：'$APK_REL'"; exit 1 ;;
+            esac
+            if [ ! -f "$APK_REL" ]; then
+              echo "::error::$T 清单指向的 APK 不存在：$APK_REL"
+              exit 1
+            fi
+            APK="$APK_REL"
+
+            # ② tag 与版本号三处必须自洽（清单 / tag / version.properties）
+            if [ "$MF_TAG" != "$T" ]; then
+              echo "::error::$T 清单里的 tag 是 '$MF_TAG'，与本次发布的 tag 不一致"
+              exit 1
+            fi
+            if [ "$MF_VN" != "$VN" ] || [ "$MF_VC" != "$VC" ]; then
+              echo "::error::$T 清单版本 $MF_VN/$MF_VC 与 version.properties 的 $VN/$VC 不一致"
+              exit 1
+            fi
+
+            # ③ 逐字节核对（清单必须与 APK 同批生成 —— APK 构建是非确定性的）
             GOT_SHA="$(sha256sum "$APK" | cut -d' ' -f1)"
             GOT_SIZE="$(wc -c < "$APK" | tr -d ' \r\n')"
             echo "APK        : $APK"
@@ -105,10 +144,6 @@ jobs:
               exit 1
             fi
             echo "校验通过"
-
-            VN="$(grep -E '^VERSION_NAME=' version.properties | cut -d= -f2- | tr -d ' \r')"
-            VC="$(grep -E '^VERSION_CODE=' version.properties | cut -d= -f2- | tr -d ' \r')"
-            NOTES="$(grep -E '^NOTES=' version.properties | cut -d= -f2- | tr -d '\r')"
             {
               echo "$NOTES"
               echo

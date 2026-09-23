@@ -43,6 +43,12 @@ public class MainActivity extends Activity {
     private long anchorWeek;
     private long anchorMonth;
 
+    /**
+     * 最近一轮「本记」同步的结果状态（v0.5.3，R02）。
+     * 只用来区分空态该说哪句话 —— 退避期内不能再发起同步，就得靠它说明"上次为什么没成"。
+     */
+    private int lastNoteState = NoteSync.STATE_OK;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -69,7 +75,10 @@ public class MainActivity extends Activity {
         card.setOpenListener(new WeekCardView.OpenListener() {
             @Override
             public void onOpen() {
-                BookStats b = BookStore.load(MainActivity.this);
+                // 「打开」跟着**屏幕上这一本**走（v0.5.3，R06）。
+                // 上一版只读 BookStore.load：在"刚刷新完但还没落盘"的窗口里会去打开旧书，
+                // 更早的版本干脆因为 load==null 直接返回（点了没反应）。
+                BookStats b = displayedBook();
                 if (b == null || b.bookId == null || b.bookId.length() == 0) return;
                 try {
                     startActivity(new Intent(Intent.ACTION_VIEW,
@@ -85,7 +94,8 @@ public class MainActivity extends Activity {
         card.setNoteListener(new WeekCardView.NoteListener() {
             @Override
             public void onNextNote() {
-                showNote(true);                 // 手动插队抽下一条
+                // 手动插队抽下一条；空池时立即放行同步（清退避）
+                if (!showNote(true)) noteSync(true);
             }
 
             @Override
@@ -120,7 +130,8 @@ public class MainActivity extends Activity {
                 if (PeriodRange.BOOK.equals(tabMode)) {
                     if (BookStore.load(MainActivity.this) == null) refresh();
                 } else if (PeriodRange.NOTE.equals(tabMode)) {
-                    showNote(false);                 // 池子空时 showNote 内部会自动起同步
+                    // 渲染落空才起同步 —— 绝不在渲染函数里发请求（v0.5.3，R02）
+                    if (!showNote(false)) noteSync(false);
                 } else if (StatsStore.load(MainActivity.this, tabMode, anchor()) == null) {
                     refresh();
                 }
@@ -170,6 +181,16 @@ public class MainActivity extends Activity {
         return 0;
     }
 
+    /**
+     * 「打开」按钮该打开哪本书（v0.5.3，R06）：
+     * **屏幕上正在显示的那本**优先，退回的是落盘缓存（防止"还没刷新过就直接点"）。
+     */
+    private BookStats displayedBook() {
+        BookStats b = card.getBook();
+        if (b != null && b.bookId != null && b.bookId.length() > 0) return b;
+        return BookStore.load(this);
+    }
+
     /** 当前选项卡的周期锚点（≤0 时回落到"当前周期"）。「本书」没有周期，恒为 0 */
     private long anchor() {
         if (PeriodRange.BOOK.equals(tabMode)) return 0L;
@@ -204,7 +225,7 @@ public class MainActivity extends Activity {
             // 「本记」同样没有周期：位置让给「全部 / 只看想法」。
             // 导出与换一条都是**页内按钮**（画在卡片里），底部只留刷新与设置
             picker.setVisibility(View.GONE);
-            showNote(false);
+            if (!showNote(false)) noteSync(false);
             return;
         }
         picker.setVisibility(View.VISIBLE);
@@ -264,18 +285,20 @@ public class MainActivity extends Activity {
             return;
         }
         if (PeriodRange.NOTE.equals(tabMode)) {
-            refreshNotes(key, force);
+            noteSync(force);        // 手动刷新（force）会清掉退避，立即放行
             return;
         }
         final String mode = tabMode;
         final long a = anchor();
         // 当前周期传 0（服务端归一化，第 7 轮已实测跑通）；历史周期才传锚点时间戳
         final long req = (a == PeriodRange.startOf(mode, 0)) ? 0L : a;
+        final long gen = StatsStore.keyGen();          // R05：记下会话代次，迟到结果不许写回
 
         card.setRefreshing(true);
         WereadApi.fetchDetail(key, mode, req, new WereadApi.Callback() {
             @Override
             public void onResult(PeriodStats stats, String rawJson, String error) {
+                if (gen != StatsStore.keyGen()) return;        // 换过 Key → 丢弃旧会话结果
                 if (error != null) {
                     if (StatsStore.load(MainActivity.this, mode, a) == null) card.setError(error);
                     else card.setRefreshing(false);
@@ -305,15 +328,22 @@ public class MainActivity extends Activity {
      * 只有书架过期时才真的重下 —— 这里只管拿到结果后刷新一帧。
      */
     private void refreshBook(String key, boolean force) {
+        final long gen = StatsStore.keyGen();          // R05
         card.setRefreshing(true);
         WereadApi.fetchBook(this, key, force, new WereadApi.BookCallback() {
             @Override
             public void onResult(BookStats stats, String error) {
+                if (gen != StatsStore.keyGen()) return;        // 换过 Key → 丢弃旧会话结果
                 if (stats == null) {
                     if (BookStore.load(MainActivity.this) == null) card.setError(error);
                     else card.setRefreshing(false);
                     return;
                 }
+                // 🔴 先落盘再刷画面（v0.5.3，R06）。
+                // 上一版只 `card.setBook(stats)` —— 屏幕上有书，但 BookStore 里什么都没有，
+                // 于是「打开」按钮（读 BookStore.load）直接返回、桌面卡片与下次进入仍是旧进度。
+                // 全仓库原本只有无障碍服务的取数回调会 save，App 内的取数链是个只读的孤岛。
+                BookStore.save(MainActivity.this, stats);
                 // 拉取期间用户可能切走了 —— 只认当前这一屏
                 if (PeriodRange.BOOK.equals(tabMode)) {
                     card.setMode(PeriodRange.BOOK);
@@ -345,21 +375,31 @@ public class MainActivity extends Activity {
 
     /**
      * 把当前该展示的划线放到全屏卡片上（与桌面 {@code CardA11yService.showNote} 同源）。
-     * 池子为空时自动起一轮同步；章节名缺了就异步反查（一本书只查一次）。
+     * 章节名缺了就异步反查（一本书只查一次）。
+     *
+     * @return true = 抽到了一条内容
      */
-    private void showNote(boolean manual) {
-        showNoteItem(NoteStore.pick(this, manual, NoteStore.ideasOnly(this)));
+    private boolean showNote(boolean manual) {
+        NoteStats n = NoteStore.pick(this, manual, NoteStore.ideasOnly(this));
+        showNoteItem(n);
+        return n != null;
     }
 
     /** 把某条内容放到本记页（「换一条」/「上一条」/ 常规展示共用，v0.4.2 抽出来） */
     private void showNoteItem(NoteStats n) {
         // 进度行按「当前模式」取数：只看想法模式下用的是另一套序号空间（见 NoteStore.pick）
         card.setNoteSlot(NoteStore.ideasOnly(this));
-        card.setNote(n);
         if (n == null) {
-            refreshNotes(StatsStore.getKey(this), false);
+            // 🔴 渲染函数**绝不发起同步**（v0.5.3，R02）。
+            // 上一版这里是 `refreshNotes(...)`，而同步结束的回调又会回到本函数：
+            // 池子为空时形成 `渲染 → 同步 → 回调 → 渲染 → 同步 …` 的**无界环**（一轮 43 次请求，
+            // 用的是用户自己的 Key）。现在这里只把画面置空，同步一律由 {@link #noteSync} 从
+            // 明确入口发起（进页面 / 切档 / 手动刷新 / 渲染落空后的那一次补齐）。
+            if (card.getNote() != null) card.setNote(null);
             return;
         }
+        card.setNoteHint(null);            // 有内容了，空态提示作废
+        card.setNote(n);
         final NoteStats fn = n;
         NoteSync.resolveChapter(this, StatsStore.getKey(this), n, new Runnable() {
             @Override
@@ -371,7 +411,9 @@ public class MainActivity extends Activity {
 
     /** 点了「上一条」（v0.4.2）—— 沿来时的路退回去 */
     private void prevNote() {
-        showNoteItem(NoteStore.pickPrev(this, NoteStore.ideasOnly(this)));
+        NoteStats n = NoteStore.pickPrev(this, NoteStore.ideasOnly(this));
+        showNoteItem(n);
+        if (n == null) noteSync(true);          // 历史栈空且这一把也读不出来 → 手动放行同步
     }
 
     /**
@@ -387,23 +429,72 @@ public class MainActivity extends Activity {
     private void toggleIdeas() {
         NoteStore.setIdeasOnly(this, !NoteStore.ideasOnly(this));
         card.setNoteSlot(NoteStore.ideasOnly(this));
-        showNote(false);          // 非 manual：目标档里已有"今天这条"就沿用，没有才新抽
+        // 非 manual：目标档里已有"今天这条"就沿用，没有才新抽；抽不到 → 起一次同步
+        // （「只看想法」的池子小得多，第一次切过去很可能还没预热到本地）
+        if (!showNote(false)) noteSync(false);
         card.invalidate();        // 换格上的文字（全部 ↔ 想法）与反白状态
     }
 
     /**
-     * 「本记」同步：索引 → 逐本预热。渐进式 —— 每轮补 12 本，几轮满库；
-     * 手动刷新（force）多补一倍，让"我就要现在看别的书"更快达成。
+     * 本记同步的**唯一入口**（v0.5.3，R02/R08）。
+     *
+     * 三道闸门叠起来才堵住了上一版的无界环（见 {@link NoteSync} 类注释）：
+     *   ① 渲染函数不再发请求（{@link #showNoteItem}）；
+     *   ② {@link NoteSync#sync} 内部 in-flight 去重 —— 已在跑就直接返回；
+     *   ③ 空 / 失败后 {@link NoteSync#BACKOFF_MS} 内不再**自动**发起；
+     *      手动刷新（{@code force=true}）清掉退避立即放行。
+     */
+    private void noteSync(boolean force) {
+        final String key = StatsStore.getKey(this);
+        if (key == null || key.length() == 0) {
+            card.setRefreshing(false);
+            card.setNoteHint("还没填 API Key");
+            return;
+        }
+        if (NoteSync.isRunning()) return;                      // ② 已经在同步 → 等它回调
+        if (!force && !NoteSync.canAutoStart()) {              // ③ 退避期内 → 停在空态
+            card.setRefreshing(false);
+            card.setNoteHint(lastNoteState == NoteSync.STATE_ERROR
+                    ? "同步失败，请检查网络" : noteEmptyHint(null));
+            return;
+        }
+        if (force) NoteSync.clearBackoff();
+        refreshNotes(key, force);
+    }
+
+    /**
+     * 空态提示文案（v0.5.3）。三种"空"要分开说 —— 上一版只有一句
+     * 「本记还没有准备好」，用户分不清是没网还是真没有（R02/R08）。
+     */
+    private String noteEmptyHint(String error) {
+        if (error != null) return "同步失败，请检查网络";
+        if (NoteStore.ideasOnly(this)) return "还没有写过想法";
+        if (NoteStore.index(this) == null) return "还没有同步过笔记";
+        return "本地还没有可回顾的笔记";
+    }
+
+    /**
+     * 「本记」同步：索引 → 逐本预热。渐进式 —— 每轮补 18 本，几轮满库；
+     * 手动刷新（force）多补一倍，并连索引一起重拉。
      */
     private void refreshNotes(String key, boolean force) {
         if (key == null || key.length() == 0) return;
+        final long gen = StatsStore.keyGen();          // R05：换 Key 后旧会话的迟到结果不许写回
         card.setRefreshing(true);
         NoteSync.sync(this, key, force, force ? NoteSync.DEFAULT_PREFETCH * 2 : NoteSync.DEFAULT_PREFETCH,
                 new NoteSync.Listener() {
                     @Override
-                    public void onDone(int pool, int total, String error) {
+                    public void onDone(int pool, int ideas, int total, String error, int state) {
+                        if (gen != StatsStore.keyGen()) return;               // 换过 Key → 丢弃
+                        if (isFinishing() || isDestroyed()) return;            // 页面没了 → 丢弃过期 UI 回调
                         card.setRefreshing(false);
-                        if (PeriodRange.NOTE.equals(tabMode)) showNote(false);
+                        if (state == NoteSync.STATE_BUSY) return;        // 别的入口在跑，这轮不算数
+                        lastNoteState = state;
+                        if (!PeriodRange.NOTE.equals(tabMode)) return;   // 用户已切走 → 只记状态
+                        // 拿到内容就换上；仍为空则**停在空态**（这里不会再起同步 —— 环已断）
+                        boolean got = showNote(false);
+                        card.setNoteHint(got ? null
+                                : noteEmptyHint(state == NoteSync.STATE_ERROR ? error : null));
                     }
                 });
     }

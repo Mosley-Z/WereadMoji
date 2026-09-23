@@ -192,8 +192,10 @@ public class SettingsActivity extends Activity {
                     toast("请先填入 API Key");
                     return;
                 }
-                StatsStore.setKey(SettingsActivity.this, k);
-                toast("已保存");
+                // v0.5.3（R05）：换 Key 会统一失效个人数据缓存（统计 / 书架 / 进度 / 章节 /
+                // 划线 / 想法 / 抽取状态），否则屏幕上会继续显示上一个账号的数据。
+                boolean changed = StatsStore.setKey(SettingsActivity.this, k);
+                toast(changed ? "已保存，个人数据缓存已清除" : "已保存");
                 finish();
             }
         });

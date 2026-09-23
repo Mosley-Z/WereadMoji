@@ -342,12 +342,120 @@ public final class NoteStore {
                 keep.put(m);
             }
             o.put("synckey", synckey);
+            o.put("fetchedAt", System.currentTimeMillis());   // v0.5.3：R03 的 TTL 判定要用
             o.put("marks", keep);
         } catch (Exception ignored) {
             return;
         }
         write(c, P_MARK + bookId + ".json", o.toString());
         dropBookCache(bookId);         // 只有这本书的内容变了
+    }
+
+    // ══════════════════════ ②a-2 划线的"重拉"与全量替换（v0.5.3，R03）══════════════════════
+    //
+    // 上一版只有"从未同步过的书才拉"这一条路（`unsynced()` 用 `!synced()` 过滤），
+    // 于是**一本书只要有过划线缓存，就永远不会再更新**：新划的线看不到，
+    // 删掉的线还留在本记里。手动刷新也只影响索引与数量，不改这个筛选条件。
+
+    /**
+     * 划线缓存的有效期（v0.5.3）。比想法/索引的 6 小时短 —— 用户是**边读边划**的，
+     * "刚划的线今天就能在卡片上看到"才是这个功能的意义（索引顺序也是"最近在记的在前"，
+     * 两者配合起来，最近读的几本书总是最先被刷新）。
+     */
+    public static final long MARK_TTL_MS = 2L * 3600L * 1000L;
+
+    /** 这本书的划线是什么时候拉回来的（毫秒）；没拉过 / 老数据没时间戳 → 0 */
+    public static long markFetchedAt(Context c, String bookId) {
+        if (bookId == null || bookId.length() == 0) return 0L;
+        String s = read(c, P_MARK + bookId + ".json");
+        if (s == null) return 0L;
+        try {
+            return new JSONObject(s).optLong("fetchedAt", 0L);
+        } catch (Exception e) {
+            return 0L;
+        }
+    }
+
+    /** 这本书的划线缓存还在有效期内（不需要重拉） */
+    public static boolean markFresh(Context c, String bookId) {
+        long t = markFetchedAt(c, bookId);
+        if (t <= 0) return false;                        // 老数据没时间戳 → 当作过期，重拉一次补上
+        long d = System.currentTimeMillis() - t;
+        return d >= 0 && d <= MARK_TTL_MS;
+    }
+
+    /**
+     * **全量替换**一本书的划线（v0.5.3，R03）。
+     *
+     * 为什么可以当作全量：官方接口文档里 `/book/bookmarklist` **只有 `bookId` 一个请求参数**，
+     * 回包 `updated[]` 就是这本书的划线列表（`synckey` 只是回包里的数据版本号，
+     * 我们从来没有把它当请求参数传过 —— 它是"数据版本号"还是"翻页游标"是另一回事）。
+     * 所以每次调用拿到的都是全量，直接替换即可：
+     *   · 新增的划线会进来（R03 的主要缺口：旧版对已有缓存的书**根本不重拉**）；
+     *   · 用户删掉的划线也会随之消失（旧版是 merge，只增不减，删了还在）。
+     *
+     * ⚠️ 将来若确认了增量语义，再改回"合并"；在此之前不猜。
+     */
+    public static void replaceMarks(Context c, String bookId, JSONArray marks, long synckey) {
+        if (bookId == null || bookId.length() == 0) return;
+        JSONArray keep = new JSONArray();
+        HashSet<String> seen = new HashSet<String>();
+        for (int i = 0; marks != null && i < marks.length(); i++) {
+            JSONObject m = marks.optJSONObject(i);
+            if (m == null) continue;
+            String id = m.optString("bookmarkId", "");
+            if (id.length() == 0) {
+                id = bookId + "_" + m.optString("range", "");
+                try {
+                    m.put("bookmarkId", id);
+                } catch (Exception ignored) {
+                }
+            }
+            if (!seen.add(id)) continue;                 // 同一本书里 bookmarkId 去重
+            keep.put(m);
+        }
+        JSONObject o = new JSONObject();
+        try {
+            o.put("synckey", synckey);
+            o.put("fetchedAt", System.currentTimeMillis());
+            o.put("marks", keep);
+        } catch (Exception ignored) {
+        }
+        write(c, P_MARK + bookId + ".json", o.toString());
+        dropBookCache(bookId);
+    }
+
+    /**
+     * 这一轮该刷新哪几本书的划线（v0.5.3，R03）—— 最多 limit 本，**按索引顺序**
+     * （= 最近 6 本在记的书 + 其余按划线数降序，见 {@link #compactIndex}）。
+     *
+     * 两趟，与 {@link #unsyncedIdeas} 同一套结构：
+     *   ① **从未同步过**的 —— 先把池子的量堆起来；
+     *   ② **已同步但超过 {@link #MARK_TTL_MS} 没更新**的 —— 让新增/删除的划线反映出来。
+     * 旧版只有第一趟，所以"有过缓存的书就再也不刷新"。
+     */
+    public static List<String> refreshQueue(Context c, int limit) {
+        List<String> out = new ArrayList<String>();
+        JSONArray idx = index(c);
+        if (idx == null) return out;
+        for (int i = 0; i < idx.length() && out.size() < limit; i++) {
+            String id = markCandidate(idx.optJSONObject(i));
+            if (id != null && !synced(c, id)) out.add(id);
+        }
+        for (int i = 0; i < idx.length() && out.size() < limit; i++) {
+            String id = markCandidate(idx.optJSONObject(i));
+            if (id != null && !out.contains(id) && !markFresh(c, id)) out.add(id);
+        }
+        return out;
+    }
+
+    /** 这本书有没有可能带划线？返回 bookId，否则 null */
+    private static String markCandidate(JSONObject b) {
+        if (b == null) return null;
+        String id = b.optString("bookId", "");
+        if (id.length() == 0) return null;
+        if (b.optInt("noteCount", 0) <= 0) return null;   // 零划线的书不必拉（防每轮重试）
+        return id;
     }
 
     /** 更新某条划线的章节名（异步反查到之后回填，避免下次再查） */
@@ -384,21 +492,10 @@ public final class NoteStore {
         }
     }
 
-    /** 还没同步过划线的书 id，最多 limit 本（按索引顺序 = 最近 6 本 + 划线数降序） */
-    public static List<String> unsynced(Context c, int limit) {
-        List<String> out = new ArrayList<String>();
-        JSONArray idx = index(c);
-        if (idx == null) return out;
-        for (int i = 0; i < idx.length() && out.size() < limit; i++) {
-            JSONObject b = idx.optJSONObject(i);
-            if (b == null) continue;
-            String id = b.optString("bookId", "");
-            if (id.length() == 0) continue;
-            if (b.optInt("noteCount", 0) <= 0) continue;    // 零划线的书不必拉（防每轮重试）
-            if (!synced(c, id)) out.add(id);
-        }
-        return out;
-    }
+    /**
+     * ⚠️ v0.5.2 的 `unsynced()` 已被 {@link #refreshQueue} 取代（v0.5.3，R03）——
+     * 旧版只挑"从没同步过"的书，导致有过缓存的书永远不更新。
+     */
 
     // ══════════════════════ ②b 想法 / 点评（v0.4.4）══════════════════════
     //
@@ -812,10 +909,21 @@ public final class NoteStore {
         HashSet<String> seen = new HashSet<String>();
         HashSet<String> books = new HashSet<String>();
         int ideaN = 0;
+        // 🔴 「只看想法」档**绝不跨层回落**（v0.5.3，R08）。
+        // v0.5.2 的写法是 `if (cs.isEmpty()) cs = idea ? markC : ideaC;` ——
+        // 于是"没有写过想法"或"想法还没预热到本地"的用户切到「想法」后，
+        // 抽出来的仍是**纯划线**（hasIdea=false），而"筛选已生效"就成了一个谎话；
+        // 更糟的是它还会被写进 K_CUR_K_i，之后 currentIn 一路沿用这条错的。
+        // 现在想法层没候选 → 整把为空 → pick 返回 null → 卡片画**明确空态**。
+        if (ideasSlot && ideaC.isEmpty()) {
+            CardDebug.note(c, "newBatch slot=true items=0 (想法层无候选，严格档不回落)");
+            return out;
+        }
         for (int i = 0; i < BATCH; i++) {
-            boolean idea = wantIdea[i] && !ideaC.isEmpty();
+            boolean idea = wantIdea[i];
             List<Cand> cs = idea ? ideaC : markC;
-            if (cs.isEmpty()) cs = idea ? markC : ideaC;      // 这一层还没料 → 退到另一层
+            // 只有全量档会走到这里：某一层还没预热到 → 退到另一层（混投档的容错，不是筛选）
+            if (cs.isEmpty()) cs = idea ? markC : ideaC;
             String[] s = drawOne(c, r, cs, idea, seen);
             if (s == null) continue;
             out.add(s);
@@ -944,13 +1052,16 @@ public final class NoteStore {
         // 每日一签：同一天不主动换
         if (!manual && dayKey().equals(p.getString(k(K_DAY, ideasSlot), ""))) {
             NoteStats cur = currentIn(c, ideasSlot);
-            if (cur != null) return cur;
+            // 严格档要**复核今天这条是否真的带想法**（v0.5.3，R08）：
+            // v0.5.2 的跨层回落可能把一条纯划线写成"今天这条"，此后每天都会沿用下去
+            if (cur != null && (!ideasSlot || cur.hasIdea())) return cur;
         }
 
         List<String[]> b = batch(c, ideasSlot);
         int pos = p.getInt(k(K_BATCH_POS, ideasSlot), -1) + 1;
         NoteStats n = resolve(c, b, pos);
-        if (pos < 0 || pos >= b.size() || n == null) {
+        // 档位不符（升级前落下的混合批次）也当成"没抽到" → 重建这一把
+        if (pos < 0 || pos >= b.size() || n == null || (ideasSlot && !n.hasIdea())) {
             // 这一把翻完了（或里面的书被清了）→ 抽新的一把
             b = newBatch(c, ideasSlot);
             saveBatch(c, ideasSlot, b);
@@ -1019,8 +1130,10 @@ public final class NoteStore {
             JSONObject o = hist.optJSONObject(i);
             if (o == null) continue;
             if (n == null) {
-                n = resolveSlot(c, o.optString("b", ""), o.optString("k", ""));
-                if (n == null) continue;           // 这条读不出来了 → 再往前找
+                NoteStats cand = resolveSlot(c, o.optString("b", ""), o.optString("k", ""));
+                if (cand == null) continue;                        // 这条读不出来了 → 再往前找
+                if (ideasSlot && !cand.hasIdea()) continue;        // 严格档：跳过历史里的纯划线（R08）
+                n = cand;
                 continue;
             }
             rest.put(o);
@@ -1033,7 +1146,7 @@ public final class NoteStore {
             int pos = p.getInt(k(K_BATCH_POS, ideasSlot), 0) - 1;
             if (pos < 0) pos = b.size() - 1;
             n = resolve(c, b, pos);
-            if (n == null) return null;
+            if (n == null || (ideasSlot && !n.hasIdea())) return null;
             ed.putInt(k(K_BATCH_POS, ideasSlot), pos);
         }
 
@@ -1189,17 +1302,48 @@ public final class NoteStore {
         }
     }
 
+    /**
+     * 写文件 —— **原子替换**（v0.5.3）。
+     *
+     * 上一版是 `new FileOutputStream(f, false)` 直接截断写：写到一半被打断（进程被回收、
+     * 电量骤降）就会留下半截 JSON，下一次读解析失败 → 被当成"没有缓存" → 重新拉；
+     * 如果此刻网络还不通，本记页就会掉进"空态"（而空态又可能触发同步）。
+     * 改成"先写同目录临时文件 → rename"：同一分区上的 rename 是原子的，
+     * 读者要么看到旧文件、要么看到完整的新文件，绝不会看到半截。
+     */
     private static void write(Context c, String name, String text) {
+        File dst = f(c, name);
+        File tmp = new File(dst.getParentFile(), name + ".tmp");
+        boolean written = false;
         FileOutputStream out = null;
         try {
-            out = new FileOutputStream(f(c, name), false);
+            out = new FileOutputStream(tmp, false);
             out.write(text.getBytes("UTF-8"));
             out.flush();
+            out.getFD().sync();        // 先落盘，再改名
+            written = true;
         } catch (Exception ignored) {
         } finally {
             if (out != null) {
                 try {
                     out.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        if (written && tmp.renameTo(dst)) return;
+        tmp.delete();                  // 写坏 / 改名失败的临时文件绝不能顶上去
+        // 兜底：临时文件方案不可用（极少数文件系统）→ 直接写，至少别丢这次更新
+        FileOutputStream o2 = null;
+        try {
+            o2 = new FileOutputStream(dst, false);
+            o2.write(text.getBytes("UTF-8"));
+            o2.flush();
+        } catch (Exception ignored) {
+        } finally {
+            if (o2 != null) {
+                try {
+                    o2.close();
                 } catch (Exception ignored) {
                 }
             }

@@ -184,6 +184,29 @@ public final class BookStore {
         write(c, P_CHAPTER + bookId + ".json", raw);
     }
 
+    // ── 清缓存（v0.5.3，R05）──
+
+    /**
+     * 清掉「本书」的全部本地缓存：书架快照 + 书籍进度 + 章节目录。
+     *
+     * 这三样**全是账号数据**（别人的书架、别人的进度），换 API Key 时必须一起失效 ——
+     * v0.5.2 之前本类**连 clear 方法都没有**（REVIEW 的 R05 缺口之一）。
+     * 调用方：{@link StatsStore#setKey}。
+     */
+    public static void clear(Context c) {
+        File dir = c.getFilesDir();
+        File[] fs = dir == null ? null : dir.listFiles();
+        if (fs != null) {
+            for (File f : fs) {
+                String n = f.getName();
+                // 连 `*.tmp`（原子写的半成品）一起清掉
+                if (n.equals(F_BOOK) || n.startsWith(F_BOOK + ".")
+                        || n.equals(F_SHELF) || n.startsWith(F_SHELF + ".")
+                        || n.startsWith(P_CHAPTER)) f.delete();
+            }
+        }
+    }
+
     // ── 文件读写（UTF-8）──
 
     private static File f(Context c, String name) {
@@ -213,17 +236,43 @@ public final class BookStore {
         }
     }
 
+    /**
+     * 写文件 —— **原子替换**（v0.5.3）：先写 `*.tmp` 再 rename。
+     * 上一版直接截断写，中断会留下半截 JSON（书架 30KB / 章节目录更大），
+     * 下次读解析失败就被当成"没有缓存"。
+     */
     private static void write(Context c, String name, String text) {
+        File dst = f(c, name);
+        File tmp = new File(dst.getParentFile(), name + ".tmp");
+        boolean written = false;
         FileOutputStream out = null;
         try {
-            out = new FileOutputStream(f(c, name), false);
+            out = new FileOutputStream(tmp, false);
             out.write(text.getBytes("UTF-8"));
             out.flush();
+            out.getFD().sync();
+            written = true;
         } catch (Exception ignored) {
         } finally {
             if (out != null) {
                 try {
                     out.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        if (written && tmp.renameTo(dst)) return;
+        tmp.delete();
+        FileOutputStream o2 = null;
+        try {
+            o2 = new FileOutputStream(dst, false);
+            o2.write(text.getBytes("UTF-8"));
+            o2.flush();
+        } catch (Exception ignored) {
+        } finally {
+            if (o2 != null) {
+                try {
+                    o2.close();
                 } catch (Exception ignored) {
                 }
             }

@@ -183,6 +183,16 @@ public class WeekCardView extends View {
     private BookStats book;
     /** 「本记」当前展示的那条划线（v0.4.0） */
     private NoteStats note;
+    /**
+     * 「本记」空态的自定义提示行（v0.5.3，R02/R08）。
+     *
+     * 为什么要它：空态有两种性质完全不同的原因，必须让用户分得清 ——
+     *   · **失败**（离线 / Key 失效）→ 「同步失败」+ 可重试；
+     *   · **真的没有**（新账号、只看想法但一条想法都没写过）→ 讲清"为什么空"，
+     *     而不是笼统地画一句「本记还没有准备好」让用户反复点刷新。
+     * null = 用默认文案。
+     */
+    private String noteHint = null;
     private long noteFetchedAt;
     /** 当前已解码的封面（{@code coverBmpId} 标明它属于哪本书，防止切书后串图） */
     private android.graphics.Bitmap coverBmp;
@@ -295,6 +305,7 @@ public class WeekCardView extends View {
                 : (PeriodRange.NOTE.equals(m) ? PeriodRange.NOTE : PeriodRange.WEEKLY));
         if (v.equals(mode)) return;
         mode = v;
+        noteHint = null;            // 换形态了，上一个形态的空态提示不再适用（v0.5.3）
         invalidate();
     }
 
@@ -345,6 +356,22 @@ public class WeekCardView extends View {
 
     public NoteStats getNote() {
         return note;
+    }
+
+    /** 当前「本书」形态显示的那本（v0.5.3，R06：「打开」要跟着屏幕上的这本走，不是落盘的那本） */
+    public BookStats getBook() {
+        return book;
+    }
+
+    /**
+     * 设「本记」空态的提示行（v0.5.3）。传 null = 回到默认文案。
+     * 只在 {@link #note} 为空时有意义 —— 有内容时这一行不画。
+     */
+    public void setNoteHint(String s) {
+        boolean same = (s == null) ? (noteHint == null) : s.equals(noteHint);
+        if (same) return;
+        noteHint = s;
+        invalidate();
     }
 
     /** 进度行用哪套序号空间（v0.4.4「只看想法」）—— App 在设内容前调用；桌面卡片不调（默认全量池） */
@@ -1211,18 +1238,26 @@ public class WeekCardView extends View {
         float availW = right - left;
 
         if (note == null) {
-            // 「只看想法」是另一个池子，空的理由与划线不同（它的源书少得多）—— 文案要跟着变
+            // 空态分三种，必须让用户分得清"在忙 / 出错了 / 真的没有"（v0.5.3，R02/R08）——
+            // 上一版只有"正在同步"与"本记还没有准备好"两种，导致"Key 失效"与"新账号"
+            // 都只能得到同一句含糊的话，用户唯一的动作是反复点刷新（而旧逻辑会把它打成循环）。
             String what = noteIdeasSlot ? "想法" : "划线笔记";
-            drawCentered(c, (left + right) / 2f, h * 0.42f,
-                    refreshing ? "正在同步" + what + "…" : "本记还没有准备好",
-                    SZ_EMPTY * unit, INK);
+            String main, sub;
+            if (refreshing) {
+                main = "正在同步" + what + "…";
+                sub = noteIdeasSlot
+                        ? "第一次要拉 55 本书的想法，几秒就好"
+                        : "第一次要同步 228 本书的笔记，稍等一会儿";
+            } else if (noteHint != null) {
+                main = noteHint;
+                sub = "点右上角 ⟳ 或下方「刷新」再试一次";
+            } else {
+                main = "本记还没有准备好";
+                sub = "点右上角 ⟳ 开始同步";
+            }
+            drawCentered(c, (left + right) / 2f, h * 0.42f, main, SZ_EMPTY * unit, INK);
             wrapCentered(c, (left + right) / 2f, h * 0.42f + SZ_EMPTY * unit * 1.9f,
-                    availW * 0.9f,
-                    refreshing ? (noteIdeasSlot
-                            ? "第一次要拉 55 本书的想法，几秒就好"
-                            : "第一次要同步 228 本书的笔记，稍等一会儿")
-                            : "点右上角 ⟳ 开始同步",
-                    SZ_SUB * unit, GRAY);
+                    availW * 0.9f, sub, SZ_SUB * unit, GRAY);
             noteContentH = 0f;
             noteViewH = 0f;
             noteScrollMax = 0f;
@@ -1577,7 +1612,13 @@ public class WeekCardView extends View {
             y += b.quote.length * b.lineH;
         }
         if (hasI) {
-            if (hasQ) y += b.tagBlock;
+            // 🔴 **只要画想法，就先占下「想法」小标那一行**（v0.5.3，R09）——
+            // 上一版写成 `if (hasQ) y += b.tagBlock;`：没有原文的独立想法（整本书评 /
+            // 章节点评，占全库想法的约 59%）排版时少算一整行，而绘制侧
+            // （{@link #drawNoteBody} 的 `segEnd + tagBlock + tSize`）**总是**先留出小标行。
+            // 结果：屏幕滚动上限少一行 → 长独立想法的最后一行滚不出来；导出图矮一截、
+            // 末行被页脚压住。判定必须与绘制同源：**有没有想法**，而不是有没有原文。
+            y += b.tagBlock;
             b.idea = (maxI <= 0) ? wrapAll(idea.trim(), textW, tSize)
                     : wrapMax(idea.trim(), textW, maxI, tSize);
             y += b.idea.length * b.lineH;

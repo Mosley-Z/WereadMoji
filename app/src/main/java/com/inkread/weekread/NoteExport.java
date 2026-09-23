@@ -145,7 +145,11 @@ public final class NoteExport {
 
         float bodyH = L.quote.length * L.lineH;
         if (L.idea.length > 0) {
-            if (L.quote.length > 0) bodyH += L.tagBlock;
+            // 与屏幕排版同一条规则（v0.5.3，R09）：**只要画想法就占下「想法」小标那一行**，
+            // 与有没有原文无关。绘制侧（见本文件 draw 里的 `segEnd + L.tagBlock + L.textSize`）
+            // 一直是这样算的 —— 上一版这里却只在有原文时才加，于是"无原文的长想法"
+            // 导出图矮了一整个 tagBlock（实测缺 51.584px），末行会被页脚压住。
+            bodyH += L.tagBlock;
             bodyH += L.idea.length * L.lineH;
         }
         if (bodyH < L.textSize) bodyH = L.textSize;          // 至少给一行的高度

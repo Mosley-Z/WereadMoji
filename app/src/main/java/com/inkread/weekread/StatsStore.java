@@ -42,8 +42,51 @@ public class StatsStore {
         return sp(c).getString(K_API, "");
     }
 
-    public static void setKey(Context c, String k) {
-        sp(c).edit().putString(K_API, k == null ? "" : k.trim()).commit();
+    /**
+     * 会话代次：**每次换 Key 自增**（v0.5.3，R05）。
+     *
+     * 异步请求在发起前记下当时的代次，回调里比对 —— 不等就说明"这是上一把 Key 的迟到结果"，
+     * 直接丢弃，绝不让它写进新会话的缓存（严格实现见各调用点）。
+     */
+    private static volatile long sGen;
+
+    public static long keyGen() {
+        return sGen;
+    }
+
+    /**
+     * 保存 API Key —— **Key 一变就统一失效全部个人数据缓存**（v0.5.3，R05）。
+     *
+     * 上一版的洞：这里只写了一个字段。而周/月统计、书架、书籍进度、章节目录、划线、想法、
+     * 每日一签**都不按账号区分**：从账号 A 换成 B 之后，屏幕上仍是 A 的书与统计，
+     * 而且 A 的缓存还会让 B 的请求"跳过预热"（以为已经拉过了）。更隐蔽的一层是抽取状态
+     * （今日一签的日期键 / 序号 / 当前条 / 历史栈 / 两个批次文件）—— 不清的话，
+     * 新账号第一天就会看到旧账号的"今日一签"，第二天才自愈。
+     *
+     * 不动的东西：卡片周期偏好、无障碍开关、更新器状态（这些跟账号无关）。
+     *
+     * @return true = Key 确实变了（已清缓存）；false = Key 与原来相同（什么都不做）
+     */
+    public static boolean setKey(Context c, String k) {
+        String v = k == null ? "" : k.trim();
+        String old = getKey(c);
+        sp(c).edit().putString(K_API, v).commit();
+        if (v.equals(old)) return false;
+        sGen++;                                     // 作废在途请求的回写（见 keyGen）
+        if (old.length() > 0) wipePersonalData(c);   // 原来是空的（首次填 Key）→ 本来就没数据
+        return true;
+    }
+
+    /**
+     * 失效**全部个人数据缓存**：周期统计 + 书架/进度/章节目录 + 划线/想法/抽取状态。
+     *
+     * 调用方只有 {@link #setKey}。`StatsStore.clearCache` 与 `NoteStore.clear` 早就写好了，
+     * 但 v0.5.2 之前**全仓库没有任何地方调用过它们** —— 这就是 R05 的根因。
+     */
+    private static void wipePersonalData(Context c) {
+        clearCache(c);
+        NoteStore.clear(c);
+        BookStore.clear(c);
     }
 
     // ── 卡片周期偏好（① B：设置页定默认，卡片左上角临时切换，改的是同一个值）──
