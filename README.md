@@ -188,6 +188,30 @@ bash tools/build.sh
 
 脚本会自动探测 `JAVA_HOME` / `ANDROID_HOME` / `PYTHON`，也可以用环境变量覆盖。
 
+#### dev 构建变体（`--dev`）
+
+```bash
+bash tools/build.sh --dev
+# 产物：dist/weread-stats-<版本号>-dev-debug.apk（不生成 update.json）
+```
+
+dev 变体给 aapt2 传 `--debug-mode` ⇒ manifest 里被插入 `android:debuggable="true"`。
+**它唯一开放的额外能力**是：`MainActivity` 的调试入口
+`am start -n com.inkread.weekread/.MainActivity --es api_key wrk-xxx` **只在 dev 包里生效**
+（发布包不带 `debuggable` ⇒ 该入口自动关闭）。这条通道用于给墨水屏设备配 Key
+（27 位的 Key 手打不现实），所以不能干脆删掉，只能靠构建开关关掉。
+
+除了 manifest 那一个标志与文件名后缀，dev 包与发布包**完全相同**：
+
+- 🔴 **仍用 release 签名**（同一套 `_keys/`）—— 否则覆盖安装不上，测试等于白做；
+- **包名、`versionCode`、`versionName` 都不变**；
+- **不生成 `dist/update.json`、不写 `dist/.last_version_code`** ⇒ 发布链路一点没被碰；
+- `bash tools/build.sh`（不带参数）的行为**与引入这个开关之前完全一致**。
+
+> ⚠️ dev 包落在 `dist/` 里，发布前记得删掉 —— 发版门禁 1 的约定是"`dist/` 只留当前发布版"，
+> 多一个 `.apk` 就会 FAIL（这是有意的 fail-closed）。
+> 顺手把 `dist/*-dev-debug.apk` 加进了 `.gitignore`，防止误提交。
+
 ### 签名密钥（不在仓库里）
 
 **私钥绝不入库、绝不公开** —— 应用签名唯一的意义，就是证明「这个更新来自原作者」。

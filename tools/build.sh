@@ -1,9 +1,31 @@
 #!/usr/bin/env bash
 # 微读墨记（微信读书周报）—— 免 Gradle 构建脚本（Windows / Git Bash）
 # 依赖：JDK 17+、Android SDK(build-tools 33.0.2 + platforms;android-33)、Python 3
-# 用法：bash tools/build.sh
+# 用法：bash tools/build.sh          # 发布包（默认；行为与"引入 --dev 开关之前"完全一致）
+#       bash tools/build.sh --dev    # dev 变体：manifest 里插入 android:debuggable="true"
+#                                    #   ⇒ 打开 MainActivity 的 `am start … --es api_key` 调试入口
+#                                    #   ⇒ 输出名带 -dev-debug 后缀
+#                                    #   🔴 仍用 **release 签名**（否则覆盖安装不上，测试等于白做）
+#                                    #   🔴 不生成 update.json、不写 dist/.last_version_code
 # 可移植：所有路径自动探测，也可用环境变量覆盖：JAVA_HOME / ANDROID_HOME / PYTHON / TOOLS_DIR
 set -e
+
+# ---- 参数解析（v0.6.1，TASK-003）----
+# 只加开关，**不改默认路径的任何行为**（签名、manifest、update.json 三处都不许受影响）。
+DEV=0
+for _a in "$@"; do
+  case "$_a" in
+    --dev) DEV=1 ;;
+    -h|--help)
+      echo "用法： bash tools/build.sh [--dev]"
+      echo "  无参数  = 发布包（默认）"
+      echo "  --dev   = 加 android:debuggable 的 dev 变体，仍用 release 签名、不动发布清单"
+      exit 0 ;;
+    *)
+      echo "错误：未知参数 '$_a'（只认 --dev / --help）" >&2
+      exit 2 ;;
+  esac
+done
 
 # ---- 工程根目录（先算出来，后面探测要用）----
 PROJ="$(cd "$(dirname "$0")/.." && pwd)"
@@ -157,7 +179,9 @@ case "$VERSION_CODE" in
     exit 1 ;;
 esac
 LVC_FILE="$DIST/.last_version_code"
-if [ -f "$LVC_FILE" ] && [ -z "$SKIP_VERSION_CHECK" ]; then
+# dev 构建**不参与**发版链路 ⇒ 跳过"versionCode 必须递增"检查，也**不写**这个状态文件。
+# （不然同一 VERSION_CODE 先跑发布包、再跑 dev 包，第 2 次会直接报错退出。）
+if [ -f "$LVC_FILE" ] && [ -z "$SKIP_VERSION_CHECK" ] && [ "$DEV" = "0" ]; then
   _last="$(tr -d ' \r\n' < "$LVC_FILE")"
   if [ -n "$_last" ] && [ "$VERSION_CODE" -le "$_last" ] 2>/dev/null; then
     echo "错误：VERSION_CODE=$VERSION_CODE 未大于上次构建的 $_last。"
@@ -171,6 +195,9 @@ echo "==> 工程: $PROJ"
 echo "    JDK=$JAVA_HOME"
 echo "    SDK=$ANDROID_HOME (build-tools $(basename "$BT_P"), platform $(basename "$(dirname "$JAR_P")"))"
 echo "    PY =$PYTHON"
+if [ "$DEV" = "1" ]; then
+  echo "    ⚠️  DEV 变体：manifest 将插入 android:debuggable=\"true\"（仍用 release 签名）"
+fi
 rm -rf "$BUILD"
 mkdir -p "$BUILD/gen" "$BUILD/classes" "$BUILD/dex" "$DIST"
 
@@ -178,11 +205,19 @@ echo "==> 1/7 编译资源 (aapt2 compile)"
 "$BT_P/aapt2.exe" compile --dir "$SRC_W\\res" -o "$BUILD_W\\res.zip"
 
 echo "==> 2/7 链接资源并生成 R.java (aapt2 link)"
+# dev 变体：让 aapt2 往 manifest 的 <application> 里插 android:debuggable="true"。
+# build-tools 33.0.2 `aapt2 link --help` 原文：
+#   "Inserts android:debuggable=\"true\" in to the application node of the manifest,
+#    making the application debuggable even on production devices."
+# ⇒ dev 变体**不需要手改 AndroidManifest.xml**，一个开关就够。
+AAPT_DEBUG=""
+if [ "$DEV" = "1" ]; then AAPT_DEBUG="--debug-mode"; fi
 "$BT_P/aapt2.exe" link \
   -o "$BUILD_W\\app-unsigned.apk" \
   -I "$JAR_W" \
   --manifest "$SRC_W\\AndroidManifest.xml" \
   --java "$BUILD_W\\gen" \
+  $AAPT_DEBUG \
   --min-sdk-version 23 \
   --target-sdk-version 30 \
   --version-code "$VERSION_CODE" \
@@ -263,7 +298,10 @@ if [ -n "$_miss" ]; then
   exit 1
 fi
 
-OUT_P="$DIST/weread-stats-$VERSION_NAME.apk"
+# dev 变体加后缀 ⇒ **绝不与发布包同名**（避免 dev 包被误当发布包挂上 Release）
+OUT_SUFFIX=""
+if [ "$DEV" = "1" ]; then OUT_SUFFIX="-dev-debug"; fi
+OUT_P="$DIST/weread-stats-$VERSION_NAME$OUT_SUFFIX.apk"
 OUT_W="$(w "$OUT_P")"
 
 # 旧 key 在前 —— v1/v2 恒由 lineage 里最老的签名者签，因此 Android 6–8（只认 v1/v2）
@@ -280,6 +318,19 @@ OUT_W="$(w "$OUT_P")"
 
 echo "    签名方案与签名者："
 "$BT_P/apksigner.bat" verify --print-certs "$OUT_W" | head -8
+
+# ---- dev 变体到此为止：**绝不触碰发布链路** ----
+# 不生成 update.json、不写 dist/.last_version_code（这两样都是"发布"的产物；
+# 一次 dev 构建若覆盖了它们，发布清单就被悄悄改掉了）。
+if [ "$DEV" = "1" ]; then
+  echo
+  echo "==> 完成(dev): $OUT_P"
+  echo "    ⏭  已跳过 update.json 与 dist/.last_version_code（发布链路未被触碰）"
+  echo "    ⚠️  dev 包留在 dist/ 会让发版门禁 1 FAIL ⇒ 发版前删掉它："
+  echo "         rm -f \"$OUT_P\""
+  ls -l "$DIST"
+  exit 0
+fi
 
 # ---- 7/7 生成版本清单 update.json（供 App「检查更新」读取）----
 echo
