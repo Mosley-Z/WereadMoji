@@ -1,6 +1,8 @@
 package com.inkread.weekread;
 
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Intent;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -14,7 +16,12 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.inkread.weekread.feature.lab.DefaultHomeProbe;
+import com.inkread.weekread.feature.lab.LabRunner;
+import com.inkread.weekread.feature.lab.ProbeResult;
+
 import java.io.File;
+import java.util.List;
 
 /**
  * 设置页：API Key + 桌面卡片开关 + **卡片显示周期（本周 / 本月）**。
@@ -34,8 +41,10 @@ import java.io.File;
  *   · **初始化**（默认页，第一次装完照顺序做）：API Key（含取 Key 说明）→ 无障碍 → 桌面卡片
  *     （开关 + 显示周期 + 状态）→「怎么用」；
  *   · **自定义**（纯个性化）：本记导出模板，即时生效。
- * 两个页面是同一 ScrollView 里的两个容器，切页只切 visibility —— 已填的 Key、已选的
- * 单选按钮状态天然保留，不需要在两个 Activity 之间搬运。
+ * v0.7（TASK-000）再加第三页：
+ *   · **实验室**：设备能力自检（🔴 只读）+ 常显一行「当前系统默认桌面」。
+ * 三个页面是同一 ScrollView 里的三个容器，切页只切 visibility —— 已填的 Key、已选的
+ * 单选按钮状态天然保留，不需要在多个 Activity 之间搬运。
  */
 public class SettingsActivity extends Activity {
 
@@ -49,6 +58,13 @@ public class SettingsActivity extends Activity {
     private TextView tvVersion;
     private TextView tvUpdateStatus;
     private Button btnUpdate;
+
+    // ── v0.7（TASK-000）实验室 · 设备能力自检（🔴 只读）──
+    private TextView tvLabHome;      // 常显行：当前系统默认桌面
+    private TextView tvLabResult;    // 五项结论 + 原始证据
+    private Button btnLabRun;
+    private boolean labRunning = false;
+    private String labText;          // 最近一次汇总文本（供「复制结果」）
 
     // ── v0.5.0 更新区状态机 ──
     // 一个按钮走完全程（检查 → 下载并安装 → 下载中 xx%），按钮文字始终说明「下一步会发生什么」。
@@ -75,19 +91,29 @@ public class SettingsActivity extends Activity {
         tvVersion = (TextView) findViewById(R.id.tv_version);
         tvUpdateStatus = (TextView) findViewById(R.id.tv_update_status);
         btnUpdate = (Button) findViewById(R.id.btn_update);
+        tvLabHome = (TextView) findViewById(R.id.tv_lab_home);
+        tvLabResult = (TextView) findViewById(R.id.tv_lab_result);
+        btnLabRun = (Button) findViewById(R.id.btn_lab_run);
 
-        // ── v0.4.3：顶部页签「初始化 / 自定义」，切的是两个容器的可见性 ──
+        // ── v0.4.3 顶部页签「初始化 / 自定义」；v0.7 加第三段「实验室」──
+        // 三个页面是同一个 ScrollView 里的三个容器，切页只切 visibility。
         final View pageInit = findViewById(R.id.page_init);
         final View pageCustom = findViewById(R.id.page_custom);
+        final View pageLab = findViewById(R.id.page_lab);
         final ScrollView svSettings = (ScrollView) findViewById(R.id.sv_settings);
-        ((SegTabView) findViewById(R.id.seg)).setListener(new SegTabView.Listener() {
+        SegTabView seg = (SegTabView) findViewById(R.id.seg);
+        // SegTabView 默认只给两段标签，这里显式扩到三段（它本来就是通用 N 段控件）
+        seg.setLabels(new String[]{"初始化", "自定义", "实验室"});
+        seg.setListener(new SegTabView.Listener() {
             @Override
             public void onSegSelected(int index) {
-                boolean init = (index == 0);
-                pageInit.setVisibility(init ? View.VISIBLE : View.GONE);
-                pageCustom.setVisibility(init ? View.GONE : View.VISIBLE);
-                // 切页回到顶部：两页高度不同，留着旧滚动位置会看着像"卡住了"
+                pageInit.setVisibility(index == 0 ? View.VISIBLE : View.GONE);
+                pageCustom.setVisibility(index == 1 ? View.VISIBLE : View.GONE);
+                pageLab.setVisibility(index == 2 ? View.VISIBLE : View.GONE);
+                // 切页回到顶部：各页高度不同，留着旧滚动位置会看着像"卡住了"
                 svSettings.scrollTo(0, 0);
+                // 常显行只在页面可见时算一次 —— 不轮询、不常驻
+                if (index == 2) refreshLabHome();
             }
         });
 
@@ -261,6 +287,20 @@ public class SettingsActivity extends Activity {
                 onUpdateButton();
             }
         });
+
+        // ── v0.7（TASK-000）：实验室 · 设备能力自检（🔴 只读）──
+        btnLabRun.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                runLab();
+            }
+        });
+        ((Button) findViewById(R.id.btn_lab_copy)).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                copyLabResult();
+            }
+        });
     }
 
     @Override
@@ -291,6 +331,74 @@ public class SettingsActivity extends Activity {
         } else {
             // v0.4.3：状态行在「桌面卡片」块末尾，无障碍按钮在它上方，故说"上面"
             tvStatus.setText("未开启 —— 点上面的「打开系统无障碍设置」，在「已下载的服务」里打开「微读墨记」。");
+        }
+    }
+
+    // ────────────────────── v0.7（TASK-000）：实验室 · 设备能力自检 ──────────────────────
+
+    /**
+     * 常显行：当前**系统默认桌面**（TASK-000 并入项 B3）。
+     *
+     * 只在实验室页可见时算一次 —— 不轮询、不常驻、不加权限。
+     *
+     * 🔴 刻意只说「系统默认桌面」，**不说「当前前台是谁」**：本 App 没有
+     *   `canRetrieveWindowContent`，前台包名本来就拿不到，写出来只会误导。
+     */
+    private void refreshLabHome() {
+        try {
+            tvLabHome.setText(DefaultHomeProbe.toDisplay(DefaultHomeProbe.probe(this)));
+        } catch (Throwable t) {
+            tvLabHome.setText("当前系统默认桌面：读取失败\n" + t);
+        }
+    }
+
+    /** 跑一轮设备能力自检（下后台线程，见 {@link LabRunner}）；期间按钮禁用，避免连点。 */
+    private void runLab() {
+        if (labRunning) return;
+        labRunning = true;
+        btnLabRun.setEnabled(false);
+        btnLabRun.setText(getString(R.string.lab_running));
+        tvLabResult.setText("");
+        final long t0 = System.currentTimeMillis();
+        try {
+            LabRunner.run(this, new LabRunner.Callback() {
+                @Override
+                public void onDone(String text, List<ProbeResult> results,
+                                   DefaultHomeProbe.Result home) {
+                    labRunning = false;
+                    labText = text;
+                    btnLabRun.setEnabled(true);
+                    btnLabRun.setText(getString(R.string.btn_lab_run));
+                    // 顺手把常显行也刷一遍 —— 用的就是这一轮的探测结果，不额外算
+                    tvLabHome.setText(DefaultHomeProbe.toDisplay(home));
+                    tvLabResult.setText(text);
+                    toast("自检完成（" + (System.currentTimeMillis() - t0) + "ms），可点「复制结果」");
+                }
+            });
+        } catch (Throwable t) {
+            labRunning = false;
+            btnLabRun.setEnabled(true);
+            btnLabRun.setText(getString(R.string.btn_lab_run));
+            toast("自检启动失败：" + t);
+        }
+    }
+
+    /** 把最近一次自检结果整段复制到剪贴板（用户要贴给对话用）。 */
+    private void copyLabResult() {
+        if (labText == null || labText.length() == 0) {
+            toast("先点「开始设备能力自检」");
+            return;
+        }
+        try {
+            ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            if (cm == null) {
+                toast("拿不到剪贴板服务");
+                return;
+            }
+            cm.setPrimaryClip(ClipData.newPlainText("微读墨记 · 设备能力自检", labText));
+            toast("已复制到剪贴板");
+        } catch (Throwable t) {
+            toast("复制失败：" + t);
         }
     }
 

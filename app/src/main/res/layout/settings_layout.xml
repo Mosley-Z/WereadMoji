@@ -475,6 +475,78 @@
                     android:textColor="#FF000000"
                     android:textSize="14sp" />
             </LinearLayout>
+
+            <!-- ============================================================
+                 实验室页（TASK-000 · V0.7）：设备能力自检（🔴 纯只读）
+                 ============================================================ -->
+            <LinearLayout
+                android:id="@+id/page_lab"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_lab"
+                    android:textColor="#FF000000"
+                    android:textSize="17sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:lineSpacingExtra="3dp"
+                    android:text="@string/lab_tip"
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="13sp" />
+
+                <!-- 常显行：当前系统默认桌面（TASK-000 并入项 B3） -->
+                <TextView
+                    android:id="@+id/tv_lab_home"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:lineSpacingExtra="3dp"
+                    android:textColor="#FF000000"
+                    android:textSize="13sp" />
+
+                <Button
+                    android:id="@+id/btn_lab_run"
+                    android:layout_width="match_parent"
+                    android:layout_height="46dp"
+                    android:layout_marginTop="10dp"
+                    android:background="@drawable/btn_ink"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:stateListAnimator="@null"
+                    android:text="@string/btn_lab_run"
+                    android:textColor="@color/btn_ink_text"
+                    android:textSize="17sp" />
+
+                <Button
+                    android:id="@+id/btn_lab_copy"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/btn_ink"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:stateListAnimator="@null"
+                    android:text="@string/btn_lab_copy"
+                    android:textColor="@color/btn_ink_text"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:id="@+id/tv_lab_result"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:lineSpacingExtra="3dp"
+                    android:textColor="#FF000000"
+                    android:textSize="12sp" />
+            </LinearLayout>
         </LinearLayout>
     </ScrollView>
 </LinearLayout>
