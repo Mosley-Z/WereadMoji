@@ -52,4 +52,11 @@
     <string name="upd_need_perm">需要先允许本应用「安装未知应用」，已为你打开设置页；允许后回来再点一次。</string>
     <string name="upd_failed">检查失败：%1$s</string>
     <string name="upd_dl_failed">下载失败：%1$s</string>
+
+    <!-- v0.7（TASK-000）：设置页第三段「实验室」· 设备能力自检（🔴 纯只读） -->
+    <string name="label_lab">实验室</string>
+    <string name="lab_tip">一键探测「这台设备能不能做某件事」。全程只读：不改任何系统设置、不申请任何权限、不联网。每项都给出「可用 / 不可用 / 本次探测不确定」三档结论和原始证据。</string>
+    <string name="btn_lab_run">开始设备能力自检</string>
+    <string name="btn_lab_copy">复制结果</string>
+    <string name="lab_running">自检中…</string>
 </resources>
