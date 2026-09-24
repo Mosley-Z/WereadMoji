@@ -2,6 +2,7 @@ package com.inkread.weekread;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
@@ -118,8 +119,15 @@ public class MainActivity extends Activity {
         anchorMonth = PeriodRange.startOf(PeriodRange.MONTHLY, 0);
 
         // 调试/导入入口：am start ... --es api_key wrk-xxx
+        //
+        // 🔴 v0.6.1（TASK-003 / R04）：**只在 dev 构建里接受**。
+        // MainActivity 是 exported 的 Launcher（必须），任何本机应用都能 `am start` 它；
+        // 发布包若无条件读这个 extra，就等于「**任何本机应用都能改写已存的 Key**」——
+        // 27 位的 Key 在墨水屏上手打不现实，所以我们不能干脆删掉这条通道。
+        // 闸门 = FLAG_DEBUGGABLE：发布包不带 android:debuggable ⇒ 恒 false ⇒ 入口关闭；
+        // dev 包由 `bash tools/build.sh --dev` 加 aapt2 `--debug-mode` 打开（详见 tools/build.sh）。
         String k = getIntent() == null ? null : getIntent().getStringExtra("api_key");
-        if (k != null && k.length() > 0) StatsStore.setKey(this, k);
+        if (k != null && k.length() > 0 && isDebuggableBuild()) StatsStore.setKey(this, k);
 
         tabbar.setListener(new TabBarView.Listener() {
             @Override
@@ -201,6 +209,23 @@ public class MainActivity extends Activity {
     private void setAnchor(long v) {
         if (PeriodRange.MONTHLY.equals(tabMode)) anchorMonth = v;
         else anchorWeek = v;
+    }
+
+    /**
+     * 本包是不是 debuggable 构建（v0.6.1，TASK-003 / R04）。
+     *
+     * <p>用途**单一**：给上面那条 `am start … --es api_key` 调试入口当闸门。
+     * <ul>
+     *   <li><b>发布包</b> —— manifest 里没有 {@code android:debuggable} ⇒ 恒 {@code false} ⇒ 入口关闭；</li>
+     *   <li><b>dev 包</b> —— {@code tools/build.sh --dev} 给 aapt2 传 {@code --debug-mode}，
+     *       manifest 被插入 {@code android:debuggable="true"} ⇒ {@code true} ⇒ 入口可用。</li>
+     * </ul>
+     *
+     * <p>🔴 定位要说清：这是**访问控制**，不是"安全边界"。它挡的是"任何本机应用**随手**就能改 Key"，
+     * 挡不住"有 root / 能跑 adb 的人"。真正的防护是**发布包根本不带这个能力**。
+     */
+    private boolean isDebuggableBuild() {
+        return (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
     }
 
     /** 按当前选项卡 + 锚点渲染一帧（缓存里没有就走空态，不会画错数据） */

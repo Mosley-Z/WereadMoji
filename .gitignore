@@ -15,6 +15,10 @@ lineage.bin
 # ---- 构建产物（build.sh 的输出，不入库）----
 build/
 dist/*.apk.idsig
+# dev 构建变体（TASK-003，`bash tools/build.sh --dev`）：只用于本机开放调试入口，
+# 绝不发布。它落在 dist/ 里是为了和发布包同一处、便于对照；这里拦一道防止误提交。
+# ⚠️ 发版门禁 1 扫的是**文件系统**的 dist/*.apk（不是 git），所以它仍会 FAIL 提醒你删掉。
+dist/*-dev-debug.apk
 # 本地增量校验用的状态文件，只对本机构建有意义
 dist/.last_version_code
 
