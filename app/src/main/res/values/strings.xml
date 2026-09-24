@@ -25,6 +25,7 @@
     <string name="label_period_note">本记</string>
     <string name="btn_export">导出</string>
     <string name="btn_open_a11y">打开系统无障碍设置</string>
+    <string name="btn_reset_card">重新同步卡片显示（卡片该出现却没出现时点这里）</string>
 
     <!-- v0.4.3：设置页拆「初始化 / 自定义」两页 -->
     <string name="label_a11y_group">桌面卡片无障碍</string>

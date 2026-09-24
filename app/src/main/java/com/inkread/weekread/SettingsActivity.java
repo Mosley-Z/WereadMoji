@@ -239,6 +239,21 @@ public class SettingsActivity extends Activity {
             }
         });
 
+        // ── v0.6.0：卡片显示状态的出口 ──
+        // 「翻离第 1 页就收起」靠桌面翻页事件判定，事件投递不是 100% 可靠。
+        // 万一漏投、卡片停在隐藏状态，用户在这里一键回到"按当前前台重算"。
+        ((Button) findViewById(R.id.btn_reset_card)).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!CardA11yService.isConnected()) {
+                    toast("卡片服务没在运行 —— 先打开上面的无障碍开关");
+                    return;
+                }
+                CardA11yService.resetPageGate();
+                toast("已重新同步 —— 回桌面看一眼");
+            }
+        });
+
         // ── v0.5.0：版本与更新 ──
         btnUpdate.setOnClickListener(new View.OnClickListener() {
             @Override

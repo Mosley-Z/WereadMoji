@@ -2,8 +2,10 @@ package com.inkread.weekread;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.ResolveInfo;
 import android.net.Uri;
 import android.view.View;
@@ -25,12 +27,13 @@ import java.util.Set;
  * 监听 TYPE_WINDOW_STATE_CHANGED，用事件里的包名判断前台是不是「桌面」。
  * 是桌面 → 卡片可见；切到任何别的应用（含我们自己的界面）→ 卡片立刻隐藏。
  *
- * ── 另外四类"让位" ──
+ * ── 另外五类"让位" ──
  * ① 进了 ELauncher 的隐藏页（「设置」，scrollX≥960）→ 让位（§22）；
  * ② 通知栏（状态栏）已下拉 → 让位，收起后自动恢复（§24，见 {@link #shadeOpen}）；
  * ③ 进了我们自己的界面（主页 / 设置页）→ 让位。
  * ④ 用户点按了桌面上的图标 → 让位（§25，见 {@link #iconGate}）。
- * 四者都只影响"是否显示"，**不翻转** onDesktop，避免出现回不来的状态。
+ * ⑤ **翻离桌面第 1 页** → 让位，回到第 1 页再显示（v0.6.0，见 {@link #pageGate}）。
+ * 五者都只影响"是否显示"，**不翻转** onDesktop，避免出现回不来的状态。
  * 桌面包名不是写死的，启动时用 PackageManager 查 CATEGORY_HOME 得到，
  * 这样 Tomo / OEM 桌面 / 用户装的第三方桌面都能认。
  *
@@ -144,6 +147,630 @@ public class CardA11yService extends AccessibilityService {
             }
         }
     };
+
+    // ══════════════════════ 桌面翻页闸门（v0.6.0） ══════════════════════
+
+    /**
+     * 「用户已经翻离桌面第 1 页」闸门。true 时卡片让位。
+     *
+     * ── 为什么需要它（用户诉求）──
+     * 卡片窗口 `[56,70][424,416]` 正好压在**两行图标**的位置上（桌面 4 行图标的
+     * 第 1、2 行是 y 82…176 / 260…354），而各页图标的 y 位置完全一样 ⇒
+     * 翻到第 2 页时卡片照旧挡着前两行。用户不要"其他页也显示"，要的是
+     * **离开第 1 页就收起来、回到第 1 页再显示**。
+     *
+     * ── 判据（2026-09-24 真机探针 + 像素真值）──
+     * Tomo 的翻页容器是 `com.astraabove.tomo:id/swipe_page`（`android.widget.FrameLayout`）。
+     * 翻页动画结束时它发 `TYPE_WINDOW_CONTENT_CHANGED`，**一个窗口里的证据组合**
+     * 决定"落在哪一页"。实测到的**全部**形态（每条都配了截图像素真值核对，
+     * 原始序列留档在 `_verify060/samples/`）：
+     *
+     *   ├ 静置（常规翻页）· 离开第 1 页  ：`cct=1` ×1
+     *   ├ 静置（常规翻页）· 落到第 1 页  ：`cct=1` ×2（间隔 98–135ms）
+     *   ├ 亮屏（**第 1 页与第 2 页完全同形**）：`cct=1` + `cct=0`（+ 窗口态事件）
+     *   ├ 亮屏后翻页 · 离开第 1 页       ：`cct=3` + `cct=2`，或**只有一条 `cct=3`**
+     *   ├ 亮屏后翻页 · 落到第 1 页       ：`cct=1` + `cct=3` + `cct=2`
+     *   └ 时钟整分跳字                  ：`TextView cct=2` + `FrameLayout cct=3` ← 见下
+     *
+     * ★ 三条关键结论 ★
+     *
+     * ① **`cct=0`（UNDEFINED）是"桌面 Activity 刚 resume"的标记** —— 亮屏与
+     *    从应用返回时，Tomo 会连发一条 `cct=1` + 一条 `cct=0` 的整窗重绘。
+     *    那条 `cct=1` **不是翻页** ⇒ 扣掉这份足迹再判（见 {@link #settleSwipe}）。
+     *    不过亮屏这件事本身另有更硬的信号：直接订阅 `ACTION_SCREEN_ON`
+     *（{@link #SCREEN_ON_IGNORE_MS}），亮屏后 700ms 内的指纹一律不听 ——
+     *    因为亮屏那簇的形态**不稳定**（见过 `cct=1`+`cct=0`，也见过 `cct=1`+`cct=3`），
+     *    靠内容去认它等于每次都在赌。
+     *
+     * ② **TEXT 位（`cct & 2`）= "第 1 页的时钟块被重建 / 消失"** —— 第 1 页有
+     *    时钟 / 日期块，它出现或消失都会让 TextView 的文本变化向上冒泡成
+     *    `cct=3 / cct=2`。于是"没有 `cct=0` 但有 TEXT 位"的窗口里：
+     *    带 `cct=1`（子树重绘）⇒ 落到第 1 页；≥2 条且无 `cct=1` ⇒ 亮屏后
+     *    那第一次翻页（时钟块消失）⇒ 离开第 1 页。
+     *
+     * ③ **孤立的 `cct=3`（只一条）要与"时钟整分跳字"区分** —— 这两者形态完全
+     *    一样，但**时钟整分那条前面必有一条 `TextView cct=2`**（时钟自己的文本
+     *    变化），而翻页没有（实测对照 4:1，见 {@link #lastHomeTextNodeAt}）。
+     *    判别不了时按"宁可多显示"处理：整分误判成翻页只会让卡片多藏一会儿，
+     *    翻页误判成整分才是用户真正不满意的方向。
+     *
+     * ⚠️ 这个判据**与桌面页数无关**：P2 ↔ P3 之间翻页同样是 1 条且无 TEXT，
+     * 所以桌面多于两页时也不会误判 —— 早期设想的"奇偶翻转"方案才会在那里失效。
+     *
+     * ── 为什么必须限定"当前前台桌面包"（踩过的坑）──
+     * 实测 `com.wetao.elauncher`（备用桌面）**也发** `FrameLayout cct=1`，
+     * 而它同样在 CATEGORY_HOME 名单里 ⇒ 它的后台事件会污染 Tomo 上的页面判定
+     * （真机日志里抓到过：人在 Tomo 桌面，ELauncher 的一条事件把状态改了）。
+     * 两道过滤：
+     *   ① 只认**系统默认桌面**那一个包（{@link #defaultHomePkg}）；
+     *   ② 会发 ViewPager 事件的桌面（ELauncher）一律不启用本判据 —— 它有自己那套
+     *      `scrollX` 判据（{@link #handleDesktopPage}），两套不要互相干扰。
+     *
+     * ── 与"进桌面"的关系（关键，别改回去）──
+     * "从第 2 页点开应用 → 按 HOME"实测回到的是**原来的第 2 页**，而这条路径
+     * 只会补一次 resume 重绘（`cct=1` + `cct=0`）**不是翻页** ⇒ 按上面结论 ①
+     * 整窗丢弃、闸门值**保留**。否则卡片会立刻显示在 P2 上、继续遮挡。
+     *
+     * ── 窗口态事件（`WINDOW_STATE_CHANGED LauncherActivity`）不再参与判定 ──
+     * 留它只为日志。⚠️ **不要**再拿它当"亮屏 / 回桌面"的指纹：实测 Tomo
+     * **每次翻页也会发**这条（2026-09-24 抓到：亮屏后左滑的序列是
+     * `cct=3` → 窗口态 → `cct=2`），早先一句"真正的翻页不会"是错的。
+     *
+     * ── 万一漏投怎么办 ──
+     * 失败方向按"宁可多显示"处理：判不准时一律当"在第 1 页"。另外留了两个恢复口：
+     * ① 服务重连（开关无障碍 / 重启）时闸门归零；② 设置页的「重新同步卡片显示」按钮
+     * （{@link #resetPageGate}）。
+     */
+    private boolean pageGate = false;
+
+    /** 窗口内 `cct=1`（**恰好** SUBTREE，不含 TEXT 位）的条数 */
+    private int swipeSub = 0;
+    /**
+     * 窗口内 FrameLayout 事件的**总条数**（cct 取值 0/1/2/3 都算一条）。
+     *
+     * 它把两种"只有 TEXT 没有纯 SUBTREE"的形态分开：
+     *   · 时钟整分跳字 = **1 条**（只有 cct=3，由 TextView 的文本变化冒泡上来）
+     *   · 亮屏后的第一次翻页（离开第 1 页）= **2 条**（cct=3 + cct=2，时钟块消失）
+     * 不数这个的话，整分会被当成"翻页离开"，卡片每分钟消失一次。
+     */
+    private int swipeTotal = 0;
+    /**
+     * 窗口内是否出现过 TEXT 位（`cct & 2`）。
+     *
+     * 这是"第 1 页的时钟 / 日期块被重建或消失"的指纹，见 {@link #pageGate} 结论 ②。
+     */
+    private boolean swipeText = false;
+    /**
+     * 窗口内是否出现过 `cct=0`（`CONTENT_CHANGE_TYPE_UNDEFINED`）。
+     *
+     * ★ 它是"桌面 Activity 刚 resume、整窗重绘"的标记（亮屏 / 从应用返回），
+     * 见 {@link #pageGate} 结论 ①。它不是"整窗作废"，而是"照这个数量**扣掉**
+     * resume 的足迹"，这样"亮屏后马上滑动并进同一窗口"也能正确判向（见 {@link #settleSwipe}）。
+     */
+    private int swipeZero = 0;
+    /** 窗口内是否出现过 `WINDOW_STATE_CHANGED LauncherActivity` —— **仅供日志**，不参与判定 */
+    private boolean swipeWinState = false;
+    /** 窗口是否开着（用来区分"第一条"和"后续"） */
+    private boolean swipeOpen = false;
+    /** 最近一条翻页指纹的到达时刻（`SystemClock.uptimeMillis()`），只用来在日志里报"窗口跨度" */
+    private long swipeLastAt = 0L;
+    /** 本窗口第一条翻页指纹的到达时刻 —— 与 {@link #swipeLastAt} 一起报出窗口跨度 */
+    private long swipeFirstAt = 0L;
+    /** 本窗口是否已经"延迟"过一次（见 {@link #SWIPE_LINGER_MS}）—— 只允许延一次 */
+    private boolean swipeLingered = false;
+
+    // ────────────────────────────────────────────────────────────────────────
+    // ELauncher 桌面翻页 / resume 判据（v0.6.0）
+    //
+    // 与 Tomo 那套（swipeSub / swipeText …）**完全独立**：那个桌面的翻页容器是
+    // 一个 `FrameLayout`，而 ELauncher 用 `androidx.viewpager.widget.ViewPager`，
+    // 事件语义不同。两套判据用"这个包发过 ViewPager 事件吗"（{@link #sawViewPager}）
+    // 自动分流，各自只在自己那一类桌面上生效。
+    //
+    // ELauncher 的事件面（2026-09-24 三轮真机探针，见 验证记录/37）：
+    //
+    //   ① 翻页 · 离开第 1 页（P1→P2）  `TextView cct=2 sx=524266` → `ViewPager cct=3 sx=480`
+    //   ② 翻页 · 落到第 1 页（P2→P1）  `TextView cct=2 sx=524255` → `ViewPager cct=3 sx=480`
+    //   ③ 桌面 resume（亮屏 / 按 HOME / 从应用返回）  `FrameLayout cct=1/3 sx=0` → `ViewPager cct=3 sx=480`
+    //   ④ 时钟整分跳字                 `TextView cct=2 sx=0`（×2，**没有** ViewPager）
+    //   ⑤ 边界回弹（在第 1 页右滑、在第 2 页左滑）  `ViewPager cct=1 sx=480`（×2，**没有** TextView）
+    //   ⑥ 进「设置」隐藏页              `ViewPager cct=1 sx=480` → `ViewPager cct=3 sx=960`
+    //
+    // ★ 为什么必须"等 ViewPager 来了才算"（而不是见到 TextView 就判）：
+    //   · ④ 整分那条 `TextView` 用 sx=0 就能挡掉，但 ② 与 ④ 的**类名与 cct 完全一样**，
+    //     只有 sx 不同 —— 多一道"有没有 ViewPager 伴随"的确认，等于把整分、
+    //     以及别的桌面（Tomo 的时钟块）都挡在门外。
+    //   · `sawViewPager` 是在收到 ViewPager 事件时才置位的，而 ViewPager 又是
+    //     **后**到的那一条 —— 所以结算必须推迟到窗口到期，不能在 TextView 上就地判。
+    //
+    // ★ ③ 为什么可以判成"回到第 1 页"：ELauncher 的 HOME / 亮屏 / 从应用返回
+    //   **一律回到第 1 页**（三轮实测 5/5：从第 2 页按 HOME、亮屏、进应用再返回，
+    //   截图像素真值全部落在第 1 页），与 Tomo"回到原来那一页"的行为**相反**。
+    //   所以这条 resume 指纹就是"应该显示卡片"的直接理由，见 {@link #settleElauncherWindow}。
+    // ────────────────────────────────────────────────────────────────────────
+
+    /** ELauncher 判据的窗口是否开着 */
+    private boolean elaOpen = false;
+    /** 窗口里见过的"翻页伴随"桌面 `TextView` 的 sx；0 = 没见过 */
+    private int elaTextSx = 0;
+    /** 窗口里见过桌面 `FrameLayout`（sx=0，= 桌面 resume）吗 */
+    private boolean elaFrame = false;
+    /** 窗口里见过桌面 `ViewPager` 吗（翻页与 resume 都会发，用来确认"这是本判据认的桌面"） */
+    private boolean elaVp = false;
+    /** 本窗口是哪个桌面包发起的 —— 结算时用来核对它是"发 ViewPager 的那类桌面" */
+    private String elaPkg = null;
+
+    /** ELauncher 判据的窗口长度（毫秒）。实测一次翻页/resume 的几条事件在 250ms 内到齐。 */
+    private static final long ELA_WINDOW_MS = 400L;
+    /**
+     * 翻页伴随的那条桌面 `TextView` 事件的 `scrollX` 下限。
+     *
+     * 实测值是 524255 / 524266（≈2^19，是那个时钟块 View 在翻页动画里的残值），
+     * 而**时钟整分那条是 0**。取 500000 作分界，把整分干净挡掉。
+     */
+    private static final int ELA_SX_MIN = 500000;
+    /** 实测：**落到第 1 页**时那条 `TextView` 的 sx（250ms / 600ms 两种手势各 2 次，全一致） */
+    private static final int ELA_SX_TO_P1 = 524255;
+    /** 实测：**离开第 1 页（去第 2 页）**时那条 `TextView` 的 sx（同上，全一致） */
+    private static final int ELA_SX_TO_P2 = 524266;
+    /**
+     * 方向分界：取上面两个实测值的**中点**。
+     *
+     * 🔴 这里必须用"中点分界"而不是"各自带容差比对" —— 两个值只差 11，
+     * 第一版给每个值配了 ±16 的容差，结果 `524255` 先被 `524266` 那个分支
+     * 吞掉（`|524255-524266| = 11 ≤ 16`），"回到第 1 页"全被判成"离开第 1 页"
+     * （真机 5 处复现）。**容差一定要小于两个实测值间距的一半。**
+     */
+    private static final int ELA_SX_SPLIT = (ELA_SX_TO_P1 + ELA_SX_TO_P2) / 2;
+    /** 认得出这两个实测值的范围；超出即"认不出"⇒ 不动作（宁可不改也不改错） */
+    private static final int ELA_SX_LO = ELA_SX_TO_P1 - 10;
+    private static final int ELA_SX_HI = ELA_SX_TO_P2 + 10;
+
+    /**
+     * 亮屏时刻（`SystemClock.uptimeMillis()`），0 = 本次服务生命周期内还没见过亮屏。
+     * 见 {@link #SCREEN_ON_IGNORE_MS}。
+     */
+    private long screenOnAt = 0L;
+
+    /**
+     * 最近一次"桌面自己的 TextView 内容变化"的时刻。
+     *
+     * ★ 它的唯一用途：把**时钟整分跳字**与**翻页**分开。两者都会让翻页容器发一条
+     * 孤立的 `FrameLayout cct=3`（TEXT 位），形态完全一样 ——
+     * 实测对照（2026-09-24，各 4 次）：
+     *
+     *   时钟整分（01:43:00 / 01:44:00 / 01:45:00 / 01:46:00，4/4 一致）
+     *       `TextView cct=2`   ← 时钟自己的文本变化，先到
+     *       `FrameLayout cct=3` ← 子树重绘向上冒泡
+     *   亮屏后翻页离开第 1 页（01:41:05）
+     *       `FrameLayout cct=3` ← **只有这一条，没有 TextView 事件**
+     *
+     * 所以"窗口附近有没有桌面 TextView 事件"就是判别点，而且**只看类名、
+     * 不读内容**，与 canReceiveWindowContent=false 不冲突。
+     */
+    private long lastHomeTextNodeAt = 0L;
+
+    /** 桌面 TextView 事件与翻页指纹算作"同一次"的最大间隔（毫秒），见 {@link #lastHomeTextNodeAt} */
+    private static final long HOME_TEXT_NODE_MS = 400L;
+
+    /**
+     * 亮屏后多久之内的翻页指纹一律忽略（毫秒）。
+     *
+     * ★ 为什么直接订阅系统亮屏广播，而不是从事件里"猜"亮屏 ——
+     * 亮屏时桌面 Activity 会 resume 并整窗重绘，Tomo 补发的那几条事件**形态不稳定**：
+     * 实测到过 `cct=1 + cct=0`（三次）、也见过 `cct=1 + cct=3`。后者与"真的翻回
+     * 第 1 页"（`cct=1 + cct=3 + cct=2`）几乎同形，只差一条 —— 靠事件内容去
+     * 分辨亮屏，等于每次都在赌。而 `ACTION_SCREEN_ON` 是**原因本身**，订阅它
+     * 就能把整段亮屏噪声一次性排除，不用再枚举变体。
+     *
+     * 700ms 的取值：实测亮屏附带的那簇在亮屏后 0–300ms 内到齐；而人手从
+     * 按电源键到把滑动做完至少 1 秒以上，所以 700ms 能干净地切开两者。
+     * 万一用户真的在 700ms 内滑完，代价只是"这一次没识别"，卡片停在上次状态
+     *（按"宁可多显示"的失败方向处理），下一次滑动就会纠正。
+     */
+    private static final long SCREEN_ON_IGNORE_MS = 700L;
+
+    /** 只认"屏幕亮了"这一个动作 —— 见 {@link #SCREEN_ON_IGNORE_MS} */
+    private BroadcastReceiver screenOnRx;
+
+    /**
+     * 翻页窗口长度（毫秒）—— 每收到一条指纹就**从它重新计时**。
+     *
+     * 为什么要开窗口而不是"收到一条就判"：一次翻页会发两条（间隔实测 103ms 到
+     * 数百 ms 不等），必须等到窗口结束才知道这次一共几条、有没有 TEXT 位。
+     * 400ms 是常见间隔的数倍余量；用户连续两次翻页（P1→P2→P3）通常隔 1 秒以上，
+     * 所以 400ms 既能收齐一次翻页、又不至于把两次翻页并成一簇。
+     * 万一证据模棱两可（只有一条 TEXT 事件），会再延 {@link #SWIPE_LINGER_MS} 等伙伴。
+     */
+    private static final long SWIPE_WINDOW_MS = 400L;
+
+    /**
+     * "拿不准就再等一会"的延时（毫秒）。
+     *
+     * 为什么需要它 —— 2026-09-24 真机踩到的坑：一次翻页的两条事件
+     *（`cct=3` 与 `cct=2`）**间隔并不稳定**，实测出现过 >220ms 的情况；
+     * 早先按"间隔 > 220ms 就是新一簇"立刻结算，于是这一对被打散成两个窗口
+     * （各 1 条），判据读到的是两条"时钟整分"⇒ 左滑完全没被识别，
+     * 卡片留在第 2 页上继续遮挡（并在随后"从应用返回"时把错误延续下去）。
+     *
+     * 现在不吃间隔这个赌注：窗口只有**一个**截止时间，
+     * 若到期时证据是"模棱两可"的（只有一条 TEXT 事件 —— 既可能是时钟整分，
+     * 也可能是半次翻页），就**再加 400ms** 等它的伙伴；伙伴来了就合并成一次翻页。
+     * 时钟整分没有伙伴，等完仍判"不动"，代价只是一次多余的 400ms。
+     */
+    private static final long SWIPE_LINGER_MS = 400L;
+
+    /** 翻页容器的类名 —— swipe_page 是 FrameLayout */
+    private static final String SWIPE_NODE_CLS = "android.widget.FrameLayout";
+    /** `CONTENT_CHANGE_TYPE_SUBTREE` */
+    private static final int CCT_SUBTREE = 1;
+    /** `CONTENT_CHANGE_TYPE_TEXT` —— 见 {@link #swipeText} */
+    private static final int CCT_TEXT = 2;
+    /** `CONTENT_CHANGE_TYPE_UNDEFINED` —— 见 {@link #swipeZero} */
+    private static final int CCT_UNDEFINED = 0;
+
+    /**
+     * 系统**默认**桌面包（`MATCH_DEFAULT_ONLY`）—— 翻页指纹只在这一个包上生效。
+     *
+     * 为什么不是"当前前台桌面"：ELauncher 也是 CATEGORY_HOME，点图标进它一次，
+     * "前台桌面"就变成它了，而它那份 `FrameLayout` 事件的语义和 Tomo 的
+     * `swipe_page` 完全不同（真机上抓到这个污染：切进 ELauncher 再回来，卡片被
+     * 它的事件改成了"显示"）。锁在"系统默认桌面"上就没这个问题。
+     *
+     * ★ **运行期自动适配**（v0.6.0）：用户换默认桌面后**不必重启无障碍服务** ——
+     * 见到"别的桌面包在活动"就地重查一次，见 {@link #maybeRefreshDefaultHome}。
+     */
+    private String defaultHomePkg = null;
+    /**
+     * 上一次重查默认桌面的时刻（`SystemClock.uptimeMillis()`），0 = 还没查过。
+     * 见 {@link #maybeRefreshDefaultHome} 的冷却说明。
+     */
+    private long lastHomeResolveAt = 0L;
+    /** 两次重查默认桌面之间的最小间隔 —— 解析要走一次 PackageManager IPC，不能每条事件都查 */
+    private static final long HOME_RESOLVE_MIN_MS = 10_000L;
+    /**
+     * 默认桌面刚被换掉的时刻（`SystemClock.uptimeMillis()`），0 = 没过。
+     * 见 {@link #HOME_CHANGE_IGNORE_MS}。
+     */
+    private long homeChangedAt = 0L;
+    /**
+     * 换桌面后的**抑制窗**：期内桌面事件一律不听。
+     *
+     * 理由（真机踩到）：换桌面那一刻，新桌面正在做**冷启动整窗重绘**，而它的指纹
+     * 与"真的翻了一页"**完全同形** —— 实测 Tomo 接手默认桌面时，那条孤立的
+     * `FrameLayout` TEXT 事件被判成"离开第 1 页"，卡片就此藏死（按 HOME 也回不来，
+     * 因为 `desk == onDesktop` 不会触发重算）。等它几百毫秒稳定下来，判据才可靠。
+     *
+     * 与 {@link #SCREEN_ON_IGNORE_MS} 同一个思路：**宁可少让位一次，也不能把卡片藏死**
+     * —— 少让位一次用户看得出来（第 2 页多显示一会儿），藏死则像是应用坏了。
+     */
+    private static final long HOME_CHANGE_IGNORE_MS = 2_000L;
+    /** 见 {@link #homeChangedAt}：一个抑制窗里最多留几条日志，免得刷屏 */
+    private int homeSettleLogged = 0;
+    /**
+     * 发过 ViewPager 事件的桌面包 —— 这类桌面走 {@link #handleDesktopPage} 的
+     * `scrollX` 判据，**不再**启用本帧指纹，免得两套判据在同一台上互相打架。
+     */
+    private final Set<String> sawViewPager = new HashSet<>();
+
+    /**
+     * 结算当前窗口（窗口到期、或被新一簇打断时调用）。
+     *
+     * 分流规则（每一条都在真机 + 截图像素真值上验过，见 {@link #pageGate} 的形态表）：
+     *
+     * 第一步：**扣掉 resume 重绘的足迹**。
+     * resume 重绘 = 一条 `cct=1` + 一条 `cct=0`（见 {@link #swipeZero}），
+     * 它那条 `cct=1` 不是翻页，但它可能跟紧随其后的真翻页并进同一个窗口
+     * （亮屏后马上滑动，间隔 < 220ms）。所以不是"整窗丢弃"，而是**扣掉一份**：
+     *
+     *   sub' = max(0, sub - 1)          （窗口里有 cct=0 时才扣）
+     *   total' = total - zeroCount - (sub≥1 ? 1 : 0)
+     *
+     * 扣完再看剩下的（`sub'` / `total'`）：
+     *
+     *   · total'==0                       → 不动（就是一次纯亮屏 / 纯返回桌面）
+     *   · !text                           → 纯翻页：leave = (sub' < 2)
+     *   · text && sub'≥1                   → **落到第 1 页**（第 1 页的时钟块被重建）
+     *   · text && sub'==0 && total'≥2      → **离开第 1 页**（亮屏后首次翻页：时钟块消失）
+     *   · text && sub'==0 && total'==1     → 先延一次等伙伴；还是没有就按
+     *     **有没有桌面 TextView 伴随**分流：有 ⇒ 时钟整分（不动）；
+     *     没有 ⇒ **离开第 1 页**（只发一条 `cct=3` 的翻页形态）。
+     *
+     * 举四个实测过的例子（都验过）：
+     *   纯亮屏              `cct=1, cct=0`                       → total'=0            → 不动 ✓
+     *   亮屏+左滑并窗        `cct=1, cct=0, cct=3, cct=2`          → text, sub'=0, tot'=2 → 离开 ✓
+     *   亮屏+右滑并窗        `cct=1, cct=0, cct=1, cct=3, cct=2`   → text, sub'=1         → 落到 ✓
+     *   亮屏后右滑（分两窗） `cct=1, cct=3, cct=2`                 → text, sub'=1         → 落到 ✓
+     */
+    private void settleSwipe() {
+        if (!swipeOpen) return;
+        swipeOpen = false;
+        if (ui != null) ui.removeCallbacks(applySwipeWindow);
+        int sub = swipeSub;
+        int total = swipeTotal;
+        boolean text = swipeText;
+        int zero = swipeZero;
+        boolean ws = swipeWinState;
+        boolean lingered = swipeLingered;
+        swipeSub = 0;
+        swipeTotal = 0;
+        swipeText = false;
+        swipeZero = 0;
+        swipeWinState = false;
+        swipeLingered = false;
+        if (total == 0) return;
+
+        // 扣掉 resume 重绘的足迹（一条 cct=1 + zero 条 cct=0）
+        int subEff = sub;
+        int totalEff = total;
+        if (zero > 0) {
+            if (sub >= 1) {
+                subEff = sub - 1;
+                totalEff = total - zero - 1;
+            } else {
+                totalEff = total - zero;
+            }
+        }
+        if (totalEff <= 0) {
+            // 纯亮屏 / 纯返回桌面：没有任何翻页证据，维持现状
+            CardDebug.note(this, "swipe drop (resume 重绘 sub=" + sub + " total=" + total
+                    + " zero=" + zero + " text=" + text + " ws=" + ws + ")");
+            return;
+        }
+
+        boolean leave;
+        if (!text) {
+            leave = subEff < 2;                      // 1 条 = 离开第 1 页，≥2 条 = 落到第 1 页
+        } else if (subEff >= 1) {
+            leave = false;
+        } else if (totalEff >= 2) {
+            leave = true;
+        } else if (!lingered) {
+            // 只有一条 TEXT 事件 —— 既可能是**时钟整分跳字**，也可能是**半次翻页**
+            //（伙伴那条还没到，实测两条间隔能超过 220ms）。不下结论：把窗口
+            // 原样存回去、再等 SWIPE_LINGER_MS，看伙伴来不来。只允许延一次。
+            CardDebug.note(this, "swipe linger (等伙伴 sub=" + sub + " total=" + total
+                    + " zero=" + zero + " ws=" + ws + ")");
+            swipeLingered = true;
+            swipeOpen = true;
+            swipeSub = sub;
+            swipeTotal = total;
+            swipeText = text;
+            swipeZero = zero;
+            swipeWinState = ws;
+            if (ui != null) ui.postDelayed(applySwipeWindow, SWIPE_LINGER_MS);
+            return;
+        } else {
+            // 等过了、伙伴还是没来。这条孤立 TEXT 指纹有两种可能，靠"窗口附近有没有
+            // 桌面 TextView 事件"分开（见 lastHomeTextNodeAt 的实测对照）：
+            boolean nearbyTextNode = lastHomeTextNodeAt != 0
+                    && lastHomeTextNodeAt >= swipeFirstAt - HOME_TEXT_NODE_MS
+                    && lastHomeTextNodeAt <= swipeLastAt + HOME_TEXT_NODE_MS;
+            if (nearbyTextNode) {
+                // 时钟整分跳字（时钟自己的 TextView 变了，子树跟着重绘）→ 什么都不做
+                CardDebug.note(this, "swipe ignore (整分, 有 TextView 伴随 sub=" + sub
+                        + " total=" + total + " span=" + (swipeLastAt - swipeFirstAt) + "ms)");
+                return;
+            }
+            // 没有 TextView 伴随 ⇒ 是"亮屏后翻页离开第 1 页"那种只发一条 cct=3 的形态
+            leave = true;
+        }
+        CardDebug.note(this, "swipe sub=" + sub + "→" + subEff + " total=" + total + "→" + totalEff
+                + " text=" + text + " zero=" + zero + " ws=" + ws
+                + " span=" + (swipeLastAt - swipeFirstAt) + "ms"
+                + " → " + (leave ? "离开第1页" : "落到第1页") + " (cur=" + pageGate + ")");
+        if (leave != pageGate) {
+            pageGate = leave;
+            applyVisibility();
+        }
+    }
+
+    private final Runnable applySwipeWindow = new Runnable() {
+        @Override
+        public void run() {
+            settleSwipe();
+        }
+    };
+
+    /**
+     * 丢弃还没结算的翻页窗口 —— 整窗作废，不写任何状态。
+     *
+     * 调用点：服务销毁、设置页手动重置。**注意"进桌面"不再走这里**：
+     * 进桌面只把窗口标记成"见过窗口态"（因为亮屏 / 回桌面附带的那条 cct=1
+     * 与"回桌面后真的翻了一次页"要靠 TEXT 位区分，直接丢会误伤后者）。
+     */
+    private void cancelSwipeWindow() {
+        if (!swipeOpen) return;
+        swipeOpen = false;
+        swipeSub = 0;
+        swipeTotal = 0;
+        swipeText = false;
+        swipeZero = 0;
+        swipeWinState = false;
+        swipeLingered = false;
+        if (ui != null) ui.removeCallbacks(applySwipeWindow);
+    }
+
+    /**
+     * 作废 ELauncher 判据的未结算窗口（不清 {@code pageGate} 本身）。
+     *
+     * 用途与 {@link #cancelSwipeWindow} 对称：亮屏、服务重连、手动重置时，
+     * 把"半截窗口"扔掉，免得它带着过期的证据在 400ms 后改状态。
+     */
+    private void cancelElaWindow() {
+        if (!elaOpen) return;
+        elaOpen = false;
+        elaTextSx = 0;
+        elaFrame = false;
+        elaVp = false;
+        elaPkg = null;
+        if (ui != null) ui.removeCallbacks(applyElaWindow);
+    }
+
+    /** 把 ELauncher 判据的字段全部归零（服务重连 / 手动重置用，无回调可摘） */
+    private void resetElaFields() {
+        elaOpen = false;
+        elaTextSx = 0;
+        elaFrame = false;
+        elaVp = false;
+        elaPkg = null;
+    }
+
+    /**
+     * 桌面内又收到一条 `WINDOW_STATE_CHANGED LauncherActivity`（亮屏、从应用回到桌面、翻页）。
+     *
+     * ⚠️ **它不再影响判定，只是打个日志标记**。曾经拿它当"亮屏 / 回桌面"的指纹，
+     * 后来实测发现 Tomo **每次翻页也发**这条（亮屏后左滑的序列是
+     * `cct=3` → 窗口态 → `cct=2`），所以那个假设是错的、已废弃。
+     * 现在"亮屏 / 回桌面"由 {@link #swipeZero}（`cct=0`）来识别 —— 那是原因本身。
+     * 窗口也**不再延长**：延长只会把后面真正翻页的事件并进来。
+     */
+    private void noteLauncherWindowState() {
+        if (!swipeOpen) return;
+        swipeWinState = true;
+    }
+
+    /**
+     * 记下"桌面自己的 TextView 内容变化"（时钟/日期块）—— 见 {@link #lastHomeTextNodeAt}。
+     *
+     * ⚠️ 必须在 {@link #handleLauncherSwipe} **之前**调用：实测时钟整分时
+     * TextView 那条**先到**、`FrameLayout cct=3` 后到，等翻页指纹开窗时
+     * TextView 早过去了，反过来就抓不到。
+     */
+    private void noteHomeTextNode(String pkg, String cls) {
+        if (defaultHomePkg == null || !pkg.equals(defaultHomePkg)) return;
+        if (!cls.endsWith("TextView")) return;
+        lastHomeTextNodeAt = android.os.SystemClock.uptimeMillis();
+    }
+
+    /**
+     * ELauncher 判据的事件入口：把窗口内三类事件记下来，到期交给
+     * {@link #settleElauncherWindow} 结算。形态表见 {@link #elaOpen} 上面那段说明。
+     *
+     * 只收三种（其余一律不参与）：
+     *   · `ViewPager`                    —— 确认"这是本判据认的桌面"（Tomo 从不发这条）
+     *   · `FrameLayout` 且 `sx==0`        —— 桌面 resume（亮屏 / 按 HOME / 从应用返回）
+     *   · `TextView` 且 `cct=2` 且 `sx≥ELA_SX_MIN` —— 翻页伴随（整分那条 sx=0，被挡掉）
+     */
+    private void noteElauncherWindow(String pkg, String cls, AccessibilityEvent event) {
+        if (!isLauncher(pkg)) return;
+        if (sOwnUiForeground) return;              // 在自家界面里一切两清
+        boolean isVp = cls.endsWith("ViewPager");
+        boolean isFrame = SWIPE_NODE_CLS.equals(cls);
+        boolean isText = cls.endsWith("TextView");
+        if (!isVp && !isFrame && !isText) return;
+        int sx = 0;
+        try {
+            sx = event.getScrollX();
+        } catch (Throwable ignored) {
+        }
+        if (isFrame && sx != 0) return;            // resume 指纹必是 sx=0
+        if (isText) {
+            if (sx < ELA_SX_MIN) return;           // 时钟整分跳字（sx=0）在这里被挡掉
+            int cct = 0;
+            try {
+                cct = event.getContentChangeTypes();
+            } catch (Throwable ignored) {
+            }
+            if (cct != CCT_TEXT) return;           // 翻页伴随那条实测是 cct=2
+        }
+        elaOpen = true;
+        elaPkg = pkg;
+        if (isVp) elaVp = true;
+        if (isFrame) elaFrame = true;
+        if (isText) elaTextSx = sx;
+        if (ui != null) {
+            ui.removeCallbacks(applyElaWindow);
+            ui.postDelayed(applyElaWindow, ELA_WINDOW_MS);
+        }
+    }
+
+    /**
+     * ELauncher 判据的窗口结算。分流规则（每条都在三轮真机上验过，见 {@link #elaOpen}）：
+     *
+     *   · 窗口里**没有** `ViewPager`            → 不动
+     *     （Tomo 的 FrameLayout 翻页事件、ELauncher 的时钟整分都从这里被丢掉）
+     *   · 有 `FrameLayout(sx=0)`               → **落到第 1 页**（桌面 resume，实测 5/5）
+     *   · 有 `TextView` 且 sx ∈ [524245, 524276] → 真翻页，按 {@link #ELA_SX_SPLIT} 定方向
+     *     （> 分界 = 离开第 1 页；≤ 分界 = 落到第 1 页）
+     *   · 其余 sx 认不出来                      → 不动（宁可不改，也不改错）
+     */
+    private void settleElauncherWindow() {
+        if (!elaOpen) return;
+        elaOpen = false;
+        if (ui != null) ui.removeCallbacks(applyElaWindow);
+        boolean frame = elaFrame, vp = elaVp;
+        int sx = elaTextSx;
+        String pkg = elaPkg;
+        elaFrame = false;
+        elaVp = false;
+        elaTextSx = 0;
+        elaPkg = null;
+        // ① 没有 ViewPager ⇒ 不是"发 ViewPager 的那类桌面"的翻页/resume
+        if (!vp || pkg == null || !sawViewPager.contains(pkg)) return;
+        boolean leave;
+        if (frame) {
+            leave = false;                          // ② 桌面 resume ⇒ 回到第 1 页
+        } else if (sx >= ELA_SX_LO && sx <= ELA_SX_HI) {
+            leave = sx > ELA_SX_SPLIT;              // ③/④ 真翻页，按 sx 落在分界的哪一侧定向
+        } else {
+            // ⑤ 认不出的 sx（比如 ROM 换了残值）⇒ 不动作，只留痕，便于日后诊断
+            CardDebug.note(this, "elaSwipe 不动 (frame=" + frame + " vp=" + vp
+                    + " sx=" + sx + " cur=" + pageGate + ")");
+            return;
+        }
+        CardDebug.note(this, "elaSwipe frame=" + frame + " sx=" + sx
+                + " → " + (leave ? "离开第1页" : "落到第1页") + " (cur=" + pageGate + ")");
+        if (leave != pageGate) {
+            pageGate = leave;
+            applyVisibility();
+        }
+    }
+
+    /** {@link #ELA_WINDOW_MS} 到期回调 */
+    private final Runnable applyElaWindow = new Runnable() {
+        @Override
+        public void run() {
+            settleElauncherWindow();
+        }
+    };
+
+    /**
+     * 订阅系统亮屏广播 —— 见 {@link #SCREEN_ON_IGNORE_MS} 说明为什么要它。
+     *
+     * 运行时注册即可，不需要权限、也不用写进清单（`ACTION_SCREEN_ON` 是系统广播，
+     * 只允许系统发，但任何应用都能注册接收）。注册失败不影响主流程 ——
+     * 拿不到就退回"靠 `cct=0` 认亮屏"那套（见 {@link #swipeZero}），
+     * 所以这里吞掉异常、只记一条日志。
+     */
+    private void registerScreenOn() {
+        if (screenOnRx != null) return;
+        screenOnRx = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context c, Intent i) {
+                screenOnAt = android.os.SystemClock.uptimeMillis();
+                cancelSwipeWindow();               // 亮屏附带的那半截窗口直接作废
+                CardDebug.note(CardA11yService.this, "SCREEN_ON 收到 → 忽略其后 "
+                        + SCREEN_ON_IGNORE_MS + "ms 内的翻页指纹");
+            }
+        };
+        try {
+            registerReceiver(screenOnRx, new IntentFilter(Intent.ACTION_SCREEN_ON));
+        } catch (Throwable t) {
+            screenOnRx = null;
+            CardDebug.note(this, "SCREEN_ON 注册失败：" + t);
+        }
+    }
+
+    private void unregisterScreenOn() {
+        if (screenOnRx == null) return;
+        try {
+            unregisterReceiver(screenOnRx);
+        } catch (Throwable ignored) {
+        }
+        screenOnRx = null;
+    }
+
 
     // ── 通知栏（状态栏）让位闸门 ──
 
@@ -372,12 +999,28 @@ public class CardA11yService extends AccessibilityService {
         onDesktop = true;
         desktopPage = 0;
         pendingPage = -1;
+        // 服务刚连上时桌面停在哪一页无从得知 ⇒ 按"第 1 页"乐观处理（宁可先显示出来，
+        // 用户翻一下页就会纠正）。这同时是"万一闸门卡住"的兜底恢复口之一。
+        pageGate = false;
+        swipeOpen = false;
+        swipeSub = 0;
+        swipeTotal = 0;
+        swipeText = false;
+        swipeZero = 0;
+        swipeWinState = false;
+        swipeLingered = false;
+        swipeLastAt = 0L;
+        swipeFirstAt = 0L;
         shadeOpen = false;                          // 服务刚连上时通知栏一定没下拉
         iconGate = false;                           // 同理，刚连上时不存在"刚点过图标"
         iconGateAt = 0L;
         hideGate = false;                           // 也没人长按过（进程刚起来）
         hideUntil = 0L;
         menuOpen = false;
+        screenOnAt = 0L;
+        lastHomeTextNodeAt = 0L;
+        resetElaFields();
+        registerScreenOn();
         refresh();
         CardDebug.note(this, "service connected, enabled=" + CardPrefs.isEnabled(this)
                 + ", ownUi=" + sOwnUiForeground);
@@ -407,9 +1050,19 @@ public class CardA11yService extends AccessibilityService {
                     + " ownUi=" + sOwnUiForeground);
         }
 
-        // ── 桌面翻页：非第 1 页时卡片让位（§21.5） ──
+        // ── 桌面翻页：非第 1 页时卡片让位（§21.5 / §v0.6.0） ──
         // 翻页不换窗口，所以不会有 WINDOW_STATE_CHANGED，只能靠这一条。
+        // 两个桌面的翻页事件形态不同，各判各的、互不影响：
+        //   · Tomo      → swipe_page 的 FrameLayout content-changed（见 handleLauncherSwipe）
+        //   · ELauncher → viewPager 的 scrollX（见 handleDesktopPage）
         if (type == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+            maybeRefreshDefaultHome(pkg);           // 用户可能刚换过默认桌面（带冷却）
+            // 刚换过默认桌面：新桌面这几百毫秒在做冷启动整窗重绘，指纹与"真翻页"同形
+            //（实测踩到：Tomo 接手时被判成"离开第 1 页"，卡片藏死）。这段一律不听。
+            if (inHomeChangeSettle(pkg, clsForLog)) return;
+            noteHomeTextNode(pkg, clsForLog);       // 时钟块自己的文本变化（区分整分用）
+            noteElauncherWindow(pkg, clsForLog, event);   // ELauncher 的翻页 / resume 判据
+            handleLauncherSwipe(pkg, clsForLog, event);
             handleDesktopPage(pkg, clsForLog, event);
             return;
         }
@@ -487,6 +1140,13 @@ public class CardA11yService extends AccessibilityService {
         // 桌面判定必须精确到 Activity：桌面包里还挂着书架 / 文件管理 / 设置等普通界面，
         // 只看包名会把它们误判成"还在桌面"（§21.3）。
         boolean desk = isHomeScreen(pkg, clsForLog);
+        if (desk) {
+            // 进桌面（含亮屏、从应用按 HOME 回来）Tomo 会额外补一条 cct=1，它不是翻页。
+            //    但**不能整窗丢弃**：形态 ③（回到桌面后又真的翻回第 1 页）里真正起区分
+            //    作用的 TEXT 事件，是紧跟在这条窗口态之后才到的，丢了就再也看不到了。
+            //    所以只打标记 + 延长窗口，由 settleSwipe 按"有无 TEXT"分流。
+            noteLauncherWindowState();
+        }
         boolean wasOwnUi = sOwnUiForeground;
         if (desk) {
             // 已经在（桌面）的界面上，那肯定不在我们自己的界面里。
@@ -512,6 +1172,67 @@ public class CardA11yService extends AccessibilityService {
             }
             applyVisibility();
         }
+        // 换桌面的"官宣"就在这条窗口事件上 —— 新桌面接手时会**先发它、再发冷启动重绘**
+        //（真机实测：Tomo 接手时 `WINDOW_STATE_CHANGED` 在前、那条惹祸的 `FrameLayout` 在后）。
+        // 在这里补一次重查 ⇒ 换桌面**立刻**生效；否则只能等新桌面下一次整分重绘，
+        // 实测差了近 60s，而这段时间里新桌面自己的翻页判据还处于"没认出来"的停摆状态。
+        // 必须排在 decide 之后：下面要按刚更新过的 onDesktop 重算显隐。
+        maybeRefreshDefaultHome(pkg);
+    }
+
+    /**
+     * Tomo 桌面翻页判定（v0.6.0）—— "离开第 1 页就收起来"。
+     *
+     * 判据与实测依据全写在 {@link #pageGate} 的注释里，这里只讲实现：
+     * ① 包名必须是**系统默认桌面**（挡掉 ELauncher 的后台事件）、类名必须是
+     *    `android.widget.FrameLayout`；
+     * ② 把窗口内每一条都记下来：`cct=1` 计数、TEXT 位打标、`cct=0` 打标；
+     * ③ 窗口**只有一个出口：截止时间**（不做"间隔过大就早结算"，理由见方法内注释），
+     *    到期交给 {@link #settleSwipe} 分流；证据模棱两可时会再延一次
+     *（{@link #SWIPE_LINGER_MS}）。
+     *
+     * 为什么"每条都收"而不是"只看 cct=1"：有的形态里真正区分方向的不是 cct=1，
+     * 而是它旁边那些 `cct=3 / cct=2 / cct=0`（详见 {@link #pageGate} 的形态表）。
+     */
+    private void handleLauncherSwipe(String pkg, String cls, AccessibilityEvent event) {
+        if (!isLauncher(pkg)) return;
+        if (!SWIPE_NODE_CLS.equals(cls)) return;
+        // 只认**系统默认桌面**。ELauncher 同样是 CATEGORY_HOME（也可能成为前台），
+        // 它那份 FrameLayout 事件的语义和 Tomo 的 swipe_page 完全不同 ——
+        // 真机上抓到过：点图标进了一次 ELauncher，回来时卡片就被它的事件改成了"显示"。
+        if (defaultHomePkg == null || !pkg.equals(defaultHomePkg)) return;
+        // 有 ViewPager 判据的桌面走 handleDesktopPage，两套判据不叠加
+        if (sawViewPager.contains(pkg)) return;
+        if (sOwnUiForeground) return;               // 自家界面上不该有桌面翻页
+        int cct = 0;
+        try {
+            cct = event.getContentChangeTypes();
+        } catch (Throwable ignored) {
+        }
+        long now = android.os.SystemClock.uptimeMillis();
+        // 亮屏后的一小段时间内一律不听：那一段是桌面 resume 的整窗重绘，
+        // 形态不稳定、且与"真的翻回第 1 页"高度同形（见 SCREEN_ON_IGNORE_MS）。
+        if (screenOnAt != 0 && now - screenOnAt < SCREEN_ON_IGNORE_MS) {
+            CardDebug.note(this, "swipe ignore (亮屏后 " + (now - screenOnAt) + "ms < "
+                    + SCREEN_ON_IGNORE_MS + "ms, cct=" + cct + ")");
+            return;
+        }
+        // ⚠️ 这里**刻意不做"间隔过大就早结算"**：一次翻页的两条事件间隔不稳定
+        // （实测 7ms 到 264ms 都有），早结算会把它俩拆成两个窗口、判据只看到
+        // 两条"时钟整分"，方向就丢了。窗口的唯一出口是截止时间（见 SWIPE_LINGER_MS）。
+        if (!swipeOpen) swipeFirstAt = now;
+        swipeOpen = true;
+        swipeTotal++;
+        // ⚠️ 必须是 `cct == 1`，不能写成 `(cct & 1) != 0` —— cct=3 也含 SUBTREE 位，
+        // 那样会把"整分跳字"和"亮屏后翻页"都算进来（踩过）。
+        if (cct == CCT_SUBTREE) swipeSub++;
+        if ((cct & CCT_TEXT) != 0) swipeText = true;
+        if (cct == CCT_UNDEFINED) swipeZero++;         // resume 整窗重绘的标记（要计数）
+        swipeLastAt = now;
+        if (ui != null) {
+            ui.removeCallbacks(applySwipeWindow);
+            ui.postDelayed(applySwipeWindow, SWIPE_WINDOW_MS);
+        }
     }
 
     /**
@@ -527,6 +1248,16 @@ public class CardA11yService extends AccessibilityService {
     private void handleDesktopPage(String pkg, String cls, AccessibilityEvent event) {
         if (!isLauncher(pkg)) return;
         if (!cls.endsWith("ViewPager")) return;
+        // 这台桌面有 ViewPager 判据 ⇒ 关掉那条"FrameLayout 翻页指纹"（v0.6.0）。
+        // 两套判据同时生效会在同一台上互相打架；实测 Tomo 不发 ViewPager 事件、
+        // ELauncher 会发，所以这个运行期标记正好把两者自动分开，不用写死包名。
+        sawViewPager.add(pkg);
+        // 🔴 顺手把「Tomo 那条 FrameLayout 判据」的窗口掐掉。原因：服务刚重连时
+        // {@link #sawViewPager} 还是空的，而同一次翻页里 **FrameLayout 事件先到**，
+        // 于是 Tomo 判据漏过分流、误触发 —— 真机复现（2026-09-24）：覆盖安装后按 HOME
+        // 回桌面，卡片被判成"离开第 1 页"而隐藏（日志 `→ 离开第1页 … visibility=GONE`）。
+        // ViewPager 事件一到就作废那个窗口 ⇒ 两套判据立刻互斥，不依赖"谁先建立记忆"。
+        cancelSwipeWindow();
         // 桌面能吃翻页手势 ⇒ 屏幕没有被通知栏盖住（盖着时桌面收不到触摸）→ 兜底清闸门
         if (shadeOpen) {
             shadeOpen = false;
@@ -748,6 +1479,7 @@ public class CardA11yService extends AccessibilityService {
 
     @Override
     public boolean onUnbind(Intent intent) {
+        unregisterScreenOn();
         cancelPending();
         removeWindow();
         sInstance = null;
@@ -756,6 +1488,7 @@ public class CardA11yService extends AccessibilityService {
 
     @Override
     public void onDestroy() {
+        unregisterScreenOn();
         cancelPending();
         removeWindow();
         sInstance = null;
@@ -765,8 +1498,18 @@ public class CardA11yService extends AccessibilityService {
     /** 服务要走了，把还没生效的页码回调与闸门超时都撤掉，别让它们去碰已经销毁的窗口 */
     private void cancelPending() {
         pendingPage = -1;
+        swipeOpen = false;
+        swipeSub = 0;
+        swipeTotal = 0;
+        swipeText = false;
+        swipeZero = 0;
+        swipeWinState = false;
+        swipeLingered = false;
+        resetElaFields();
         if (ui != null) {
             ui.removeCallbacks(applyPendingPage);
+            ui.removeCallbacks(applySwipeWindow);
+            ui.removeCallbacks(applyElaWindow);
             ui.removeCallbacks(gateTimeout);
         }
     }
@@ -1253,6 +1996,7 @@ public class CardA11yService extends AccessibilityService {
                 && !shadeOpen                        // 通知栏已下拉 → 让位，别压住通知
                 && !iconGate                         // 刚点过桌面图标（书架等）→ 让位（§25）
                 && !hideGate                         // 用户长按选择"隐藏 N 分钟" → 让位（v0.3.4）
+                && !pageGate                         // 翻离了桌面第 1 页 → 让位（v0.6.0）
                 && desktopPage < PAGE_HIDE_FROM;     // 进了桌面的隐藏页（如 ELauncher「设置」）→ 让位
         view.setVisibility(show ? View.VISIBLE : View.GONE);
         // 触摸区跟着一起显隐 —— 卡片藏起来时它们必须也走开，
@@ -1277,10 +2021,28 @@ public class CardA11yService extends AccessibilityService {
                 + " (enabled=" + CardPrefs.isEnabled(this)
                 + ", onDesktop=" + onDesktop
                 + ", page=" + desktopPage
+                + ", swipePage=" + pageGate
                 + ", shade=" + shadeOpen
                 + ", icon=" + iconGate
                 + ", hide=" + hideGate
                 + ", ownUi=" + sOwnUiForeground + ")");
+    }
+
+    /**
+     * 清掉「翻离了第 1 页」闸门，让卡片回到"按当前前台重新算一遍"的状态。
+     *
+     * 这是**给用户留的出口**：万一某次翻页事件被系统漏投、卡片停在隐藏状态，
+     * 设置页的「重新同步卡片显示」按钮就调它。同类的出口还有：服务重连
+     * （关掉再打开无障碍开关 / 重启设备）时 {@link #onServiceConnected} 里归零。
+     */
+    public static void resetPageGate() {
+        if (sInstance == null) return;
+        sInstance.pageGate = false;
+        sInstance.lastHomeResolveAt = 0L;            // 顺手让下次桌面事件重查默认桌面
+        sInstance.cancelSwipeWindow();
+        sInstance.cancelElaWindow();
+        sInstance.applyVisibility();
+        CardDebug.note(sInstance, "resetPageGate (手动)");
     }
 
     private void removeWindow() {
@@ -1314,6 +2076,86 @@ public class CardA11yService extends AccessibilityService {
     private boolean isLauncher(String pkg) {
         if (launchers.isEmpty()) loadLaunchers();
         return launchers.contains(pkg);
+    }
+
+    /**
+     * 默认桌面的**运行期自适应**（v0.6.0）—— 用户换默认桌面后不必重启无障碍服务。
+     *
+     * 原先 `defaultHomePkg` 只在服务连接时解析一次；用户换桌面后那份缓存就过期了，
+     * 得关掉再打开无障碍开关才生效（真机上踩过）。这里换个思路：**见到"某个桌面包在
+     * 活动、但它不是当前记住的那个默认桌面"就地重查一次** —— 换桌面必然伴随新桌面的
+     * 事件（回桌面 / 翻页），所以纯事件驱动就够，不用轮询。
+     *
+     * 🔴 两条约束：
+     *   · **必须带冷却**（{@link #HOME_RESOLVE_MIN_MS}）：解析要走一次 PackageManager
+     *     IPC（毫秒级、在主线程），不能每条事件都查。
+     *   · 重查判据始终是**系统默认桌面**（`MATCH_DEFAULT_ONLY`），**不是"当前前台"**
+     *     —— 后者会把"点图标进了另一个桌面"误当成换桌面（见 {@link #defaultHomePkg}）。
+     *
+     * 真换桌面时顺手把翻页状态归零：新桌面的页码与旧桌面无关，卡片应回到"显示"。
+     */
+    private void maybeRefreshDefaultHome(String pkg) {
+        if (!isLauncher(pkg)) return;
+        if (pkg.equals(defaultHomePkg)) return;      // 就是当前那个，没必要查
+        long now = android.os.SystemClock.uptimeMillis();
+        if (lastHomeResolveAt != 0 && now - lastHomeResolveAt < HOME_RESOLVE_MIN_MS) return;
+        lastHomeResolveAt = now;
+        String before = defaultHomePkg;
+        resolveDefaultHome();
+        if (defaultHomePkg == null || defaultHomePkg.equals(before)) {
+            // 没换（只是别的桌面包在活动，比如点图标进了备用的那一个）⇒ 什么都不做
+            CardDebug.note(this, "defaultHome 未变 " + defaultHomePkg + "（事件来自 " + pkg + "）");
+            return;
+        }
+        CardDebug.note(this, "★ defaultHome 随用户切换更新：" + before + " → " + defaultHomePkg);
+        // ① 开抑制窗：紧接着的几百毫秒是新桌面的冷启动整窗重绘，它的指纹与
+        //    "真的翻了一页"同形，不挡掉就会把卡片误判成"离开第 1 页"（见 homeChangedAt）。
+        homeChangedAt = now;
+        homeSettleLogged = 0;
+        // ② 把上一个桌面残留的翻页状态全部清掉 —— 新桌面的第 1 页与旧桌面的页码无关
+        pageGate = false;
+        desktopPage = 0;
+        pendingPage = -1;
+        cancelSwipeWindow();
+        cancelElaWindow();
+        // ③ 此刻人还在桌面上，按"第 1 页"立刻重算一次。
+        //    必须显式算：随后那条"新桌面 LauncherActivity"的窗口事件走的是
+        //    `desk == onDesktop` 那条不重算的分支，靠它卡片回不来。
+        applyVisibility();
+    }
+
+    /**
+     * 默认桌面刚换过、新桌面还在冷启动 —— 这期间的桌面事件**整段不听**，见 {@link #homeChangedAt}。
+     *
+     * 放在 {@link #maybeRefreshDefaultHome} 之后、各条翻页判据之前，一处挡住两套判据
+     *（Tomo 的帧指纹与 ELauncher 的 scrollX），免得各写一遍。
+     *
+     * 只留头几条日志：抑制期通常就三五条事件，全记会刷屏。
+     */
+    private boolean inHomeChangeSettle(String pkg, String cls) {
+        if (homeChangedAt == 0) return false;
+        long now = android.os.SystemClock.uptimeMillis();
+        if (now - homeChangedAt >= HOME_CHANGE_IGNORE_MS) return false;
+        if (homeSettleLogged < 3) {
+            homeSettleLogged++;
+            CardDebug.note(this, "home settle ignore (" + pkg + " " + cls
+                    + ", 换桌面后 " + (now - homeChangedAt) + "ms)");
+        }
+        return true;
+    }
+
+    /** 解析系统默认桌面（`MATCH_DEFAULT_ONLY`）写入 {@link #defaultHomePkg}；失败保持原值 */
+    private void resolveDefaultHome() {
+        try {
+            Intent def = new Intent(Intent.ACTION_MAIN);
+            def.addCategory(Intent.CATEGORY_HOME);
+            ResolveInfo ri = getPackageManager()
+                    .resolveActivity(def, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY);
+            if (ri != null && ri.activityInfo != null) {
+                defaultHomePkg = ri.activityInfo.packageName;
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     /**
@@ -1358,6 +2200,12 @@ public class CardA11yService extends AccessibilityService {
             homeComponents.add("com.astraabove.tomo/com.astraabove.tomo.LauncherActivity");
             homeComponents.add("com.wetao.elauncher/com.wetao.elauncher.ui.main.MainActivity");
         }
-        CardDebug.note(this, "launchers = " + launchers + "  homeComponents = " + homeComponents);
+        // 系统**默认**桌面（v0.6.0）：翻页指纹只在这一个包上启用 —— ELauncher 也是
+        // CATEGORY_HOME，但它的 FrameLayout 事件语义与 Tomo 的 swipe_page 不同，
+        // 真机上抓到过它把卡片状态改错。这里先解析一次；**运行期换桌面**由
+        // {@link #maybeRefreshDefaultHome} 兜住，用户不必重启无障碍服务。
+        resolveDefaultHome();
+        CardDebug.note(this, "launchers = " + launchers + "  homeComponents = " + homeComponents
+                + "  defaultHome = " + defaultHomePkg);
     }
 }

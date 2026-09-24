@@ -258,6 +258,21 @@
                     android:textColor="#FF3C3C3C"
                     android:textSize="13sp" />
 
+                <!-- v0.6.0：卡片"离开第 1 页自动收起"判据万一被系统漏投、卡片停在隐藏状态，
+                     这里给一个明确的出口，用户不用去猜"是不是坏了"。 -->
+                <Button
+                    android:id="@+id/btn_reset_card"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/btn_ink"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:stateListAnimator="@null"
+                    android:text="@string/btn_reset_card"
+                    android:textColor="@color/btn_ink_text"
+                    android:textSize="15sp" />
+
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
