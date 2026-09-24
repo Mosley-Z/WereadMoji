@@ -1,13 +1,13 @@
 {
-  "versionCode": 25,
-  "versionName": "0.5.3",
-  "tag": "v0.5.3",
-  "notes": "修复本记无内容时反复同步、只看想法筛选失效等问题",
-  "apk": "dist/weread-stats-0.5.3.apk",
-  "size": 251694,
-  "sha256": "81ecd87423fd60b8b3941e98d588a90fd8a5a5271f3ae993b2083f12d96c7d5e",
+  "versionCode": 27,
+  "versionName": "0.6.0",
+  "tag": "v0.6.0",
+  "notes": "桌面卡片离开第1页自动收起、回到第1页再显示；换默认桌面后即时生效，不必重开无障碍",
+  "apk": "dist/weread-stats-0.6.0.apk",
+  "size": 255790,
+  "sha256": "0bcbfb41c7d813aaefe7141ffab342848f347009a0956af40a778a4007b70a44",
   "urls": [
-    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v0.5.3/dist/weread-stats-0.5.3.apk",
-    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v0.5.3/dist/weread-stats-0.5.3.apk"
+    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v0.6.0/dist/weread-stats-0.6.0.apk",
+    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v0.6.0/dist/weread-stats-0.6.0.apk"
   ]
 }
