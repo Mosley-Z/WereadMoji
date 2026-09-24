@@ -36,7 +36,7 @@
     <string name="label_show_sign">导出图显示署名（书名 · 作者）</string>
     <string name="label_show_date">导出图显示章节与划线日期</string>
 
-    <string name="a11y_desc">用于把「微读墨记」的阅读卡片（本周 / 本月 / 本书进度）显示在桌面空位上。不读取任何屏幕内容，仅在桌面显示，切到其它应用时自动隐藏。</string>
+    <string name="a11y_desc">用于把「微读墨记」的阅读卡片（本周 / 本月 / 本书进度 / 本记）显示在桌面空位上。不读取任何屏幕内容，仅在桌面显示，切到其它应用时自动隐藏。</string>
 
     <string name="settings_hint">获取 API Key：浏览器打开 weread.qq.com/r/weread-skills，点「快速配置」登录微信读书，再点「获取 API Key」复制（wrk- 开头），粘贴到上面保存。\n\nKey 只存在本机，仅用于读取你自己的阅读统计，不会上传。</string>
     <!-- v0.5.0：版本与更新（在线更新） -->

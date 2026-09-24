@@ -9,7 +9,7 @@ import android.view.View;
 import android.widget.Button;
 
 /**
- * 「微读墨记」主页：页面选项卡（**本周 / 本月**） + 周期步进选择器 + 统计卡片 + 刷新/设置按钮。
+ * 「微读墨记」主页：页面选项卡（**本周 / 本月 / 本书 / 本记**） + 周期步进选择器 + 统计卡片 + 刷新/设置按钮。
  *
  * v0.3.3 起两件事一起做完：
  * ① 「本月」不再是占位页，而且是**全屏大版**（{@link WeekCardView#setFullscreen}：

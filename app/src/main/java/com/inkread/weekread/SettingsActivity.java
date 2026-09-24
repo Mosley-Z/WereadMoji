@@ -315,8 +315,14 @@ public class SettingsActivity extends Activity {
                 s = s + "\n" + notes;
             }
             tvUpdateStatus.setText(s);
-            // 缓存里只有版本号、没有下载地址，按钮仍是「检查更新」；
-            // 点下去会重新取一次清单，拿到地址后自动接着下载（见 onUpdateButton）。
+            // TASK-004：按钮文字必须跟上状态。
+            // 缓存里只有版本号、没有下载地址（所以 uInfo 仍是 null），但点下去发生的事是
+            // 「重新取一次清单 → 拿到地址 → 自动接着下载」（onUpdateButton → startCheck(true)
+            // → startDownload），也就是「下载并安装」。
+            // 按钮若还写着「检查更新」，就与点下去会发生的事对不上了（验证记录/27 §3.3、
+            // 验证记录/35 §5 把它列为"仍未修"）。
+            btnUpdate.setText(getString(R.string.upd_btn_download,
+                    UpdateChecker.remoteVersionName(this)));
         }
     }
 

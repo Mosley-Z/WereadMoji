@@ -8,7 +8,7 @@ import android.view.MotionEvent;
 import android.view.View;
 
 /**
- * 页面选项卡：本周 / 本月 / 本书。
+ * 页面选项卡：本周 / 本月 / 本书 / 本记。
  *
  * v0.3.3 起两页都是真页面（本月是"全屏大版"，见 {@link WeekCardView#setFullscreen}）；
  * v0.3.4 再加第三个「本书」（最近在读的书的进度，见 {@link BookStats}）。
@@ -18,7 +18,7 @@ import android.view.View;
 public class TabBarView extends View {
 
     public interface Listener {
-        /** index: 0=本周 1=本月 2=本书 */
+        /** index: 0=本周 1=本月 2=本书 3=本记 */
         void onTabSelected(int index);
     }
 
