@@ -29,7 +29,7 @@
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
         <activity
-            android:name=".MainActivity"
+            android:name=".shell.MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -38,14 +38,14 @@
         </activity>
 
         <activity
-            android:name=".SettingsActivity"
+            android:name=".shell.SettingsActivity"
             android:exported="false"
             android:label="@string/settings_name"
             android:theme="@android:style/Theme.Material.Light" />
 
         <!-- 「怎么用」：把面向使用者的说明内置进来（v0.4.2），文案在 res/raw/help.txt -->
         <activity
-            android:name=".HelpActivity"
+            android:name=".shell.HelpActivity"
             android:exported="false"
             android:label="@string/help_title"
             android:theme="@android:style/Theme.Material.Light" />
@@ -55,7 +55,7 @@
              而标准解法 FileProvider 在 AndroidX 里 —— 本工程无 AndroidX，故自实现。
              exported=false + grantUriPermissions=true：只通过临时授权给安装器读。 -->
         <provider
-            android:name=".ApkProvider"
+            android:name=".update.ApkProvider"
             android:authorities="com.inkread.weekread.apk"
             android:exported="false"
             android:grantUriPermissions="true" />
@@ -64,7 +64,7 @@
              窗口类型 TYPE_ACCESSIBILITY_OVERLAY，无需 SYSTEM_ALERT_WINDOW；
              监听窗口切换事件只为判断"在不在桌面"，canRetrieveWindowContent 保持 false。 -->
         <service
-            android:name=".CardA11yService"
+            android:name=".a11y.CardA11yService"
             android:exported="true"
             android:label="@string/app_name"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">

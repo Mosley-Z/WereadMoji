@@ -17,7 +17,7 @@
     android:orientation="vertical">
 
     <!-- 顶部页签：初始化 | 自定义 -->
-    <com.inkread.weekread.SegTabView
+    <com.inkread.weekread.ui.SegTabView
         android:id="@+id/seg"
         android:layout_width="match_parent"
         android:layout_height="44dp" />

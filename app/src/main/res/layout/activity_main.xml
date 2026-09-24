@@ -7,7 +7,7 @@
 
     <!-- 页面选项卡：本周 / 本月 / 本书 / 本记。
          v0.4.1：50dp → 44dp，把厚度让给中间的内容区 -->
-    <com.inkread.weekread.TabBarView
+    <com.inkread.weekread.ui.TabBarView
         android:id="@+id/tabbar"
         android:layout_width="match_parent"
         android:layout_height="44dp" />
@@ -19,7 +19,7 @@
 
     <!-- 周期步进选择器：周 ← 2026年9月15日–9月21日 → ；月 ←← ← 2026年9月 → →→
          按拍板 ④ 只在 App 内出现（桌面卡片塞不下）。48dp ≈ 66px，够手指按。 -->
-    <com.inkread.weekread.PeriodPickerView
+    <com.inkread.weekread.ui.PeriodPickerView
         android:id="@+id/picker"
         android:layout_width="match_parent"
         android:layout_height="44dp" />
@@ -34,7 +34,7 @@
         android:background="#FFD8D8D8" />
 
     <!-- 卡片主体（App 内走 setFullscreen(true) 的大版排版） -->
-    <com.inkread.weekread.WeekCardView
+    <com.inkread.weekread.feature.week.WeekCardView
         android:id="@+id/card"
         android:layout_width="match_parent"
         android:layout_height="0dp"

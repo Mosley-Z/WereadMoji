@@ -22,4 +22,4 @@
     android:canRetrieveWindowContent="false"
     android:description="@string/a11y_desc"
     android:notificationTimeout="100"
-    android:settingsActivity="com.inkread.weekread.SettingsActivity" />
+    android:settingsActivity="com.inkread.weekread.shell.SettingsActivity" />

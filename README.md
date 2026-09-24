@@ -198,7 +198,7 @@ bash tools/build.sh --dev
 
 dev 变体给 aapt2 传 `--debug-mode` ⇒ manifest 里被插入 `android:debuggable="true"`。
 **它唯一开放的额外能力**是：`MainActivity` 的调试入口
-`am start -n com.inkread.weekread/.MainActivity --es api_key wrk-xxx` **只在 dev 包里生效**
+`am start -n com.inkread.weekread/.shell.MainActivity --es api_key wrk-xxx` **只在 dev 包里生效**
 （发布包不带 `debuggable` ⇒ 该入口自动关闭）。这条通道用于给墨水屏设备配 Key
 （27 位的 Key 手打不现实），所以不能干脆删掉，只能靠构建开关关掉。
 
@@ -249,15 +249,16 @@ dev 变体给 aapt2 传 `--debug-mode` ⇒ manifest 里被插入 `android:debugg
 ```
 app/src/main/
   java/com/inkread/weekread/
-    CardA11yService.java    无障碍服务 —— 桌面卡片的宿主与手势分发
-    WeekCardView.java       卡片自绘（四态布局、按钮、筛选格）
-    CardSpec.java           几何唯一来源（卡片位置、字号、命中区）
-    MainActivity.java       App 全屏四态
-    NoteStore.java          划线数据：索引 + 按需读书抽样
-    WereadApi.java          微信读书网关客户端（纯 HttpURLConnection）
-    UpdateChecker.java      检查更新
-    ApkInstaller.java       下载、校验、拉起安装器
-    ApkProvider.java        暴露 APK 给系统安装器（手写，无 AndroidX）
+    core/     数据与通用     BookStore NoteStore StatsStore CoverStore
+                             PeriodStats PeriodRange NoteStats BookStats CardSpec
+                             CardPrefs CardDebug
+    net/      网络           WereadApi NoteSync UpdateChecker
+    ui/       通用 UI 控件    SegTabView TabBarView PeriodPickerView CardMenuView
+    feature/  业务形态        week/WeekCardView  note/NoteExport  overlay/OverlayWindow
+                             lab/（设备能力自检，见 docs/FEATURES/lab.md）
+    shell/    壳与设置        MainActivity SettingsActivity HelpActivity StatsWidgetProvider
+    a11y/     无障碍卡片      CardA11yService
+    update/   自更新          ApkInstaller ApkProvider
   res/raw/help.txt          内置使用说明（App 内「怎么用」直接读它）
   res/layout/, res/values/
 tools/build.sh              免 Gradle 构建脚本
@@ -265,6 +266,9 @@ version.properties          版本号唯一来源
 dist/                       构建产物 + update.json
 .github/workflows/          打 tag 自动发 Release（附 APK）
 ```
+
+> **包结构怎么定的、每个包能依赖谁**：见各包内的 `MODULE.md`（`core/` `net/` `ui/` `feature/` `shell/` `a11y/` `update/`），
+> 总览与实测依赖图在 `docs/02_架构.md`。v0.6.1 起由 TASK-005 从"单层扁平包"重整而来，**只动包与 import、逻辑零改动**。
 
 ---
 
