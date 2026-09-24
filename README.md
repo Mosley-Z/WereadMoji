@@ -69,11 +69,9 @@ App 全屏页与设置页（「版本与更新」就是在那里检查更新）�
 
 ## 安装
 
-> ⚠️ **装过 `v0.5.1` 或更早版本的，请务必先升级到 `v0.5.2`。**
-> 早期版本的发布签名密钥曾不慎公开，官方已在 `v0.5.2` 换用新密钥。
-> 这是**签名迁移的过渡版**，也是老设备能**免卸载**直接升级的唯一通道 ——
-> 走 App 内「设置 → 版本与更新 → 检查更新」，或手动装下面这个 APK 都可以。
-> 升过一次之后，之后所有官方更新恢复正常。
+> ⚠️ **装过 `v0.5.1` 或更早版本的，请务必先升到 `v0.5.2`，再往后升。**
+> 走 App 内「设置 → 版本与更新 → 检查更新」，或手动装下面这个 APK 都可以 ——
+> 老设备不必卸载重装；升过一次之后，后续所有官方更新恢复正常。
 
 ### 方式一：下载 APK
 
@@ -138,11 +136,11 @@ App 会读取仓库里的一个版本清单 `update.json`，与自身 `versionCo
 
 ```json
 {
-  "versionCode": 24,
-  "versionName": "0.5.2",
-  "notes": "更换发布签名密钥的过渡版，请尽快升级以完成签名迁移",
-  "apk": "dist/weread-stats-0.5.2.apk",
-  "size": 247598,
+  "versionCode": 27,
+  "versionName": "0.6.0",
+  "notes": "桌面卡片离开第1页自动收起、回到第1页再显示",
+  "apk": "dist/weread-stats-0.6.0.apk",
+  "size": 255790,
   "sha256": "..."
 }
 ```
@@ -155,7 +153,7 @@ App 会读取仓库里的一个版本清单 `update.json`，与自身 `versionCo
 | 用途 | 主源 | 理由 |
 |---|---|---|
 | 版本清单 | `raw.githubusercontent.com/…/main/update.json` | raw 的缓存只有几分钟，能立刻反映新版本 |
-| APK | `cdn.jsdelivr.net/gh/…@v0.5.2/…apk` | 用 tag 引用可永久缓存 + CDN 加速；APK 内容本就不可变，正合适 |
+| APK | `cdn.jsdelivr.net/gh/…@v0.6.0/…apk` | 用 tag 引用可永久缓存 + CDN 加速；APK 内容本就不可变，正合适 |
 
 jsDelivr 对**分支**引用的缓存长达数小时到数天。若清单也用 `@main`，会出现「新版本已发布但设备查不到」的滞后。
 两者互为回落，任一源不可用仍能更新。
@@ -188,6 +186,9 @@ bash tools/build.sh
 
 脚本会自动探测 `JAVA_HOME` / `ANDROID_HOME` / `PYTHON`，也可以用环境变量覆盖。
 
+> 构建所需的输入若不全，脚本会**直接失败并列明缺什么**，不会静默降级。
+> 按提示准备齐即可；需要换目录时脚本也支持用环境变量指向别处。
+
 #### dev 构建变体（`--dev`）
 
 ```bash
@@ -203,7 +204,7 @@ dev 变体给 aapt2 传 `--debug-mode` ⇒ manifest 里被插入 `android:debugg
 
 除了 manifest 那一个标志与文件名后缀，dev 包与发布包**完全相同**：
 
-- 🔴 **仍用 release 签名**（同一套 `_keys/`）—— 否则覆盖安装不上，测试等于白做；
+- 🔴 **仍用 release 签名** —— 否则覆盖安装不上，测试等于白做；
 - **包名、`versionCode`、`versionName` 都不变**；
 - **不生成 `dist/update.json`、不写 `dist/.last_version_code`** ⇒ 发布链路一点没被碰；
 - `bash tools/build.sh`（不带参数）的行为**与引入这个开关之前完全一致**。
@@ -211,31 +212,6 @@ dev 变体给 aapt2 传 `--debug-mode` ⇒ manifest 里被插入 `android:debugg
 > ⚠️ dev 包落在 `dist/` 里，发布前记得删掉 —— 发版门禁 1 的约定是"`dist/` 只留当前发布版"，
 > 多一个 `.apk` 就会 FAIL（这是有意的 fail-closed）。
 > 顺手把 `dist/*-dev-debug.apk` 加进了 `.gitignore`，防止误提交。
-
-### 签名密钥（不在仓库里）
-
-**私钥绝不入库、绝不公开** —— 应用签名唯一的意义，就是证明「这个更新来自原作者」。
-私钥一旦公开这层证明便不复存在：任何人都能签出与官方包**同名、同版本、同签名者**的 APK，
-系统无法分辨。所以本仓库**不含任何 keystore**，构建脚本也**不会**回退到调试签名、
-更不会自动生成密钥 —— 缺密钥就直接失败并给出提示。
-
-自己构建时，请在仓库外的 `../_keys/`（或用 `KEYS_DIR` 指向别处）准备：
-
-| 文件 | 用途 |
-|---|---|
-| `wereadmoji-release.keystore` | release 私钥（RSA 4096，PKCS12） |
-| `release.pass` | 它的口令（纯文本单行） |
-| `lineage.bin` | 签名轮换证明（`apksigner rotate` 生成） |
-| `old/debug.keystore` | 轮换链起点（历史遗留的旧签名者） |
-| `old/pass.txt` | 旧 key 的口令 |
-
-> **自己签的包不能覆盖官方版**：签名不同，系统安装器会直接拒绝，必须先卸载官方版。
-> 想跟着官方更新，请直接用官方 APK，或走 App 内的「检查更新」。
->
-> 为什么还需要 `lineage.bin` 和旧 key：早期版本的签名密钥曾不慎公开，官方自 `v0.5.2` 起
-> 用 [APK Signature Scheme v3 轮换](https://source.android.com/docs/security/features/apksigning/v3)
-> 迁移到新密钥，已装旧版的设备才能**免卸载**升级。若你只是自己从零构建，
-> 用自己的密钥签即可 —— 把那两项从脚本的必检清单里去掉，或指向你自己的文件。
 
 ### 发版流程
 
