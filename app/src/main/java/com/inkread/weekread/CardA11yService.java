@@ -1581,7 +1581,7 @@ public class CardA11yService extends AccessibilityService {
             });
             wm.addView(hitView, OverlayWindow.paramsTouch(OverlayWindow.typeAccessibility()));
 
-            // 左上角「抬头」那一小块：**短按**切形态（本周→本月→本书）、**长按**弹隐藏菜单。
+            // 左上角「抬头」那一小块：**短按**切形态（本周→本月→本书→本记，见 StatsStore.toggleCardPeriod）、**长按**弹隐藏菜单。
             // 同样是独立小窗 —— 切换只是"换一帧内容"，不碰任何显隐状态。
             titleView = new View(this);
             titleView.setOnClickListener(new View.OnClickListener() {
