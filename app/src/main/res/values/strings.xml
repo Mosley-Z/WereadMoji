@@ -2,8 +2,6 @@
 <resources>
     <string name="app_name">微读墨记</string>
     <string name="settings_name">微读墨记 · 设置</string>
-    <string name="widget_desc">本周微信读书阅读统计</string>
-    <string name="widget_title">本周阅读</string>
 
     <string name="label_api_key">微信读书 API Key</string>
     <string name="hint_api_key">粘贴 API Key（wrk- 开头）</string>

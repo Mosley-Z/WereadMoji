@@ -254,10 +254,10 @@ app/src/main/
                              CardPrefs CardDebug
     net/      网络           WereadApi NoteSync UpdateChecker
     ui/       通用 UI 控件    SegTabView TabBarView PeriodPickerView CardMenuView
-    feature/  业务形态        week/WeekCardView  note/NoteExport  overlay/OverlayWindow
-                             lab/（设备能力自检，见 docs/FEATURES/lab.md）
-    shell/    壳与设置        MainActivity SettingsActivity HelpActivity StatsWidgetProvider
-    a11y/     无障碍卡片      CardA11yService
+    feature/  业务形态        WeekCardView(壳) CardLayout CardRenderer CardInteraction
+                             NoteExport OverlayWindow  lab/（设备能力自检，见 docs/FEATURES/lab.md）
+    shell/    壳与设置        MainActivity SettingsActivity HelpActivity
+    a11y/     无障碍卡片      CardA11yService（+ 拆出 6 类，见 docs/02）
     update/   自更新          ApkInstaller ApkProvider
   res/raw/help.txt          内置使用说明（App 内「怎么用」直接读它）
   res/layout/, res/values/
