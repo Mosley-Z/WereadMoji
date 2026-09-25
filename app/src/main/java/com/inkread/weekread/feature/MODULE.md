@@ -6,13 +6,17 @@
 
 | 类 | 一句话 |
 |---|---|
-| `WeekCardView` | 🔴 卡片自绘（四态布局、按钮、筛选格）—— **1,996 行，拆分见 TASK-007** |
+| `WeekCardView` | 🔴 卡片自绘**薄壳**（状态字段 + public API + 三委托 `onDraw`/`onTouchEvent`/`noteScrollable`）—— 拆分后 **358 行**（原 2,004），见 TASK-007 |
+| `CardLayout` | 卡片几何与排版（「号」字号体系、格边长、wrapLines/ellipsize、`layoutNote`；**`wrapAll` 归属此类**） |
+| `CardRenderer` | 全部 Canvas 绘制（周柱状 / 月日历 / 抬头 / 封面 / 按钮 / 筛选格；**只调内存函数、永不发请求**） |
+| `CardInteraction` | 触摸与手势（触摸块判定 / 长按菜单 / 周期切换 / 笔记滚动） |
 | `NoteExport` | 笔记导出（纸张/字号/署名等偏好 + 绘制长图并分享） |
 | `OverlayWindow` | 无障碍悬浮窗的窗口参数（`TYPE_ACCESSIBILITY_OVERLAY`） |
 | `lab/`（子包） | `ProbeResult` `DefaultHomeProbe` `CapabilityProbes` `LabRunner` —— 实验室页的**设备能力自检**（只读探针），见 `docs/FEATURES/lab.md` |
 
 > 📌 **为什么 `feature/` 是扁平包、不是 `feature/week` + `feature/note` + `feature/overlay`**：
-> `NoteExport` 调用 `WeekCardView.wrapAll(...)`，而它是**包级私有**的 ⇒ 两者**必须在同一个包里**。
+> `NoteExport` 调用 `CardLayout.wrapAll(...)`（TASK-007 拆分前是 `WeekCardView.wrapAll`，随唯一使用点
+> 归入 `CardLayout`），而它是**包级私有**的 ⇒ 两者**必须在同一个包里**。
 > 三条出路中选最不动逻辑的一条：
 > ①（弃）给 `wrapAll` 加 `public` —— TASK-005 卡**明令禁止**「顺手加 public」，且会破坏"逻辑零改动"判据；
 > ②（弃）把 `NoteExport` 塞进 `feature/week/` —— 语义失真；
@@ -34,6 +38,8 @@
 - ❌ **禁止**：`shell`、`a11y`、`update`。
 - ✅ **实测（2026-09-25 · TASK-005）**：`WeekCardView → core.*`；`NoteExport → core.NoteStats`；
   `OverlayWindow → core.CardSpec`；`lab/* → lab/*`。**无越界**。
+- ✅ **TASK-007 补测（2026-09-25）**：三新类（`CardLayout`/`CardRenderer`/`CardInteraction`）与壳同包、
+  依赖面不变（均 `→ core.*` + 经 `host` 包级访问壳字段，无新增对外 public）。
 - 被谁依赖：`shell`、`a11y`。
 
 **相关**：`docs/FEATURES/lab.md` ｜ `docs/02_架构.md` §3（巨类拆分）｜ TASK-007
