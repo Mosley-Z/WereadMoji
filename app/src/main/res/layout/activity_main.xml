@@ -34,7 +34,7 @@
         android:background="#FFD8D8D8" />
 
     <!-- 卡片主体（App 内走 setFullscreen(true) 的大版排版） -->
-    <com.inkread.weekread.feature.week.WeekCardView
+    <com.inkread.weekread.feature.WeekCardView
         android:id="@+id/card"
         android:layout_width="match_parent"
         android:layout_height="0dp"

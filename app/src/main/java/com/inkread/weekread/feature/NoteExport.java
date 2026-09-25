@@ -112,7 +112,7 @@ public final class NoteExport {
     /**
      * 排版：把这条内容（原文 + 想法）摊平算高度。
      *
-     * 折行用 {@link WeekCardView#wrapAll} —— 和屏幕上**同一套**逐字折行，
+     * 折行用 {@link CardLayout#wrapAll} —— 和屏幕上**同一套**逐字折行，
      * 所以长图里每一行的断点与手机上看到的完全一致。
      */
     private static Layout layout(Context c, NoteStats n) {
@@ -142,8 +142,8 @@ public final class NoteExport {
         // 没有原文（整本书评 / 章节点评）就不留引号位，正文从左留白起排
         L.tx = hasQ ? PAD_X + quoteW * 0.7f : PAD_X;
         L.textW = W - L.tx - PAD_X;
-        L.quote = hasQ ? WeekCardView.wrapAll(q, L.textW, L.textSize) : new String[0];
-        L.idea = hasI ? WeekCardView.wrapAll(idea, L.textW, L.textSize) : new String[0];
+        L.quote = hasQ ? CardLayout.wrapAll(q, L.textW, L.textSize) : new String[0];
+        L.idea = hasI ? CardLayout.wrapAll(idea, L.textW, L.textSize) : new String[0];
 
         float bodyH = L.quote.length * L.lineH;
         if (L.idea.length > 0) {
