@@ -1,13 +1,13 @@
 {
-  "versionCode": 27,
-  "versionName": "0.6.0",
-  "tag": "v0.6.0",
-  "notes": "桌面卡片离开第1页自动收起、回到第1页再显示；换默认桌面后即时生效，不必重开无障碍",
-  "apk": "dist/weread-stats-0.6.0.apk",
-  "size": 255790,
-  "sha256": "d3525fb444678809b082091c56dc1e463c19a4a9f6ee391657605c956aa9deba",
+  "versionCode": 28,
+  "versionName": "0.6.1",
+  "tag": "v0.6.1",
+  "notes": "设置页新增「实验室」（设备能力自检 · 只读）；⚠️ 升级后请重新开启无障碍，桌面卡片才会恢复显示",
+  "apk": "dist/weread-stats-0.6.1.apk",
+  "size": 267936,
+  "sha256": "9c86bd42d6b42e99647de13831e13f9461ede247924ea3b7ad897ac09f4cc2b8",
   "urls": [
-    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v0.6.0/dist/weread-stats-0.6.0.apk",
-    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v0.6.0/dist/weread-stats-0.6.0.apk"
+    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v0.6.1/dist/weread-stats-0.6.1.apk",
+    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v0.6.1/dist/weread-stats-0.6.1.apk"
   ]
 }
