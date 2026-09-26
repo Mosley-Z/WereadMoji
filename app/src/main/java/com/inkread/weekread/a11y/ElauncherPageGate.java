@@ -55,7 +55,8 @@ final class ElauncherPageGate {
     //   ③ 桌面 resume（亮屏 / 按 HOME / 从应用返回）  `FrameLayout cct=1/3 sx=0` → `ViewPager cct=3 sx=480`
     //   ④ 时钟整分跳字                 `TextView cct=2 sx=0`（×2，**没有** ViewPager）
     //   ⑤ 边界回弹（在第 1 页右滑、在第 2 页左滑）  `ViewPager cct=1 sx=480`（×2，**没有** TextView）
-    //   ⑥ 进「设置」隐藏页              `ViewPager cct=1 sx=480` → `ViewPager cct=3 sx=960`
+    //   ⑥ 进「设置」隐藏页（2026-09-25 漂移）  现只投 `ViewPager cct=3 sx=480`（与①②③收尾同形），
+    //     sx=960 不再投递 ⇒ 事件层无解，改内容探测（TASK-009 / SettingsPageProbe）
     //
     // ★ 为什么必须"等 ViewPager 来了才算"（而不是见到 TextView 就判）：
     //   · ④ 整分那条 `TextView` 用 sx=0 就能挡掉，但 ② 与 ④ 的**类名与 cct 完全一样**，
@@ -205,10 +206,20 @@ final class ElauncherPageGate {
         }
         CardDebug.note(ctx, "elaSwipe frame=" + frame + " sx=" + sx
                 + " → " + (leave ? "离开第1页" : "落到第1页") + " (cur=" + st.pageGate + ")");
+        // TASK-009：resume / 落到第 1 页都是「人确实在 P1」的实锤 ⇒ 清设置页闸门让卡片
+        // 立即回来，并记抑制窗锚点（过渡残树会让紧跟着的内容探测误报，见 SettingsPageProbe）。
+        boolean dirty = false;
+        if (!leave && st.settingsGate) {
+            st.settingsGate = false;
+            dirty = true;
+            CardDebug.note(ctx, "settingsGate=false (ela settle → 落到第1页)");
+        }
+        if (!leave) st.settingsSettledAt = android.os.SystemClock.uptimeMillis();
         if (leave != st.pageGate) {
             st.pageGate = leave;
-            ov.applyVisibility();
+            dirty = true;
         }
+        if (dirty) ov.applyVisibility();
     }
 
     /** {@link #ELA_WINDOW_MS} 到期回调 */

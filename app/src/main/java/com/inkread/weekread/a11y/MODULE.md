@@ -7,6 +7,8 @@
 
 > ✅ **2026-09-25 · TASK-006 已拆**：原 `CardA11yService` **2,228 行**巨类 → 7 个类，
 > 薄壳降到 **259 行**。**判据一行未改**（双向归一化逐行比对，差异 0 条）。
+> ✅ **2026-09-26 · TASK-009 增第 8 类**：`SettingsPageProbe`（ELauncher 设置页内容探测，
+> 修 t11；`canRetrieveWindowContent` 翻 true，权限承诺见 `help.txt`）。
 
 ## 包含的类
 
@@ -19,6 +21,7 @@
 | `ElauncherPageGate` | 220 | ELauncher 判据（`ViewPager` + 伴随 `TextView` 的 `sx` 中点分界，见 `docs/04` §2） |
 | `OverlayController` | 334 | 悬浮窗生命周期 + 🔴 **显隐单一出口** `applyVisibility()` |
 | `CardContentController` | 373 | 卡片**显示什么内容**（拉数据 / 切周期 / 本记 / 跳微信读书） |
+| `SettingsPageProbe` | 238 | ELauncher **设置页内容探测**（TASK-009）：650ms 延迟 + 600ms 复核双命中 `settings_top` 才让位；全仓库唯一 `getRootInActiveWindow` 使用点 |
 
 ### 🔴 为什么多出一个 `CardVisibilityState`（卡的规划里没有）
 

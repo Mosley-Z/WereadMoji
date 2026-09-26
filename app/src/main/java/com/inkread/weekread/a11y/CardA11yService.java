@@ -37,8 +37,10 @@ import java.util.List;
  * ④ 用户点按了桌面上的图标；⑤ 翻离桌面第 1 页。
  * 五者都只影响"是否显示"，**不翻转** onDesktop，避免出现回不来的状态。
  *
- * 注意：本服务刻意保持 android:canRetrieveWindowContent="false" ——
- * 只读事件自带的包名，**不抓取任何窗口内容**，权限说明里也不出现"读取屏幕"字样。
+ * 注意：a11y 配置原为 canRetrieveWindowContent="false"（只读事件自带包名，不抓取内容）。
+ * TASK-009（2026-09-26 用户拍板）翻成 true：ELauncher「设置」页的事件指纹漂移后
+ * 事件层无解，只能查节点树。全仓库**唯一**使用窗口内容处 = {@link SettingsPageProbe}
+ * （自限：仅歧义页码事件触发、只查一个控件 id、命中才让位、不存储不上传）。
  */
 public class CardA11yService extends AccessibilityService {
 
@@ -76,6 +78,7 @@ public class CardA11yService extends AccessibilityService {
     private A11yEventRouter router;
     private TomoPageGate tomo;
     private ElauncherPageGate ela;
+    private SettingsPageProbe probe;
 
     // ── 供同进程其它组件调用 ──
 
@@ -138,6 +141,7 @@ public class CardA11yService extends AccessibilityService {
     public static void resetPageGate() {
         if (sInstance == null) return;
         sInstance.st.pageGate = false;
+        sInstance.st.settingsGate = false;          // TASK-009：手动出口覆盖所有瞬态闸
         sInstance.st.lastHomeResolveAt = 0L;        // 顺手让下次桌面事件重查默认桌面
         sInstance.tomo.cancelSwipeWindow();
         sInstance.ela.cancelElaWindow();
@@ -160,11 +164,13 @@ public class CardA11yService extends AccessibilityService {
             content = new CardContentController(this, ov, st);
             tomo = new TomoPageGate(this, ui, st);
             ela = new ElauncherPageGate(this, ui, st);
+            probe = new SettingsPageProbe(this, ui, st);
             router = new A11yEventRouter(this, ui, st);
             ov.attachContent(content);
             tomo.attach(ov, router);
             ela.attach(ov, router, tomo);
-            router.attach(ov, tomo, ela);
+            probe.attach(ov);
+            router.attach(ov, tomo, ela, probe);
         }
         st.resetAll();
         registerScreenOn();
