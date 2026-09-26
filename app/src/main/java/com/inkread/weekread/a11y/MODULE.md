@@ -9,6 +9,9 @@
 > 薄壳降到 **259 行**。**判据一行未改**（双向归一化逐行比对，差异 0 条）。
 > ✅ **2026-09-26 · TASK-009 增第 8 类**：`SettingsPageProbe`（ELauncher 设置页内容探测，
 > 修 t11；`canRetrieveWindowContent` 翻 true，权限承诺见 `help.txt`）。
+> ✅ **2026-09-26 · TASK-010 增第 9 类**：`ElaHomeProbe`（ELauncher 3 页桌面「落到 P1」
+> 内容探测复核；桌面升 3 页后残值判据被 524254/524255 打穿，卡片会误显示在 P2/P3）。
+> 🔴 **窗口内容使用点 = 仅这两个 probe 类**（审查口径：`grep -rn getRootInActiveWindow`）。
 
 ## 包含的类
 
@@ -18,10 +21,11 @@
 | `CardVisibilityState` | 142 | 让位相关的**全部运行期状态**（纯数据，无逻辑）—— 见下方"为什么要有它" |
 | `A11yEventRouter` | 759 | 事件订阅与分发、桌面识别、通知栏 / 图标点按闸门、桌面页码通道 |
 | `TomoPageGate` | 427 | Tomo 桌面翻页判据（`FrameLayout` 条数结算，见 `docs/04` §1） |
-| `ElauncherPageGate` | 220 | ELauncher 判据（`ViewPager` + 伴随 `TextView` 的 `sx` 中点分界，见 `docs/04` §2） |
+| `ElauncherPageGate` | 268 | ELauncher 判据（`ViewPager` + 伴随 `TextView` 的 `sx` 中点分界，见 `docs/04` §2）；TASK-010 起「swipe 落到」改走内容探测 |
 | `OverlayController` | 334 | 悬浮窗生命周期 + 🔴 **显隐单一出口** `applyVisibility()` |
 | `CardContentController` | 373 | 卡片**显示什么内容**（拉数据 / 切周期 / 本记 / 跳微信读书） |
-| `SettingsPageProbe` | 238 | ELauncher **设置页内容探测**（TASK-009）：650ms 延迟 + 600ms 复核双命中 `settings_top` 才让位；全仓库唯一 `getRootInActiveWindow` 使用点 |
+| `SettingsPageProbe` | 238 | ELauncher **设置页内容探测**（TASK-009）：650ms 延迟 + 600ms 复核双命中 `settings_top` 才让位；窗口内容使用点之一 |
+| `ElaHomeProbe` | 207 | ELauncher **「落到 P1」内容探测**（TASK-010）：`ElauncherPageGate` 判「swipe 落到」后不再直接显示，双命中**可见的** `txt_clock` 才显示（3 页桌面残值 524254/524255 打穿事件层判据；可见性过滤挡邻页保留残树）；窗口内容使用点之一 |
 
 ### 🔴 为什么多出一个 `CardVisibilityState`（卡的规划里没有）
 

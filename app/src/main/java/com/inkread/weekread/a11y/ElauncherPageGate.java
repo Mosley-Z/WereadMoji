@@ -9,7 +9,10 @@ import android.view.accessibility.AccessibilityEvent;
 /**
  * ELauncher 桌面的**翻页 / resume 判据**（TASK-006 从 `CardA11yService` 整段平移而来，含全部注释）。
  *
- * 🔴 **判据一行未改** —— 权威规格仍在 `docs/04_桌面让位判据.md` §2。
+ * 🔴 **TASK-010（2026-09-26）改动一处**：结算的「swipe 落到第 1 页」不再直接显示卡片，
+ * 改为 {@link ElaHomeProbe} 内容探测双命中后才显示 —— ELauncher 桌面升级 3 页后残值判据
+ * 被打穿（P3→P2 = 524254 与 P2→P1 = 524255 只差 1，P2→P3 还会误报 524255），事件层无解。
+ * 「离开」与「resume」两条路径判据**一行未改**；权威规格仍在 `docs/04_桌面让位判据.md` §2。
  *
  * ⚠️ 它与 {@link TomoPageGate} **语义相反**（本桌面的 HOME / 亮屏一律回第 1 页，
  * Tomo 是回上次那一页）⇒ **不要合并成一个 Gate**。
@@ -22,6 +25,7 @@ final class ElauncherPageGate {
     private OverlayController ov;
     private A11yEventRouter rt;
     private TomoPageGate tomo;
+    private ElaHomeProbe homeProbe;
 
     /** 翻页容器的类名（与 {@link TomoPageGate} 同义，两个 Gate 各判各的、常量各持一份） */
     private static final String SWIPE_NODE_CLS = "android.widget.FrameLayout";
@@ -34,10 +38,17 @@ final class ElauncherPageGate {
         this.st = st;
     }
 
-    void attach(OverlayController ov, A11yEventRouter rt, TomoPageGate tomo) {
+    void attach(OverlayController ov, A11yEventRouter rt, TomoPageGate tomo,
+                ElaHomeProbe homeProbe) {
         this.ov = ov;
         this.rt = rt;
         this.tomo = tomo;
+        this.homeProbe = homeProbe;
+    }
+
+    /** 作废在途的「落到第 1 页」内容探测（服务断开 / 手动重置用） */
+    void cancelHomeProbe() {
+        if (homeProbe != null) homeProbe.cancel();
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -57,6 +68,10 @@ final class ElauncherPageGate {
     //   ⑤ 边界回弹（在第 1 页右滑、在第 2 页左滑）  `ViewPager cct=1 sx=480`（×2，**没有** TextView）
     //   ⑥ 进「设置」隐藏页（2026-09-25 漂移）  现只投 `ViewPager cct=3 sx=480`（与①②③收尾同形），
     //     sx=960 不再投递 ⇒ 事件层无解，改内容探测（TASK-009 / SettingsPageProbe）
+    //   ⑦ 3 页桌面的翻页残值（2026-09-26 实测，验证记录/55）：
+    //     P3→P2 = 524254（比「落到」的 524255 还小 1 ⇒ 被误判成落到）；P2→P3 两种形态
+    //     （无残值 / 也误报 524255）；ViewPager 收尾事件 sx 恒 0（不再投 480）⇒
+    //     「落到」方向事件层无解，改内容探测（TASK-010 / ElaHomeProbe）
     //
     // ★ 为什么必须"等 ViewPager 来了才算"（而不是见到 TextView 就判）：
     //   · ④ 整分那条 `TextView` 用 sx=0 就能挡掉，但 ② 与 ④ 的**类名与 cct 完全一样**，
@@ -177,7 +192,8 @@ final class ElauncherPageGate {
      *     （Tomo 的 FrameLayout 翻页事件、ELauncher 的时钟整分都从这里被丢掉）
      *   · 有 `FrameLayout(sx=0)`               → **落到第 1 页**（桌面 resume，实测 5/5）
      *   · 有 `TextView` 且 sx ∈ [524245, 524276] → 真翻页，按 {@link #ELA_SX_SPLIT} 定方向
-     *     （> 分界 = 离开第 1 页；≤ 分界 = 落到第 1 页）
+     *     （> 分界 = 离开第 1 页；≤ 分界 = 落到第 1 页 —— ⚠️ TASK-010 起落到侧须经
+     *     {@link ElaHomeProbe} 内容探测双命中才真正显示）
      *   · 其余 sx 认不出来                      → 不动（宁可不改，也不改错）
      */
     void settleElauncherWindow() {
@@ -208,6 +224,10 @@ final class ElauncherPageGate {
                 + " → " + (leave ? "离开第1页" : "落到第1页") + " (cur=" + st.pageGate + ")");
         // TASK-009：resume / 落到第 1 页都是「人确实在 P1」的实锤 ⇒ 清设置页闸门让卡片
         // 立即回来，并记抑制窗锚点（过渡残树会让紧跟着的内容探测误报，见 SettingsPageProbe）。
+        // ⚠️ 3 页桌面后「swipe 落到」也可能是误判（P3→P2 = 524254、P2→P3 形态二 = 524255，
+        // 见 ElaHomeProbe 头注），但这里照旧清 settingsGate / 刷 settledAt 是安全的：
+        // 两者只影响「设置页让位」的判定，而人在 P2/P3 时 settingsGate 本就该是 false，
+        // settledAt 的抑制窗反而正好盖住该场景下 tap 进设置的过渡期。
         boolean dirty = false;
         if (!leave && st.settingsGate) {
             st.settingsGate = false;
@@ -215,9 +235,26 @@ final class ElauncherPageGate {
             CardDebug.note(ctx, "settingsGate=false (ela settle → 落到第1页)");
         }
         if (!leave) st.settingsSettledAt = android.os.SystemClock.uptimeMillis();
-        if (leave != st.pageGate) {
-            st.pageGate = leave;
-            dirty = true;
+        // ── TASK-010：显示方向按证据强度分流 ──
+        // · 离开 ⇒ 事件层 524266 可靠，直接隐藏，并作废在途的"回 P1"探测；
+        // · resume（frame 指纹）⇒ 必落第 1 页（5/5 实测）⇒ 直接显示（这同时是
+        //   探测漏报时的天然恢复路径：任何 HOME / 进出应用都会走到这里）；
+        // · swipe 落到 ⇒ 3 页桌面残值判据已不可信（524254/524255 差 1、P2→P3 两种形态），
+        //   改由内容探测双命中 txt_clock 后才显示（ElaHomeProbe）。
+        if (leave) {
+            homeProbe.cancel();
+            if (!st.pageGate) {
+                st.pageGate = true;
+                dirty = true;
+            }
+        } else if (frame) {
+            homeProbe.cancel();
+            if (st.pageGate) {
+                st.pageGate = false;
+                dirty = true;
+            }
+        } else {
+            homeProbe.schedule();
         }
         if (dirty) ov.applyVisibility();
     }

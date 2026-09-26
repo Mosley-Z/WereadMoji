@@ -41,9 +41,9 @@ import java.util.List;
  * · **成本**：每次探测 = 1 次 getRootInActiveWindow IPC（几 ms）+ 1 次按 id 查找；
  *   仅用户翻页 / 回桌面时发生，空闲零开销。置位路径最多两轮探测（≈1.25s）。
  *
- * 🔴 **本类是全仓库唯一使用 `getRootInActiveWindow`（窗口内容）的地方** ——
+ * 🔴 **窗口内容使用点之一**（TASK-010 起与 {@link ElaHomeProbe} 并列，全仓库仅这两个）——
  * 它存在的代价是 a11y 配置从 canRetrieveWindowContent=false 翻成 true（2026-09-26 用户拍板，
- * help.txt 权限段已同步改为如实描述）。任何别的需求都**不许**在本类之外再碰窗口内容；
+ * help.txt 权限段已同步改为如实描述）。任何别的需求都**不许**在这两个类之外再碰窗口内容；
  * 动本类之前必读 `docs/04` §2.2 与 `tasks/TASK-009_设置页内容探测.md`。
  */
 final class SettingsPageProbe {
@@ -216,7 +216,7 @@ final class SettingsPageProbe {
     }
 
     /**
-     * 🔴 全仓库唯一使用窗口内容的方法。
+     * 🔴 窗口内容使用点之一（另一个在 {@link ElaHomeProbe#probeOnce}）。
      *
      * 返回值三态：true = 查到设置页特征（首查 / 复核共用）；
      * false = 确认**不在**设置页（仅当根窗口确是 ELauncher 才会给出）；

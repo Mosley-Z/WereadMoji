@@ -783,5 +783,6 @@ final class A11yEventRouter {
             ui.removeCallbacks(gateTimeout);
         }
         probe.cancel();                            // TASK-009：在途的内容探测一并作废
+        ela.cancelHomeProbe();                     // TASK-010：在途的"回 P1"探测一并作废
     }
 }
