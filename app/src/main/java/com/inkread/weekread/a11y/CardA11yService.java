@@ -39,8 +39,9 @@ import java.util.List;
  *
  * 注意：a11y 配置原为 canRetrieveWindowContent="false"（只读事件自带包名，不抓取内容）。
  * TASK-009（2026-09-26 用户拍板）翻成 true：ELauncher「设置」页的事件指纹漂移后
- * 事件层无解，只能查节点树。全仓库**唯一**使用窗口内容处 = {@link SettingsPageProbe}
- * （自限：仅歧义页码事件触发、只查一个控件 id、命中才让位、不存储不上传）。
+ * 事件层无解，只能查节点树。全仓库**唯二**使用窗口内容处 = {@link SettingsPageProbe} 与
+ * {@link ElaHomeProbe}
+ * （自限：仅歧义页码事件触发、各只查一个控件 id、命中才让位、不存储不上传）。
  */
 public class CardA11yService extends AccessibilityService {
 
