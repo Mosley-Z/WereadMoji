@@ -55,6 +55,10 @@ final class CardVisibilityState {
     int pendingPage = -1;
     /** 「用户已经翻离桌面第 1 页」闸门（v0.6.0） */
     boolean pageGate = false;
+    /** ELauncher「设置」隐藏页闸门（TASK-009：内容探测命中置位；resume/落回 P1 实锤清除） */
+    boolean settingsGate = false;
+    /** 最近一次「resume / 落到第 1 页」实锤时刻（uptimeMillis），探测置位的抑制窗锚点，见 SettingsPageProbe */
+    long settingsSettledAt = 0L;
     /** 通知栏（状态栏）是否已下拉 */
     boolean shadeOpen = false;
     /** 用户刚点过桌面上的图标（§25） */
@@ -129,6 +133,8 @@ final class CardVisibilityState {
         desktopPage = 0;
         pendingPage = -1;
         pageGate = false;
+        settingsGate = false;
+        settingsSettledAt = 0L;
         shadeOpen = false;
         iconGate = false;
         iconGateAt = 0L;

@@ -29,6 +29,7 @@ final class A11yEventRouter {
     private OverlayController ov;
     private TomoPageGate tomo;
     private ElauncherPageGate ela;
+    private SettingsPageProbe probe;
 
     /** 事件去重用（避免日志被高频事件刷爆）—— 纯日志用途，不算让位状态 */
     private String lastPkg = null;
@@ -41,10 +42,12 @@ final class A11yEventRouter {
         this.st = st;
     }
 
-    void attach(OverlayController ov, TomoPageGate tomo, ElauncherPageGate ela) {
+    void attach(OverlayController ov, TomoPageGate tomo, ElauncherPageGate ela,
+                SettingsPageProbe probe) {
         this.ov = ov;
         this.tomo = tomo;
         this.ela = ela;
+        this.probe = probe;
     }
 
 
@@ -606,6 +609,30 @@ final class A11yEventRouter {
         // 而这次翻页完全可能把页码停在原值（比如书架回来仍是"第 1 页"），
         // 不强制重算的话卡片就回不来了。
         if (gateCleared) ov.applyVisibility();
+        // ── 设置页内容探测（TASK-009）──
+        // sx∈[0,959]（page∈{0,1}）与「设置」隐藏页的现投递形态（480，已漂移）在事件层
+        // 无法区分（docs/04 §2.2）⇒ 延迟查一次节点树（命中 settings_top 才让位）。
+        // sx≥960 由 PAGE_HIDE_FROM 兜底直接管，不用探测，在途探测一并作废。
+        // Tomo 不发 ViewPager 事件 ⇒ 这段在 Tomo 上零调用（两桌面原则）。
+        // 🔴 page==0 是事件层较强的"P1 信号"（真值 P1=0）⇒ 立即清设置页闸门 + 作废在途
+        // 探测（HOME/BACK 回来的过渡残树会误报）。⚠️ 但**不刷** settledAt 抑制窗锚点：
+        // 实测 tap 进设置的瞬间也会伴生一条 sx=0（13:35:41，cct=1）—— sx=0 语义不纯，
+        // 刷了锚点会把紧跟的真实进入探测误伤在抑制窗里（抑制窗锚点只由 ElaGate
+        // settle 的真滚动指纹刷新）。
+        if (page == 0) {
+            if (st.settingsGate) {
+                st.settingsGate = false;
+                CardDebug.note(ctx, "settingsGate=false (pageRaw sx=0)");
+                ov.applyVisibility();
+            }
+            probe.cancel();
+        } else if (page <= 1) {
+            // 🔴 是否 resume 序列在调度时定格（elaFrame 是 Ela 判据窗口的现场指纹）：
+            // resume 必落 P1 ⇒ 这类探测命中只能是残树；tap 跳转进设置则没有 FrameLayout 伴随
+            probe.schedule(st.elaFrame);
+        } else {
+            probe.cancel();
+        }
     }
 
     boolean isLauncher(String pkg) {
@@ -755,5 +782,6 @@ final class A11yEventRouter {
             ui.removeCallbacks(applyPendingPage);
             ui.removeCallbacks(gateTimeout);
         }
+        probe.cancel();                            // TASK-009：在途的内容探测一并作废
     }
 }

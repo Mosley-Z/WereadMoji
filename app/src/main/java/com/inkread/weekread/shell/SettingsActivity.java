@@ -352,8 +352,8 @@ public class SettingsActivity extends Activity {
      *
      * 只在实验室页可见时算一次 —— 不轮询、不常驻、不加权限。
      *
-     * 🔴 刻意只说「系统默认桌面」，**不说「当前前台是谁」**：本 App 没有
-     *   `canRetrieveWindowContent`，前台包名本来就拿不到，写出来只会误导。
+     * 🔴 刻意只说「系统默认桌面」，**不说「当前前台是谁」**：窗口内容能力只有
+     *   a11y 的设置页探测（TASK-009）在用，实验室页刻意不读前台，写出来只会误导。
      */
     private void refreshLabHome() {
         try {

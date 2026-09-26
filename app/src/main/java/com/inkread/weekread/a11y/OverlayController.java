@@ -79,8 +79,13 @@ final class OverlayController {
      *
      * 能可靠区分的只有 `scrollX ≥ 960` 这一档（ELauncher 那些**不在指示点里的隐藏页**，
      * 目前已知「设置」是其中之一）。所以阈值取 2：**只在 ≥ 第 3 页时让位**。
-     * 代价是"桌面第 2 页仍会被卡片挡住"，这一点已如实写进交付说明，等用户决定是否
-     * 用 `canRetrieveWindowContent` 换取精确判定。
+     * 代价是"桌面第 2 页仍会被卡片挡住"，这一点已如实写进交付说明。
+     *
+     * ⚠️ **2026-09-25 漂移（t11）**：进「设置」页的那条 `sx=960` 不再投递（只投 480，
+     * 与第 1/2 页同形）⇒ 本闸门在设置页上失效。修复 = TASK-009 内容探测
+     * （{@link SettingsPageProbe}）：歧义页码事件后查一次节点树找 `settings_top`，
+     * 命中 ⇒ `st.settingsGate` 让位（见 applyVisibility 的新条件）。
+     * 本闸门保留，作 sx≥960 场景的兜底；`PAGE_HIDE_FROM=1` 仍然不可行（理由不变）。
      */
     private static final int PAGE_HIDE_FROM = 2;
 
@@ -274,7 +279,8 @@ final class OverlayController {
                 && !st.iconGate                         // 刚点过桌面图标（书架等）→ 让位（§25）
                 && !st.hideGate                         // 用户长按选择"隐藏 N 分钟" → 让位（v0.3.4）
                 && !st.pageGate                         // 翻离了桌面第 1 页 → 让位（v0.6.0）
-                && st.desktopPage < PAGE_HIDE_FROM;     // 进了桌面的隐藏页（如 ELauncher「设置」）→ 让位
+                && !st.settingsGate                     // ELauncher「设置」页（内容探测命中）→ 让位（TASK-009）
+                && st.desktopPage < PAGE_HIDE_FROM;     // sx≥960 的隐藏页 → 让位（兜底，见 PAGE_HIDE_FROM 注释）
         view.setVisibility(show ? View.VISIBLE : View.GONE);
         // 触摸区跟着一起显隐 —— 卡片藏起来时它们必须也走开，
         // 否则会在看不见的地方继续吃掉桌面的点击
@@ -299,6 +305,7 @@ final class OverlayController {
                 + ", st.onDesktop=" + st.onDesktop
                 + ", page=" + st.desktopPage
                 + ", swipePage=" + st.pageGate
+                + ", set=" + st.settingsGate
                 + ", shade=" + st.shadeOpen
                 + ", icon=" + st.iconGate
                 + ", hide=" + st.hideGate
