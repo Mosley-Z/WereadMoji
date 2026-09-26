@@ -25,7 +25,7 @@
 | `OverlayController` | 334 | 悬浮窗生命周期 + 🔴 **显隐单一出口** `applyVisibility()` |
 | `CardContentController` | 373 | 卡片**显示什么内容**（拉数据 / 切周期 / 本记 / 跳微信读书） |
 | `SettingsPageProbe` | 238 | ELauncher **设置页内容探测**（TASK-009）：650ms 延迟 + 600ms 复核双命中 `settings_top` 才让位；窗口内容使用点之一 |
-| `ElaHomeProbe` | 207 | ELauncher **「落到 P1」内容探测**（TASK-010）：`ElauncherPageGate` 判「swipe 落到」后不再直接显示，双命中**可见的** `txt_clock` 才显示（3 页桌面残值 524254/524255 打穿事件层判据；可见性过滤挡邻页保留残树）；窗口内容使用点之一 |
+| `ElaHomeProbe` | 211 | ELauncher **「落到 P1」内容探测**（TASK-010）：`ElauncherPageGate` 判「swipe 落到」后不再直接显示，双命中**可见的** `txt_clock` 才显示（3 页桌面残值 524254/524255 打穿事件层判据；可见性过滤挡邻页保留残树）；窗口内容使用点之一 |
 
 ### 🔴 为什么多出一个 `CardVisibilityState`（卡的规划里没有）
 

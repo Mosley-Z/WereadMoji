@@ -242,19 +242,19 @@ final class ElauncherPageGate {
         // · swipe 落到 ⇒ 3 页桌面残值判据已不可信（524254/524255 差 1、P2→P3 两种形态），
         //   改由内容探测双命中 txt_clock 后才显示（ElaHomeProbe）。
         if (leave) {
-            homeProbe.cancel();
+            cancelHomeProbe();
             if (!st.pageGate) {
                 st.pageGate = true;
                 dirty = true;
             }
         } else if (frame) {
-            homeProbe.cancel();
+            cancelHomeProbe();
             if (st.pageGate) {
                 st.pageGate = false;
                 dirty = true;
             }
         } else {
-            homeProbe.schedule();
+            if (homeProbe != null) homeProbe.schedule();
         }
         if (dirty) ov.applyVisibility();
     }

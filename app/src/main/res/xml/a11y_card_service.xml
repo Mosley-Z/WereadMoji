@@ -1,13 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 无障碍服务声明。
-     · 只用于五点：① 添加 TYPE_ACCESSIBILITY_OVERLAY 窗口；② 读事件自带的包名+类名判断是否在桌面；
+     · 只用于以下各点：① 添加 TYPE_ACCESSIBILITY_OVERLAY 窗口；② 读事件自带的包名+类名判断是否在桌面；
        ③ 读桌面 ViewPager 的 scrollX 判断当前在第几页（非第 1 页时卡片让位）；
        ④ 读 systemui 通知栏事件的面板消失标记，判断通知栏是否已下拉（下拉时卡片让位）；
        ⑤ 读桌面发出的"点按了图标"事件，让卡片在书架等面板上让位（§25）。
      · ⑥ 读 ELauncher「设置」隐藏页的节点树（TASK-009）：设置页与翻页/resume 的事件已无法
        区分（sx=960 漂移，docs/04 §2.2），只能按特征 id settings_top 判是否让位。
-       全仓库唯一使用窗口内容处 = SettingsPageProbe（仅歧义页码事件触发、只查一个 id、
+       窗口内容使用点之一 = SettingsPageProbe（仅歧义页码事件触发、只查一个 id、
        不存储不上传）。
+     · ⑦ 读 ELauncher 桌面第 1 页时钟节点 txt_clock（TASK-010）：3 页桌面下 P3→P2 残值
+       524254 与「落到 P1」的 524255 仅差 1 像素，事件层判据无法区分（docs/04 §2.4）；
+       「swipe 落到」须按**可见的**时钟节点 650ms+600ms 双命中才显示卡片（邻页残树里的
+       时钟不可见 ⇒ 必拒，见 ElaHomeProbe）。
+       窗口内容使用点之二 = ElaHomeProbe（仅歧义页码事件触发、只查一个 id、不存储不上传）。
      · canRetrieveWindowContent 由 false 翻为 true（2026-09-26 用户拍板）—— 原承诺
        「不抓取任何窗口内容」随之作废，help.txt 权限段已同步改为如实描述。
      · 2026-09-22 第 3 轮起加了 typeWindowContentChanged：ELauncher 的桌面第 2 页和

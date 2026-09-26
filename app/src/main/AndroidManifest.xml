@@ -62,8 +62,8 @@
 
         <!-- 桌面悬浮卡片的宿主（唯一的呈现方式）。
              窗口类型 TYPE_ACCESSIBILITY_OVERLAY，无需 SYSTEM_ALERT_WINDOW；
-             判断"在不在桌面/第几页"；窗口内容仅设置页探测在用（TASK-009，
-             canRetrieveWindowContent=true，全仓库唯一使用处 SettingsPageProbe）。 -->
+             判断"在不在桌面/第几页"；窗口内容唯二在用（canRetrieveWindowContent=true：
+             TASK-009 设置页探测 SettingsPageProbe + TASK-010 桌面第 1 页时钟探测 ElaHomeProbe）。 -->
         <service
             android:name=".a11y.CardA11yService"
             android:exported="true"
