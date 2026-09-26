@@ -4,6 +4,7 @@ import com.inkread.weekread.R;
 import com.inkread.weekread.a11y.CardA11yService;
 import com.inkread.weekread.core.BookStats;
 import com.inkread.weekread.core.BookStore;
+import com.inkread.weekread.core.CardDebug;
 import com.inkread.weekread.core.CoverStore;
 import com.inkread.weekread.core.NoteStats;
 import com.inkread.weekread.core.NoteStore;
@@ -323,6 +324,13 @@ public class MainActivity extends Activity {
         if (key.length() == 0) {
             card.setStats(null, null);
             return;
+        }
+        // 🔴 v0.8.1：App 内刷新也按「刷新绑定」补发其它形态（此前只有桌面卡片绑定了，
+        // App 侧从不读 bind_targets）。当前 page 的形态照旧走下面的完整路径（含 UI），
+        // 其余被勾选的形态由 BindRefresher **静默补发**（只写缓存、不碰 UI —— 与 TASK-012 同口径）。
+        int fired = com.inkread.weekread.core.BindRefresher.fireBound(this, key, tabMode);
+        if (fired > 0) {
+            CardDebug.note(this, "app refresh: bind fired " + fired + " req(s), cur=" + tabMode);
         }
         if (PeriodRange.BOOK.equals(tabMode)) {
             refreshBook(key, force);

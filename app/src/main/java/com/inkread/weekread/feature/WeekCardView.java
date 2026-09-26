@@ -101,6 +101,16 @@ public class WeekCardView extends View {
      * App 内（MainActivity）不塞此字段，App 版面不变（拍板：成就行只上桌面卡片）。
      */
     String achievementText = null;
+    /**
+     * 「本记」形态「更新于 HH:MM」的时间来源（毫秒）。
+     *
+     * 🔴 v0.8.1 修复：以前这里是 `setNote()` 里的 `System.currentTimeMillis()` ——
+     * 那是**渲染当下**，每次重绘（含 App 静默刷新、切形态回来）都变，表现为"时钟"，
+     * 且离线也一直在变（它根本不是数据获取时刻）。
+     * 现在由 {@link #setNote} 取**该条内容所属书的真实落盘时刻**
+     * （{@code NoteStore.noteFetchedAt}：划线/想法两路缓存 fetchedAt 取较新者）。
+     * 0 = 没有时间戳（老数据 / 没同步过）→ 不画「更新于」（与周/月/本书口径一致）。
+     */
     long noteFetchedAt;
     /** 当前已解码的封面（{@code coverBmpId} 标明它属于哪本书，防止切书后串图） */
     android.graphics.Bitmap coverBmp;
@@ -269,7 +279,11 @@ public class WeekCardView extends View {
         refreshing = false;
         phMain = null;
         emptyNote = null;
-        noteFetchedAt = System.currentTimeMillis();
+        // 🔴 v0.8.1：取该条内容所属书的**真实落盘时刻**，不再用"渲染当下"
+        // （后者每次重绘都变 → 「更新于」像时钟，离线也变；详见字段 javadoc）。
+        // n == null 时无从查书 → 0；两路缓存都没时间戳 → 0（不画「更新于」）。
+        noteFetchedAt = (n == null) ? 0L
+                : com.inkread.weekread.core.NoteStore.noteFetchedAt(getContext(), n.bookId);
         invalidate();
     }
 

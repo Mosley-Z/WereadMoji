@@ -192,11 +192,15 @@ public final class NoteStore {
         sTotMarks = -1;
         sTotIdeas = -1;
         sBooks.clear();
+        sNoteAt.clear();
     }
 
     /** 某本书的文件换了：只作废那一本的缓存（当前这一把照旧，条目按 key 重新解析） */
     private static synchronized void dropBookCache(String bookId) {
-        if (bookId != null && bookId.length() > 0) sBooks.remove(bookId);
+        if (bookId != null && bookId.length() > 0) {
+            sBooks.remove(bookId);
+            sNoteAt.remove(bookId);      // v0.8.1：「更新于」时间戳也随书失效，下次读新落盘值
+        }
     }
 
     /** 清掉全部内存缓存（设置页「清空缓存」用） */
@@ -204,6 +208,7 @@ public final class NoteStore {
         dropIndexCache();
         sBatch = null;
         sBatchLoaded = false;
+        sNoteAt.clear();
     }
 
     /**
@@ -528,6 +533,55 @@ public final class NoteStore {
     public static boolean ideaSynced(Context c, String bookId) {
         return ideas(c, bookId) != null;
     }
+
+    /** 这本书的想法是什么时候拉回来的（毫秒）；没拉过 / 老数据没时间戳 → 0（与 {@link #markFetchedAt} 同款） */
+    public static long ideaFetchedAt(Context c, String bookId) {
+        if (bookId == null || bookId.length() == 0) return 0L;
+        String s = read(c, P_IDEA + bookId + ".json");
+        if (s == null) return 0L;
+        try {
+            return new JSONObject(s).optLong("fetchedAt", 0L);
+        } catch (Exception e) {
+            return 0L;
+        }
+    }
+
+    /**
+     * 这本书的「本记」内容最近一次被同步回来的时刻（毫秒）—— 供卡片「更新于 HH:MM」用。
+     *
+     * 为什么要单独一个方法：本记一条内容是**划线 + 想法**两路缓存合成出来的
+     * （见 {@link #poolOfBook}），两个文件各存各的 `fetchedAt`。用户在卡片上看到的那条
+     * 到底来自哪一路、两路谁更新，调用方并不关心 —— 这里取**两者中较新者**
+     * （= 这份内容最近一次被更新到本地的时刻），语义直观。
+     *
+     * 🔴 v0.8.1：在此之前，「更新于」用的是 `WeekCardView.setNote()` 里的
+     * `System.currentTimeMillis()` —— 那是**渲染当下**，每次重绘都变（表现为"时钟"，
+     * 且离线也一直在变）。改为读这个**真实落盘时刻**后，只有真正同步回新数据才会前进。
+     *
+     * ⚠️ 本方法会读盘（`markFetchedAt` / `ideaFetchedAt` 各一次）。调用方
+     * （`WeekCardView.setNote`）在**主线程**，若不缓存则每次换一条 / 章节回填都会多读两次文件。
+     * 故这里加一层按书 LRU 记忆，写入侧（{@link #dropBookCache} / {@link #dropAllCache}）失效 ——
+     * 与 `sBooks` 同款口径，**不改变"文件是唯一真相"的前提**。
+     *
+     * @return 毫秒时间戳；两路都没有时间戳（老数据 / 没同步过）→ 0（调用方据此不画「更新于」）
+     */
+    public static long noteFetchedAt(Context c, String bookId) {
+        if (bookId == null || bookId.length() == 0) return 0L;
+        Long hit = sNoteAt.get(bookId);
+        if (hit != null) return hit;
+        long v = Math.max(markFetchedAt(c, bookId), ideaFetchedAt(c, bookId));
+        sNoteAt.put(bookId, v);
+        return v;
+    }
+
+    /** 「更新于」时间戳的按书记忆（16 本 LRU，够覆盖"最近在记的几本"）；见 {@link #noteFetchedAt} */
+    private static final LinkedHashMap<String, Long> sNoteAt =
+            new LinkedHashMap<String, Long>(16, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(java.util.Map.Entry<String, Long> e) {
+                    return size() > 24;
+                }
+            };
 
     /** 想法缓存是否还在有效期内（不需要重拉） */
     public static boolean ideaFresh(Context c, String bookId) {

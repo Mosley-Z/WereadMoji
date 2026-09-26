@@ -154,6 +154,35 @@ final class TomoPageGate {
     private static final long HOME_TEXT_NODE_MS = 400L;
 
     /**
+     * 「一条窗口的跨度超过这个值 ⇒ 认定它把不相关的事件误并了」的门槛（毫秒）。
+     *
+     * 🔴 v0.8.1 新增 —— 修「人在第 1 页、pageGate 却被误置位、卡片永久消失」的**根因**。
+     *
+     * ★ 真机抓到的两条对照（2026-09-27）──
+     *   真翻页（用户左滑离开第 1 页）：
+     *     `swipe sub=1→1 total=1→1 text=false zero=0 ws=false span=0ms   → 离开第1页` ✔
+     *   误判（覆盖安装后服务重连，桌面补发 resume 簇）：
+     *     `swipe sub=0→0 total=2→2 text=true  zero=0 ws=false span=968ms → 离开第1页` ✘
+     *
+     * 两条的 `span`（窗口内首末事件的间隔）差了三个数量级：**真翻页的两条事件
+     * 实测间隔 7–264ms**，而误判那条 **968ms** —— 说明窗口把"服务重连时桌面补发的
+     * 一次整窗重绘"和"Windows 状态/文本变化"这些**彼此无关**的事件并进了一起，
+     * 从而凑出了"`total≥2` 且 `text` 但 `sub==0`"这个本该代表"离开第 1 页"的组合。
+     *
+     * ★ 为什么选 500ms ──
+     * 实测真翻页最大 264ms，留了近一倍余量；而误判样本 968ms 远在其上。
+     * 一次翻页的两条事件哪怕慢一些也远不会到 500ms（真到了就说明这不是一次翻页）。
+     *
+     * ★ 失败方向 ──
+     * 命中守卫时**不判向**（保持闸门现状），符合本项目一贯的"宁可多显示"：
+     * 万一真的漏判了一次翻页，卡片多显示一会儿，下一次翻页就会纠正。
+     *
+     * ⚠️ **必须与 `zero == 0` 联用**（见 {@link #settleSwipe} 里的三条合取）：
+     * 单看 span 会误伤已实测的合法形态「亮屏+左滑并窗」（慢滑时 span 也可能偏大）。
+     */
+    private static final long SWIPE_MAX_SPAN_MS = 500L;
+
+    /**
      * 亮屏后多久之内的翻页指纹一律忽略（毫秒）。
      *
      * ★ 为什么直接订阅系统亮屏广播，而不是从事件里"猜"亮屏 ——
@@ -268,6 +297,23 @@ final class TomoPageGate {
             // 纯亮屏 / 纯返回桌面：没有任何翻页证据，维持现状
             CardDebug.note(ctx, "swipe drop (resume 重绘 sub=" + sub + " total=" + total
                     + " zero=" + zero + " text=" + text + " ws=" + ws + ")");
+            return;
+        }
+
+        // 🔴 v0.8.1 根因修复：**只针对"明确的误并形态"**不判向（见 SWIPE_MAX_SPAN_MS）。
+        // 判定必须同时满足三条，缺一不可 —— 因为已实测存在的合法形态
+        //「亮屏+左滑并窗」（`cct=1,cct=0,cct=3,cct=2`，含 `zero≥1`）在慢滑时
+        // span 也可能偏大，单看 span 会误伤它：
+        //   ① `zero == 0`：误判样本**没有** `cct=0`（桌面 resume 标记）；
+        //      而所有实测过的合法并窗形态都至少带一条 `cct=0`。
+        //   ② `text == true`：误判样本靠 TEXT 位凑出方向。
+        //   ③ `span > SWIPE_MAX_SPAN_MS`：真翻页两条事件实测 7–264ms，样本 968ms。
+        // 三条同时成立时，这个窗口不可能是"一次翻页"，只能是彼此无关的事件被并了进来
+        // ⇒ 不判向（保持闸门现状，符合"宁可多显示"）。
+        long span = st.swipeLastAt - st.swipeFirstAt;
+        if (zero == 0 && text && span > SWIPE_MAX_SPAN_MS) {
+            CardDebug.note(ctx, "swipe drop (误并形态: zero=0 text=true span=" + span + "ms > "
+                    + SWIPE_MAX_SPAN_MS + "ms ⇒ 不判向; sub=" + sub + " total=" + total + ")");
             return;
         }
 
