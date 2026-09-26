@@ -36,6 +36,19 @@ final class CardContentController {
 
     /** 上次"缓存缺封面 URL → 补拉书架"的时刻（防抖：5 分钟内最多一次） */
     private static long sCoverNudgeAt = 0L;
+
+    // ── TASK-012：手动刷新一轮的在途闸门 + 非手动触发节流 ──
+
+    /** 手动刷新一轮还没回来的请求数（>0 = 闸门关，连点直接挡掉） */
+    private static int sRoundPending = 0;
+    /** 本轮闸门关掉的起点（配 30s 兜底超时用） */
+    private static long sRoundGateAt = 0L;
+    /** 在途闸门兜底：正常一轮秒级回来；回调万一丢了，30s 后强制放行，闸门不焊死 */
+    private static final long ROUND_GATE_MAX_MS = 30_000L;
+    /** 非手动触发的拉取最小间隔（5s）：短时间重复触发只放行第一次 */
+    private static final long PERIODIC_MIN_GAP_MS = 5_000L;
+    /** 上一次拉取实际发出的时刻（手动也算 —— 刚拉过就别让周期路再重拉一遍） */
+    private static long sLastFetchAt = 0L;
     /** 最近一轮本记同步的结果状态（空态文案据此区分"失败"与"真的没有"） */
     private int lastNoteState = NoteSync.STATE_OK;
 
@@ -118,11 +131,66 @@ final class CardContentController {
         }
     }
 
-    /** 用户点了卡片右上角的「更新于…」→ 手动拉一次 */
+    /** 用户点了卡片右上角的「更新于…」→ 手动拉一轮（TASK-012：按「刷新绑定」补发其它形态） */
     void manualRefresh() {
         CardDebug.note(ctx, "tap refresh, mode=" + StatsStore.getCardPeriod(ctx)
                 + ", keyLen=" + StatsStore.getKey(ctx).length());
-        fetchCardData();
+        refreshBoth();
+    }
+
+    /**
+     * 手动刷新的总入口（TASK-012）：拉当前形态 + 按「刷新绑定」补发勾选的其它形态。
+     *
+     * 扁平补发：当前形态路走完整现有路径（置"刷新中"、唯一一次重绘、回调顺带清 refreshing）；
+     * 补发路 {@link #fireDetailSilent} / {@link #fireBookSilent} **只写缓存、绝不碰卡片 UI** ——
+     * 连 setRefreshing(false) 都不调，避免后台补发失败把当前形态的"刷新中"提前熄掉、
+     * 或把错误文案画到别的形态上（CardRenderer 在 stats==null 时会画 errorText）。
+     *
+     * 在途闸门：一轮发出的所有请求都计数，全部回来才重开；30s 兜底防回调丢失把闸门焊死
+     * （照 SettingsPageProbe.GATE_MAX_MS 先例）。
+     * 「本记」例外：NoteSync 自带 in-flight 去重 + 退避，且本记没有"其它形态"可补
+     * （拍板：本记形态只走 noteSync(true)，不补发）。
+     */
+    void refreshBoth() {
+        final String key = StatsStore.getKey(ctx);
+        if (key.length() == 0) return;
+        final String mode = StatsStore.getCardPeriod(ctx);
+        if (PeriodRange.NOTE.equals(mode)) {
+            CardDebug.note(ctx, "refresh: note → noteSync(true) only");
+            noteSync(true);
+            return;
+        }
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (sRoundPending > 0 && now - sRoundGateAt < ROUND_GATE_MAX_MS) {
+            CardDebug.note(ctx, "refresh: gate closed (" + sRoundPending + " in flight), skip");
+            return;
+        }
+        sRoundGateAt = now;
+        final int targets = CardPrefs.getBindTargets(ctx);
+        int pending = 1;                        // 当前形态路必发一个请求
+        fetchCardData(true, true);              // ① 当前形态：完整现有路径 + 计入在途
+        // ② 补发路：只写缓存。当前形态自己那一份不重复发。
+        if ((targets & CardPrefs.BIND_WEEK) != 0 && !PeriodRange.WEEKLY.equals(mode)) {
+            fireDetailSilent(key, PeriodRange.WEEKLY);
+            pending++;
+        }
+        if ((targets & CardPrefs.BIND_MONTH) != 0 && !PeriodRange.MONTHLY.equals(mode)) {
+            fireDetailSilent(key, PeriodRange.MONTHLY);
+            pending++;
+        }
+        if ((targets & CardPrefs.BIND_BOOK) != 0 && !PeriodRange.BOOK.equals(mode)) {
+            fireBookSilent(key);
+            pending++;
+        }
+        // 回调都 post 到主线程，本方法在主线程一口气跑完 → 先落定计数，再等回调逐个回收
+        sRoundPending = pending;
+        CardDebug.note(ctx, "refresh: fired " + pending + " req(s), mode=" + mode
+                + ", targets=" + targets);
+    }
+
+    /** 一轮里的一个请求回来了 → 在途计数减一；减到 0 闸门重开 */
+    private static void roundDone() {
+        if (sRoundPending > 0) sRoundPending--;
     }
 
     /**
@@ -142,7 +210,7 @@ final class CardContentController {
         } else if (PeriodRange.NOTE.equals(mode)) {
             if (!showNote(false)) noteSync(false);      // 池子空才起同步（去重 + 退避，见 noteSync）
         } else if (StatsStore.loadCard(ctx) == null) {
-            fetchCardData();
+            fetchCardData(false);               // 非手动触发：吃 5s 节流（TASK-012）
         }
         ov.applyVisibility();
     }
@@ -151,29 +219,54 @@ final class CardContentController {
      * 拉卡片当前周期的数据（卡片**只看当前周期**，不提供历史周期 —— ④ + 拍板 F）。
      *
      * 失败就留着旧数据，别弹窗打扰（用户可能只是路过点了一下）。
+     *
+     * TASK-012 拆成两参：{@code manual} = 用户手动触发（恒放行，不走 5s 节流）；
+     * {@code countRound} = 作为手动刷新一轮的一部分发出（回调里回收在途计数）。
+     * 「只拉当前形态、不在轮上」的内部触发（如换周期后缓存缺补拉）→ 用单参重载。
      */
-    void fetchCardData() {
+    void fetchCardData(boolean manual) {
+        fetchCardData(manual, false);
+    }
+
+    private void fetchCardData(boolean manual, boolean countRound) {
         final String key = StatsStore.getKey(ctx);
         if (key.length() == 0) return;
         final String mode = StatsStore.getCardPeriod(ctx);
-        CardDebug.note(ctx, "fetch start mode=" + mode);
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (!manual && now - sLastFetchAt < PERIODIC_MIN_GAP_MS) {
+            CardDebug.note(ctx, "fetch throttled (gap<5s), mode=" + mode);
+            return;
+        }
+        sLastFetchAt = now;                     // 手动也记时刻：刚拉过的数据没必要让周期路再重拉
+        CardDebug.note(ctx, "fetch start manual=" + manual + " mode=" + mode);
         if (PeriodRange.NOTE.equals(mode)) {
             // 本记的"刷新中"由 noteSync 自己管（v0.5.3）：如果此刻已经有另一轮同步在跑
             // （比如 App 那边刚发起），noteSync 会直接返回 —— 那么这里**不能**先把
             // refreshing 打开，否则没有任何回调来关它，卡片会永久停在"正在同步…"。
-            noteSync(true);                         // 手动刷新 → 重拉索引 + 多补一批书（清退避）
+            noteSync(true);                     // 重拉索引 + 多补一批书（清退避，语义不变）
             return;
         }
         // 立刻给文字反馈：墨水屏没有涟漪动画，不写"刷新中…"用户会以为没点到
         if (cardView() != null) cardView().setRefreshing(true);
         if (PeriodRange.BOOK.equals(mode)) {
-            fetchBookData(key, true);               // 手动刷新 → 允许重拉书架（有 10 分钟最小间隔）
+            fetchBookData(key, true, countRound);   // 允许重拉书架（有 10 分钟最小间隔）
             return;
         }
         final long gen = StatsStore.keyGen();          // R05
-        WereadApi.fetchDetail(key, mode, 0, new WereadApi.Callback() {
+        WereadApi.fetchDetail(key, mode, 0, detailCb(gen, countRound));
+    }
+
+    /**
+     * 周/月详情回调（原 fetchCardData 内联逻辑抽出，TASK-012）：
+     * 写缓存 + 「与当前偏好一致」才重绘 + 收尾。
+     *
+     * @param countRound 作为手动刷新一轮的一部分发出时，回调先回收在途计数
+     */
+    private WereadApi.Callback detailCb(final long gen, final boolean countRound) {
+        return new WereadApi.Callback() {
             @Override
             public void onResult(PeriodStats stats, String rawJson, String error) {
+                if (countRound) roundDone();                    // 先回收：被丢弃的结果也说明"请求回来了"
                 if (gen != StatsStore.keyGen()) return;         // 换过 Key → 丢弃旧会话结果
                 if (stats != null) {
                     StatsStore.save(ctx, stats);
@@ -191,7 +284,7 @@ final class CardContentController {
                 }
                 ov.applyVisibility();
             }
-        });
+        };
     }
 
     /**
@@ -201,12 +294,25 @@ final class CardContentController {
      * 用户可能只是路过点了一下，网络抖一下就要他重看一遍空卡片太亏。
      */
     void fetchBookData(final String key, boolean forceShelf) {
+        fetchBookData(key, forceShelf, false);
+    }
+
+    /**
+     * 拉「本书」的数据（书架 → 进度 → 章节目录，见 {@link WereadApi#fetchBook}）。
+     *
+     * 失败时**留着旧数据**（BookStore 里那份），别把已经显示出来的书名抹掉 ——
+     * 用户可能只是路过点了一下，网络抖一下就要他重看一遍空卡片太亏。
+     *
+     * @param countRound TASK-012：作为手动刷新一轮的一部分发出时，回调回收在途计数
+     */
+    private void fetchBookData(final String key, boolean forceShelf, final boolean countRound) {
         if (key.length() == 0) return;
         final long gen = StatsStore.keyGen();          // R05
         CardDebug.note(ctx, "fetch book start force=" + forceShelf);
         WereadApi.fetchBook(ctx, key, forceShelf, new WereadApi.BookCallback() {
             @Override
             public void onResult(BookStats b, String error) {
+                if (countRound) roundDone();                    // 先回收：被丢弃的结果也说明"请求回来了"
                 if (gen != StatsStore.keyGen()) return;         // 换过 Key → 丢弃旧会话结果
                 if (b != null) {
                     BookStore.save(ctx, b);
@@ -227,6 +333,52 @@ final class CardContentController {
                     CardDebug.note(ctx, "fetch book failed: " + error);
                 }
                 ov.applyVisibility();
+            }
+        });
+    }
+
+    /**
+     * 补发路的静默周/月请求（TASK-012）：只写缓存，不碰卡片 UI —— 连"刷新中"都不碰。
+     * keyGen 丢弃与正式路同规；回调先回收在途计数。
+     */
+    private void fireDetailSilent(String key, String mode) {
+        sLastFetchAt = android.os.SystemClock.elapsedRealtime();
+        final long gen = StatsStore.keyGen();
+        WereadApi.fetchDetail(key, mode, 0, new WereadApi.Callback() {
+            @Override
+            public void onResult(PeriodStats stats, String rawJson, String error) {
+                roundDone();
+                if (gen != StatsStore.keyGen()) return;         // 换过 Key → 丢弃
+                if (stats != null) {
+                    StatsStore.save(ctx, stats);
+                    CardDebug.note(ctx, "bind ok mode=" + stats.mode + ", total=" + stats.totalSec);
+                } else {
+                    CardDebug.note(ctx, "bind failed: " + error);
+                }
+            }
+        });
+    }
+
+    /**
+     * 补发路的静默「本书」拉取（TASK-012）：只写 BookStore，不碰卡片 UI。
+     *
+     * 🔴 刻意不走 {@link #fetchBookData}：那条路的失败回调会 setRefreshing(false)/setError ——
+     * 后台补发失败会把当前形态的"刷新中"提前熄掉，甚至把错误文案画到周/月卡上
+     * （CardRenderer 在 stats==null 时画 errorText，跨形态污染）。
+     */
+    private void fireBookSilent(String key) {
+        final long gen = StatsStore.keyGen();
+        WereadApi.fetchBook(ctx, key, true, new WereadApi.BookCallback() {
+            @Override
+            public void onResult(BookStats b, String error) {
+                roundDone();
+                if (gen != StatsStore.keyGen()) return;         // 换过 Key → 丢弃
+                if (b != null) {
+                    BookStore.save(ctx, b);
+                    CardDebug.note(ctx, "bind book ok");
+                } else {
+                    CardDebug.note(ctx, "bind book failed: " + error);
+                }
             }
         });
     }

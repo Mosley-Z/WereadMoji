@@ -19,6 +19,12 @@
     <string name="label_card_period">卡片显示周期（卡片左上角点一下也能临时切）</string>
     <string name="label_single_page">仅一页模式</string>
     <string name="label_single_page_tip">仅在确认桌面只有一页时打开：打开后翻页不再隐藏卡片</string>
+    <!-- TASK-012：刷新绑定 -->
+    <string name="label_refresh_bind">刷新绑定（点「更新于…」一并刷新勾选项）</string>
+    <string name="label_bind_week">本周</string>
+    <string name="label_bind_month">本月</string>
+    <string name="label_bind_book">本书</string>
+    <string name="label_refresh_bind_tip">手动刷新时顺带更新勾选的形态；「本记」不参与绑定，总是单独刷新</string>
     <string name="label_period_week">本周</string>
     <string name="label_period_month">本月</string>
     <string name="label_period_book">本书</string>
