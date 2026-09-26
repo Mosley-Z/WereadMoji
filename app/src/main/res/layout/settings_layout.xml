@@ -379,6 +379,60 @@
                     android:textColor="#FF3C3C3C"
                     android:textSize="13sp" />
 
+                <!-- TASK-012：刷新绑定 —— 点「更新于…」按勾选一并补发（只写偏好，不触发卡片重绘） -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/label_refresh_bind"
+                    android:textColor="#FF000000"
+                    android:textSize="15sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:orientation="horizontal">
+
+                    <CheckBox
+                        android:id="@+id/cb_bind_week"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/label_bind_week"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+
+                    <CheckBox
+                        android:id="@+id/cb_bind_month"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/label_bind_month"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+
+                    <CheckBox
+                        android:id="@+id/cb_bind_book"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/label_bind_book"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="@string/label_refresh_bind_tip"
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="13sp" />
+
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

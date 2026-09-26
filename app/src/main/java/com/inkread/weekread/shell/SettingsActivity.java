@@ -62,6 +62,9 @@ public class SettingsActivity extends Activity {
     private EditText etKey;
     private CheckBox cbCard;
     private CheckBox cbSinglePage;   // TASK-011 仅一页模式（自定义页 · 桌面卡片分区）
+    private CheckBox cbBindWeek;     // TASK-012 刷新绑定（自定义页 · 桌面卡片分区）
+    private CheckBox cbBindMonth;
+    private CheckBox cbBindBook;
     private RadioButton rbWeek;
     private RadioButton rbMonth;
     private RadioButton rbBook;
@@ -96,6 +99,9 @@ public class SettingsActivity extends Activity {
         etKey = (EditText) findViewById(R.id.et_key);
         cbCard = (CheckBox) findViewById(R.id.cb_card);
         cbSinglePage = (CheckBox) findViewById(R.id.cb_single_page);
+        cbBindWeek = (CheckBox) findViewById(R.id.cb_bind_week);
+        cbBindMonth = (CheckBox) findViewById(R.id.cb_bind_month);
+        cbBindBook = (CheckBox) findViewById(R.id.cb_bind_book);
         rbWeek = (RadioButton) findViewById(R.id.rb_period_week);
         rbMonth = (RadioButton) findViewById(R.id.rb_period_month);
         rbBook = (RadioButton) findViewById(R.id.rb_period_book);
@@ -213,6 +219,27 @@ public class SettingsActivity extends Activity {
                 refreshStatus();
             }
         });
+
+        // ── TASK-012 刷新绑定：三个勾选 = bind_targets 位掩码 ──
+        // 只写偏好，不 CardA11yService.sync()、不重绘 —— 下次点「更新于…」时才读它。
+        // 全不勾 = 0 = 刷新退回"只拉当前形态"的旧行为。
+        int bindTargets = CardPrefs.getBindTargets(this);
+        cbBindWeek.setChecked((bindTargets & CardPrefs.BIND_WEEK) != 0);
+        cbBindMonth.setChecked((bindTargets & CardPrefs.BIND_MONTH) != 0);
+        cbBindBook.setChecked((bindTargets & CardPrefs.BIND_BOOK) != 0);
+        CompoundButton.OnCheckedChangeListener bindL = new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                int t = 0;
+                if (cbBindWeek.isChecked()) t |= CardPrefs.BIND_WEEK;
+                if (cbBindMonth.isChecked()) t |= CardPrefs.BIND_MONTH;
+                if (cbBindBook.isChecked()) t |= CardPrefs.BIND_BOOK;
+                CardPrefs.setBindTargets(SettingsActivity.this, t);
+            }
+        };
+        cbBindWeek.setOnCheckedChangeListener(bindL);
+        cbBindMonth.setOnCheckedChangeListener(bindL);
+        cbBindBook.setOnCheckedChangeListener(bindL);
 
         CompoundButton.OnCheckedChangeListener periodListener =
                 new CompoundButton.OnCheckedChangeListener() {
