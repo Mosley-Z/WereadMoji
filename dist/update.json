@@ -1,13 +1,13 @@
 {
-  "versionCode": 29,
-  "versionName": "0.7.0",
-  "tag": "v0.7.0",
-  "notes": "修复桌面卡片两处显示问题：3 页桌面下翻页后卡片误显示遮挡图标、打开「设置」隐藏页时卡片未让位",
-  "apk": "dist/weread-stats-0.7.0.apk",
+  "versionCode": 30,
+  "versionName": "0.8.0",
+  "tag": "v0.8.0",
+  "notes": "新增两项设置：仅一页模式（确认桌面只有一页时开启，翻页时卡片不再让位）、刷新绑定（点刷新时勾选的本周/本月/本书数据一并更新，默认本周+本书）",
+  "apk": "dist/weread-stats-0.8.0.apk",
   "size": 272032,
-  "sha256": "322fa74ea0ccfce8324cfe11a5b5b788d096e3043b59d2a917cac66342eda983",
+  "sha256": "53973f8a71c449fd1ef14401d788d565c0d6bcee4baf06bbd52a19ac46d8fa17",
   "urls": [
-    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v0.7.0/dist/weread-stats-0.7.0.apk",
-    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v0.7.0/dist/weread-stats-0.7.0.apk"
+    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v0.8.0/dist/weread-stats-0.8.0.apk",
+    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v0.8.0/dist/weread-stats-0.8.0.apk"
   ]
 }
