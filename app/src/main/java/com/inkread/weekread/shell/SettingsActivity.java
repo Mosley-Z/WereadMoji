@@ -61,6 +61,7 @@ public class SettingsActivity extends Activity {
 
     private EditText etKey;
     private CheckBox cbCard;
+    private CheckBox cbSinglePage;   // TASK-011 仅一页模式（自定义页 · 桌面卡片分区）
     private RadioButton rbWeek;
     private RadioButton rbMonth;
     private RadioButton rbBook;
@@ -94,6 +95,7 @@ public class SettingsActivity extends Activity {
 
         etKey = (EditText) findViewById(R.id.et_key);
         cbCard = (CheckBox) findViewById(R.id.cb_card);
+        cbSinglePage = (CheckBox) findViewById(R.id.cb_single_page);
         rbWeek = (RadioButton) findViewById(R.id.rb_period_week);
         rbMonth = (RadioButton) findViewById(R.id.rb_period_month);
         rbBook = (RadioButton) findViewById(R.id.rb_period_book);
@@ -196,6 +198,17 @@ public class SettingsActivity extends Activity {
             @Override
             public void onCheckedChanged(CompoundButton b, boolean checked) {
                 CardPrefs.setEnabled(SettingsActivity.this, checked);
+                CardA11yService.sync();
+                refreshStatus();
+            }
+        });
+
+        // TASK-011 仅一页模式：改完立即重算一次显隐（与卡片开关同款既有路径）
+        cbSinglePage.setChecked(CardPrefs.isSinglePageMode(this));
+        cbSinglePage.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                CardPrefs.setSinglePageMode(SettingsActivity.this, checked);
                 CardA11yService.sync();
                 refreshStatus();
             }

@@ -17,6 +17,8 @@
     <string name="label_card">桌面卡片</string>
     <string name="label_card_switch">在桌面显示阅读卡片</string>
     <string name="label_card_period">卡片显示周期（卡片左上角点一下也能临时切）</string>
+    <string name="label_single_page">仅一页模式</string>
+    <string name="label_single_page_tip">仅在确认桌面只有一页时打开：打开后翻页不再隐藏卡片</string>
     <string name="label_period_week">本周</string>
     <string name="label_period_month">本月</string>
     <string name="label_period_book">本书</string>
