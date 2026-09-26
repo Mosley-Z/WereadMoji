@@ -41,3 +41,6 @@ local.properties
 *.iml
 .DS_Store
 Thumbs.db
+
+# ---- 发版门禁临时比对产物（TASK-001）：用完即删，绝不入库 ----
+_release_gate_tmp/
