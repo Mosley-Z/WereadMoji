@@ -274,13 +274,17 @@ final class OverlayController {
 
     void applyVisibility() {
         if (view == null) return;
+        // 仅一页模式（TASK-011，opt-in 默认关）：桌面只有一页时"翻页让位"整路不参与 ——
+        // pageGate 与 desktopPage 兜底两句一起短路；开关关时本式与原式逐位等价。
+        // 其余让位路（点图标/长按隐藏/通知栏/设置页/自家界面）不受影响。
+        boolean pageAllow = CardPrefs.isSinglePageMode(ctx)
+                || (!st.pageGate && st.desktopPage < PAGE_HIDE_FROM);
         boolean show = CardPrefs.isEnabled(ctx) && st.onDesktop && !CardA11yService.sOwnUiForeground
                 && !st.shadeOpen                        // 通知栏已下拉 → 让位，别压住通知
                 && !st.iconGate                         // 刚点过桌面图标（书架等）→ 让位（§25）
                 && !st.hideGate                         // 用户长按选择"隐藏 N 分钟" → 让位（v0.3.4）
-                && !st.pageGate                         // 翻离了桌面第 1 页 → 让位（v0.6.0）
                 && !st.settingsGate                     // ELauncher「设置」页（内容探测命中）→ 让位（TASK-009）
-                && st.desktopPage < PAGE_HIDE_FROM;     // sx≥960 的隐藏页 → 让位（兜底，见 PAGE_HIDE_FROM 注释）
+                && pageAllow;                           // 翻页让位（v0.6.0 + PAGE_HIDE_FROM 兜底）—— 仅一页模式可短路（TASK-011）
         view.setVisibility(show ? View.VISIBLE : View.GONE);
         // 触摸区跟着一起显隐 —— 卡片藏起来时它们必须也走开，
         // 否则会在看不见的地方继续吃掉桌面的点击
