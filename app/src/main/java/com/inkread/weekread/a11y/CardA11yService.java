@@ -79,6 +79,7 @@ public class CardA11yService extends AccessibilityService {
     private TomoPageGate tomo;
     private ElauncherPageGate ela;
     private SettingsPageProbe probe;
+    private ElaHomeProbe homeProbe;
 
     // ── 供同进程其它组件调用 ──
 
@@ -145,6 +146,7 @@ public class CardA11yService extends AccessibilityService {
         sInstance.st.lastHomeResolveAt = 0L;        // 顺手让下次桌面事件重查默认桌面
         sInstance.tomo.cancelSwipeWindow();
         sInstance.ela.cancelElaWindow();
+        sInstance.ela.cancelHomeProbe();            // TASK-010：在途的"回 P1"探测一并作废
         sInstance.ov.applyVisibility();
         CardDebug.note(sInstance, "resetPageGate (手动)");
     }
@@ -165,11 +167,13 @@ public class CardA11yService extends AccessibilityService {
             tomo = new TomoPageGate(this, ui, st);
             ela = new ElauncherPageGate(this, ui, st);
             probe = new SettingsPageProbe(this, ui, st);
+            homeProbe = new ElaHomeProbe(this, ui, st);
             router = new A11yEventRouter(this, ui, st);
             ov.attachContent(content);
             tomo.attach(ov, router);
-            ela.attach(ov, router, tomo);
+            ela.attach(ov, router, tomo, homeProbe);
             probe.attach(ov);
+            homeProbe.attach(ov);
             router.attach(ov, tomo, ela, probe);
         }
         st.resetAll();
