@@ -1,5 +1,6 @@
 package com.inkread.weekread.a11y;
 
+import com.inkread.weekread.core.AchievementPrefs;
 import com.inkread.weekread.core.BookStats;
 import com.inkread.weekread.core.BookStore;
 import com.inkread.weekread.core.CardDebug;
@@ -84,9 +85,73 @@ final class CardContentController {
                 loadCover(b);
             } else if (PeriodRange.NOTE.equals(mode)) {
                 if (!showNote(false)) noteSync(false);
-            } else cardView().setStats(StatsStore.loadCard(ctx));
+            } else {
+                PeriodStats s = StatsStore.loadCard(ctx);
+                cardView().setStats(s);
+                applyAchievement(s);            // 成就行随缓存数据重算（v0.9，TASK-013）
+            }
         }
         ov.applyVisibility();
+    }
+
+    // ── v0.9（TASK-013）：成就行 ──
+
+    /**
+     * 按偏好与**刚落到卡片上的**那份周期数据算成就行文案并塞给卡片（零网络、零新增请求）。
+     *
+     * 带参设计：{@code stats} 是 WeekCardView 的包级字段（feature 包私有，a11y 摸不到），
+     * 而两个挂点手里本来就各有一份 stats —— 直接传进来，不为它开 public 口子。
+     *
+     * 挂点两处，都是"数据/偏好变化"的必经路：
+     * ① {@link #refresh} —— 开机恢复、设置页改完经 {@code CardA11yService.sync()} 到达的
+     *    那一遍（所以设置页改完**立即生效且不发请求**）、以及切形态；
+     * ② {@link #detailCb} —— 新数据落卡后。
+     *
+     * 不画（置 null）：总开关关 / 当前形态没有有效目标（kind=OFF，或自定义分钟 ≤0）
+     * / 数据不是当前周期（历史周/月整行不画，docs/07 §3.3）。
+     * 渲染端 achvOn 另有一道同款 isCurrentPeriod 判定（双保险）。
+     *
+     * 🔴 只读本地 prefs + 调用方递进来的 stats；渲染函数不读文件/不读 prefs 的铁律由
+     * "controller 算好文案塞字段"满足（noteHint 同款，docs/03 §3）。
+     */
+    private void applyAchievement(PeriodStats s) {
+        if (cardView() == null || s == null) return;
+        String text = null;
+        if (AchievementPrefs.isEnabled(ctx) && s.isCurrentPeriod()) {
+            boolean week = PeriodRange.WEEKLY.equals(s.mode);
+            long target = AchievementPrefs.targetSec(ctx, week);
+            if (target > 0) {                       // kind=OFF / 自定义分钟≤0 都在这挡掉
+                int kind = week ? AchievementPrefs.getWeekKind(ctx) : AchievementPrefs.getMonthKind(ctx);
+                if (kind == AchievementPrefs.KIND_CUSTOM) {
+                    text = (s.totalSec >= target) ? "恭喜您已达成你的目标"
+                            : (week ? "本周距离您的目标还有 " : "本月距离您的目标还有 ")
+                              + fmtDur(target - s.totalSec);
+                } else {
+                    String name = goalName(week, kind);
+                    text = (s.totalSec >= target) ? "恭喜您已达成" + name + "成就"
+                            : (week ? "本周距离" : "本月距离") + name + "还有 " + fmtDur(target - s.totalSec);
+                }
+            }
+        }
+        cardView().setAchievementText(text);
+    }
+
+    /** 目标名（口径照 docs/07 §3.3；🔴 不出现「官方/挑战」字样 —— 数据与官方口径可能不同） */
+    private static String goalName(boolean week, int kind) {
+        if (kind == AchievementPrefs.KIND_BERSERK) return week ? "狂暴阅读周" : "狂暴阅读月";
+        return week ? "完美阅读周" : "完美阅读月";
+    }
+
+    /**
+     * 时长格式。与卡片其它处 {@code CardLayout.fmtTotal} 同款口径
+     * （「X小时Y分」/「Y分钟」/「Z秒」；该类是 feature 包私有，a11y 侧照抄口径）。
+     */
+    private static String fmtDur(long sec) {
+        if (sec < 0) sec = 0;
+        long hh = sec / 3600L, mm = (sec % 3600L) / 60L;
+        if (hh > 0) return hh + "小时" + mm + "分";
+        if (mm > 0) return mm + "分钟";
+        return sec + "秒";
     }
 
     /**
@@ -275,6 +340,7 @@ final class CardContentController {
                     if (cardView() != null && stats.mode.equals(now)) {
                         cardView().setMode(stats.mode);
                         cardView().setStats(stats);
+                        applyAchievement(stats); // 新数据落卡 → 成就行同步重算（v0.9，TASK-013）
                     }
                     CardDebug.note(ctx, "fetch ok mode=" + stats.mode
                             + ", total=" + stats.totalSec + ", " + stats.dump());

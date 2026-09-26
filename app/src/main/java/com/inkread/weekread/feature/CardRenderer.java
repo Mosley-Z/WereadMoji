@@ -391,8 +391,12 @@ final class CardRenderer {
         host.p.setFakeBoldText(false);
 
         // ── 7 天柱状图 ──
+        // 成就行开启（v0.9，TASK-013）：柱状图整体压短，给贴底成就行与上移后的统计行让位；
+        // 关闭（achievementText == null）走原值 —— 与 v0.8.0 逐像素一致。
+        // 0.685 = TASK-015 实测定死（0.70 时统计行与柱底净空仅 7px，偏紧）。
+        boolean achvOn = host.achievementText != null && isCur;
         float chartTop = h * 0.40f;
-        float chartBottom = h * 0.78f;
+        float chartBottom = achvOn ? h * 0.685f : h * 0.78f;
         float chartH = chartBottom - chartTop;
         float slot = (right - left) / 7f;
         float barW = slot * 0.5f;
@@ -461,7 +465,10 @@ final class CardRenderer {
             sb.append("  ·  较上周 ").append(v >= 0 ? "↑" : "↓")
               .append(Math.round(Math.abs(v) * 100)).append("%");
         }
-        drawBottomLine(c, (left + right) / 2f, h, padY, left, right, sb.toString());
+        // 成就行开启时统计行上移一行（1.6×副字号 ≈ 33px @480×800），贴底位让给成就行（v0.9）
+        float lineY = h - padY * 0.85f - (achvOn ? 1.6f * SZ_SUB * host.unit : 0f);
+        drawBottomLine(c, (left + right) / 2f, lineY, left, right, sb.toString());
+        if (achvOn) drawAchievementLine(c, (left + right) / 2f, h, padY, host.achievementText);
     }
 
     // ══════════════════════ 月：日历打卡网格（v0.3.3 新增） ══════════════════════
@@ -496,8 +503,11 @@ final class CardRenderer {
         int rows = (firstOffset + dayCount + 6) / 7;            // 上取整
         float gridH = headH + gap + rows * cell + (rows - 1) * rowGap;
 
+        // 成就行开启（v0.9，TASK-013）：左栏与网格整体上收一行，贴底位让给成就行；
+        // 关闭走原值 —— 逐像素一致（TASK-015 实测月卡富余 56px，上收一行很安全）
+        boolean achvOn = host.achievementText != null && host.stats.isCurrentPeriod();
         float contentTop = ruleY + padY * 0.55f;
-        float contentBottom = h - padY * 0.90f;
+        float contentBottom = h - padY * 0.90f - (achvOn ? 1.6f * SZ_SUB * host.unit : 0f);
         float gridTop = contentTop + Math.max(0f, (contentBottom - contentTop - gridH) / 2f);
 
         // ── 表头（一…日，不随月份变化）──
@@ -559,8 +569,10 @@ final class CardRenderer {
         if (l3 != null) c.drawText(l3, left, base2 + subLine, host.p);
 
         // ── 底部统计行：本月只说"读了多少天"（日均/较上月已在左栏）──
-        drawBottomLine(c, (left + right) / 2f, h, padY, left, right,
+        float lineY = h - padY * 0.85f - (achvOn ? 1.6f * SZ_SUB * host.unit : 0f);
+        drawBottomLine(c, (left + right) / 2f, lineY, left, right,
                 "阅读 " + host.stats.readDays + "/" + dayCount + " 天");
+        if (achvOn) drawAchievementLine(c, (left + right) / 2f, h, padY, host.achievementText);
 
         host.p.setColor(INK);
         host.p.setTextAlign(Paint.Align.LEFT);
@@ -723,8 +735,11 @@ final class CardRenderer {
         host.p.setStyle(Paint.Style.FILL);
     }
 
-    /** 底部统计行（加粗居中，宽度不够自动缩字号，绝不出框）。两条分支共用 */
-    private void drawBottomLine(Canvas c, float cx, float h, float padY,
+    /**
+     * 底部统计行（加粗居中，宽度不够自动缩字号，绝不出框）。两条分支共用。
+     * 基线 y 由调用方传入：成就行开启时贴底位让给成就行，统计行上移一行（v0.9，TASK-013）。
+     */
+    private void drawBottomLine(Canvas c, float cx, float lineY,
                                 float left, float right, String text) {
         host.p.setStyle(Paint.Style.FILL);
         host.p.setColor(INK);
@@ -737,8 +752,24 @@ final class CardRenderer {
             bSize -= 0.4f;
             host.p.setTextSize(bSize);
         }
-        c.drawText(text, cx, h - padY * 0.85f, host.p);
+        c.drawText(text, cx, lineY, host.p);
         host.p.setFakeBoldText(false);
+        host.p.setTextAlign(Paint.Align.LEFT);
+    }
+
+    /**
+     * 成就行（v0.9，TASK-013）：接管原统计行的贴底位（h − padY×0.85）。
+     * 与统计行反着来 —— **非加粗**、副字号（SZ_SUB）、居中，一眼分清主次。
+     * 文案由 controller 按偏好算好（{@code AchievementPrefs} / WeekCardView#achievementText），
+     * 这里不再判 isCurrentPeriod —— 调用方的 achvOn 已含（controller 侧还过滤了一轮）。
+     */
+    private void drawAchievementLine(Canvas c, float cx, float h, float padY, String text) {
+        host.p.setStyle(Paint.Style.FILL);
+        host.p.setColor(INK);
+        host.p.setTextAlign(Paint.Align.CENTER);
+        host.p.setFakeBoldText(false);
+        host.p.setTextSize(SZ_SUB * host.unit);
+        c.drawText(text, cx, h - padY * 0.85f, host.p);
         host.p.setTextAlign(Paint.Align.LEFT);
     }
 

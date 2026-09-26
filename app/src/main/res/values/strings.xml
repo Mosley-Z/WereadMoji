@@ -25,6 +25,19 @@
     <string name="label_bind_month">本月</string>
     <string name="label_bind_book">本书</string>
     <string name="label_refresh_bind_tip">手动刷新时顺带更新勾选的形态；「本记」不参与绑定，总是单独刷新</string>
+    <!-- TASK-013：阅读成就提示 -->
+    <string name="label_achv">阅读成就提示（桌面卡片贴底一行小字）</string>
+    <string name="label_achv_switch">开启阅读成就提示</string>
+    <string name="label_achv_tip">开启后周/月卡片最底下显示距目标的差距，达成时显示恭喜语；关闭时版面与原来完全一致</string>
+    <string name="label_achv_week">周目标</string>
+    <string name="label_achv_month">月目标</string>
+    <string name="label_achv_kind_off">关</string>
+    <string name="label_achv_kind_perfect">完美</string>
+    <string name="label_achv_kind_berserk">狂暴</string>
+    <string name="label_achv_kind_custom">自定义</string>
+    <string name="hint_achv_week">自定义周目标（小时，如 1.25）</string>
+    <string name="hint_achv_month">自定义月目标（小时，如 40）</string>
+    <string name="label_achv_source">数据来源：微信读书 API 累计时长</string>
     <string name="label_period_week">本周</string>
     <string name="label_period_month">本月</string>
     <string name="label_period_book">本书</string>

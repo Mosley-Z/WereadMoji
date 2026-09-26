@@ -2,6 +2,7 @@ package com.inkread.weekread.shell;
 
 import com.inkread.weekread.R;
 import com.inkread.weekread.a11y.CardA11yService;
+import com.inkread.weekread.core.AchievementPrefs;
 import com.inkread.weekread.core.CardPrefs;
 import com.inkread.weekread.core.PeriodRange;
 import com.inkread.weekread.core.StatsStore;
@@ -20,6 +21,8 @@ import android.content.ClipboardManager;
 import android.content.Intent;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
@@ -65,6 +68,20 @@ public class SettingsActivity extends Activity {
     private CheckBox cbBindWeek;     // TASK-012 刷新绑定（自定义页 · 桌面卡片分区）
     private CheckBox cbBindMonth;
     private CheckBox cbBindBook;
+
+    // ── v0.9（TASK-013）阅读成就提示（自定义页 · 桌面卡片分区）──
+    private CheckBox cbAchv;
+    private RadioButton rbAchvWeekOff;
+    private RadioButton rbAchvWeekPerfect;
+    private RadioButton rbAchvWeekBerserk;
+    private RadioButton rbAchvWeekCustom;
+    private RadioButton rbAchvMonthOff;
+    private RadioButton rbAchvMonthPerfect;
+    private RadioButton rbAchvMonthBerserk;
+    private RadioButton rbAchvMonthCustom;
+    private EditText etAchvWeekHours;    // 自定义周目标（小时，≤2 位小数）
+    private EditText etAchvMonthHours;   // 自定义月目标
+
     private RadioButton rbWeek;
     private RadioButton rbMonth;
     private RadioButton rbBook;
@@ -102,6 +119,20 @@ public class SettingsActivity extends Activity {
         cbBindWeek = (CheckBox) findViewById(R.id.cb_bind_week);
         cbBindMonth = (CheckBox) findViewById(R.id.cb_bind_month);
         cbBindBook = (CheckBox) findViewById(R.id.cb_bind_book);
+
+        // ── v0.9（TASK-013）阅读成就提示 ──
+        cbAchv = (CheckBox) findViewById(R.id.cb_achv);
+        rbAchvWeekOff = (RadioButton) findViewById(R.id.rb_achv_week_off);
+        rbAchvWeekPerfect = (RadioButton) findViewById(R.id.rb_achv_week_perfect);
+        rbAchvWeekBerserk = (RadioButton) findViewById(R.id.rb_achv_week_berserk);
+        rbAchvWeekCustom = (RadioButton) findViewById(R.id.rb_achv_week_custom);
+        rbAchvMonthOff = (RadioButton) findViewById(R.id.rb_achv_month_off);
+        rbAchvMonthPerfect = (RadioButton) findViewById(R.id.rb_achv_month_perfect);
+        rbAchvMonthBerserk = (RadioButton) findViewById(R.id.rb_achv_month_berserk);
+        rbAchvMonthCustom = (RadioButton) findViewById(R.id.rb_achv_month_custom);
+        etAchvWeekHours = (EditText) findViewById(R.id.et_achv_week);
+        etAchvMonthHours = (EditText) findViewById(R.id.et_achv_month);
+
         rbWeek = (RadioButton) findViewById(R.id.rb_period_week);
         rbMonth = (RadioButton) findViewById(R.id.rb_period_month);
         rbBook = (RadioButton) findViewById(R.id.rb_period_book);
@@ -241,6 +272,75 @@ public class SettingsActivity extends Activity {
         cbBindMonth.setOnCheckedChangeListener(bindL);
         cbBindBook.setOnCheckedChangeListener(bindL);
 
+        // ── TASK-013 阅读成就提示（自定义页 · 桌面卡片分区）──
+        // 总开关 + 周/月各一组四选（关｜完美｜狂暴｜自定义）+ 自定义小时输入框。
+        // 任一变更 → 写 achv → CardA11yService.sync()：卡片只重算内容（成就行随 prefs 重算），
+        // 不重发请求、不重开无障碍。默认全关 = 卡片版面与 v0.8.0 逐像素一致。
+        cbAchv.setChecked(AchievementPrefs.isEnabled(this));
+        cbAchv.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                AchievementPrefs.setEnabled(SettingsActivity.this, checked);
+                CardA11yService.sync();
+            }
+        });
+
+        int wk = AchievementPrefs.getWeekKind(this);
+        int mk = AchievementPrefs.getMonthKind(this);
+        rbAchvWeekOff.setChecked(wk == AchievementPrefs.KIND_OFF);
+        rbAchvWeekPerfect.setChecked(wk == AchievementPrefs.KIND_PERFECT);
+        rbAchvWeekBerserk.setChecked(wk == AchievementPrefs.KIND_BERSERK);
+        rbAchvWeekCustom.setChecked(wk == AchievementPrefs.KIND_CUSTOM);
+        rbAchvMonthOff.setChecked(mk == AchievementPrefs.KIND_OFF);
+        rbAchvMonthPerfect.setChecked(mk == AchievementPrefs.KIND_PERFECT);
+        rbAchvMonthBerserk.setChecked(mk == AchievementPrefs.KIND_BERSERK);
+        rbAchvMonthCustom.setChecked(mk == AchievementPrefs.KIND_CUSTOM);
+        CompoundButton.OnCheckedChangeListener achvWeekL = new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                if (!checked) return;               // 只管"被选中的那个"
+                int id = b.getId();
+                int kind = (id == R.id.rb_achv_week_perfect) ? AchievementPrefs.KIND_PERFECT
+                        : (id == R.id.rb_achv_week_berserk) ? AchievementPrefs.KIND_BERSERK
+                        : (id == R.id.rb_achv_week_custom) ? AchievementPrefs.KIND_CUSTOM
+                        : AchievementPrefs.KIND_OFF;
+                AchievementPrefs.setWeekKind(SettingsActivity.this, kind);
+                etAchvWeekHours.setEnabled(kind == AchievementPrefs.KIND_CUSTOM);
+                CardA11yService.sync();
+            }
+        };
+        rbAchvWeekOff.setOnCheckedChangeListener(achvWeekL);
+        rbAchvWeekPerfect.setOnCheckedChangeListener(achvWeekL);
+        rbAchvWeekBerserk.setOnCheckedChangeListener(achvWeekL);
+        rbAchvWeekCustom.setOnCheckedChangeListener(achvWeekL);
+        CompoundButton.OnCheckedChangeListener achvMonthL = new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                if (!checked) return;
+                int id = b.getId();
+                int kind = (id == R.id.rb_achv_month_perfect) ? AchievementPrefs.KIND_PERFECT
+                        : (id == R.id.rb_achv_month_berserk) ? AchievementPrefs.KIND_BERSERK
+                        : (id == R.id.rb_achv_month_custom) ? AchievementPrefs.KIND_CUSTOM
+                        : AchievementPrefs.KIND_OFF;
+                AchievementPrefs.setMonthKind(SettingsActivity.this, kind);
+                etAchvMonthHours.setEnabled(kind == AchievementPrefs.KIND_CUSTOM);
+                CardA11yService.sync();
+            }
+        };
+        rbAchvMonthOff.setOnCheckedChangeListener(achvMonthL);
+        rbAchvMonthPerfect.setOnCheckedChangeListener(achvMonthL);
+        rbAchvMonthBerserk.setOnCheckedChangeListener(achvMonthL);
+        rbAchvMonthCustom.setOnCheckedChangeListener(achvMonthL);
+
+        // 自定义小时输入框：先回填再挂监听（回填不触发解析）；输入过程逐字符解析，
+        // 但只在"分钟值真的变了"才落盘+sync（见 hoursWatcher）—— 否则打一个字卡片闪一次。
+        etAchvWeekHours.setText(minToHours(AchievementPrefs.getWeekMin(this)));
+        etAchvWeekHours.setEnabled(wk == AchievementPrefs.KIND_CUSTOM);
+        etAchvWeekHours.addTextChangedListener(hoursWatcher(true));
+        etAchvMonthHours.setText(minToHours(AchievementPrefs.getMonthMin(this)));
+        etAchvMonthHours.setEnabled(mk == AchievementPrefs.KIND_CUSTOM);
+        etAchvMonthHours.addTextChangedListener(hoursWatcher(false));
+
         CompoundButton.OnCheckedChangeListener periodListener =
                 new CompoundButton.OnCheckedChangeListener() {
                     @Override
@@ -367,6 +467,52 @@ public class SettingsActivity extends Activity {
     protected void onPause() {
         super.onPause();
         CardA11yService.noteOwnUiForeground(false);
+    }
+
+    /**
+     * 自定义目标（小时）输入框的监听器（v0.9，TASK-013）。
+     *
+     * 口径（方案 §1/§4）：输入小时、≤2 位小数（"1.25"）；校验 0 &lt; h ≤ 1000；
+     * 落盘 = round(h×60) 整数分钟；解析不出（空串 / 非法 / 越界）→ 存 0 =
+     * 「未设置」→ targetSec 返回 0 → 成就行不画（不会出现"0 目标恒达成"）。
+     *
+     * 🔴 只在解析出的分钟数**与现存值不同**时才写 prefs + sync —— 输入是逐字符触发的，
+     * 不去抖的话每敲一个字卡片就重绘一遍（墨水屏上不可接受）。
+     */
+    private TextWatcher hoursWatcher(final boolean week) {
+        return new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int st, int ct, int af) { }
+            @Override
+            public void onTextChanged(CharSequence s, int st, int b, int c) { }
+            @Override
+            public void afterTextChanged(Editable s) {
+                String t = (s == null) ? "" : s.toString().trim();
+                int min = 0;
+                if (t.length() > 0) {
+                    try {
+                        double h = Double.parseDouble(t);
+                        if (h > 0 && h <= 1000.0) min = (int) Math.round(h * 60.0);
+                    } catch (NumberFormatException e) {
+                        min = 0;                // 打字中间态（"1."之类）不算错，按"未设置"
+                    }
+                }
+                int old = week ? AchievementPrefs.getWeekMin(SettingsActivity.this)
+                        : AchievementPrefs.getMonthMin(SettingsActivity.this);
+                if (min == old) return;
+                if (week) AchievementPrefs.setWeekMin(SettingsActivity.this, min);
+                else AchievementPrefs.setMonthMin(SettingsActivity.this, min);
+                CardA11yService.sync();
+            }
+        };
+    }
+
+    /** 分钟 → 小时显示（≤2 位小数；整数不带小数点）。只在进设置页回填输入框时用 */
+    private static String minToHours(int min) {
+        if (min <= 0) return "";
+        double h = min / 60.0;
+        if (h == Math.floor(h)) return String.valueOf((long) h);
+        return String.valueOf(Math.round(h * 100.0) / 100.0);
     }
 
     /** 把卡片的真实状态写出来，别让用户以为"开关打开就一定看得见" */

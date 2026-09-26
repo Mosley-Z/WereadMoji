@@ -433,6 +433,171 @@
                     android:textColor="#FF3C3C3C"
                     android:textSize="13sp" />
 
+                <!-- TASK-013：阅读成就提示 —— 成就行画在桌面卡片贴底位，默认全关 = 版面与 v0.8.0 一致 -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/label_achv"
+                    android:textColor="#FF000000"
+                    android:textSize="15sp" />
+
+                <CheckBox
+                    android:id="@+id/cb_achv"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:buttonTint="#FF000000"
+                    android:text="@string/label_achv_switch"
+                    android:textColor="#FF000000"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="@string/label_achv_tip"
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/label_achv_week"
+                    android:textColor="#FF000000"
+                    android:textSize="14sp" />
+
+                <RadioGroup
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:orientation="horizontal">
+
+                    <RadioButton
+                        android:id="@+id/rb_achv_week_off"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/label_achv_kind_off"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_achv_week_perfect"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/label_achv_kind_perfect"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_achv_week_berserk"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/label_achv_kind_berserk"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_achv_week_custom"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/label_achv_kind_custom"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+                </RadioGroup>
+
+                <EditText
+                    android:id="@+id/et_achv_week"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:hint="@string/hint_achv_week"
+                    android:inputType="numberDecimal"
+                    android:textColor="#FF000000"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/label_achv_month"
+                    android:textColor="#FF000000"
+                    android:textSize="14sp" />
+
+                <RadioGroup
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:orientation="horizontal">
+
+                    <RadioButton
+                        android:id="@+id/rb_achv_month_off"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/label_achv_kind_off"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_achv_month_perfect"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/label_achv_kind_perfect"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_achv_month_berserk"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/label_achv_kind_berserk"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_achv_month_custom"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/label_achv_kind_custom"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+                </RadioGroup>
+
+                <EditText
+                    android:id="@+id/et_achv_month"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:hint="@string/hint_achv_month"
+                    android:inputType="numberDecimal"
+                    android:textColor="#FF000000"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/label_achv_source"
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="13sp" />
+
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
