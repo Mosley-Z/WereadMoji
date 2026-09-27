@@ -70,8 +70,9 @@ public final class CardSpec {
     // 收起态必须维持原样（用户 2026-09-26 拍板）。
     // 这里只是**新增**一个"展开态底边"，只有本记形态、且用户点了「展开▽」之后才用。
     //
-    // 值 = 730 的由来（`验证记录/59` 项②，TASK-015 实测）：
-    //   末排应用名 TextView 的 `bounds.bottom` = 737（墨迹底 ≈733）⇒ 取 730 留 7px 视觉余量。
+    // 值 = 750 的由来：730 是按 ELauncher 量到末排应用名 `bounds.bottom`=737 留 7px 余量，
+    //   但上机实测（Tomo）展开后点「换一张」按钮时容易误触到下方末排应用 ⇒ 2026-09-28
+    //   用户拍板**增大到 750**，把末排应用图标及名称一并盖住（受控的有意遮挡，防误触）。
     // ⚠️ 该值"仅测一次、固化成常量"（用户要求），不要再动态算 —— a11y 侧不读节点几何。
     //
     // ⚠️ 展开态**会盖住下方一排应用图标及名称**，这是**受控的有意行为**（用户已确认）：
@@ -79,9 +80,9 @@ public final class CardSpec {
     // 观感就是"卡片向下展开、把下面那排盖住"。收起即恢复。
 
     /** 展开态底边（屏幕坐标）。见上面的量测说明 */
-    public static final int CARD_BOTTOM_EXPANDED = 730;
+    public static final int CARD_BOTTOM_EXPANDED = 750;
 
-    /** 展开态卡片高度 = 730 − 70 = 660 */
+    /** 展开态卡片高度 = 750 − 70 = 680 */
     public static int cardHeightExpanded() {
         return CARD_BOTTOM_EXPANDED - CARD_TOP;
     }
