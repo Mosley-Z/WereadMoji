@@ -101,6 +101,19 @@ public class WeekCardView extends View {
      * App 内（MainActivity）不塞此字段，App 版面不变（拍板：成就行只上桌面卡片）。
      */
     String achievementText = null;
+
+    /**
+     * 本月呈现方式：**true = 热力图**（5 档黑度网点）/ **false = 打卡网格**（现状）。
+     *
+     * 只影响**本月**形态的日期格怎么画（{@code CardRenderer.drawMonthBody} /
+     * {@code drawMonthFullBody} 各分流一次）；周卡 / 本书 / 本记形态不受影响。
+     * 由 {@code CardContentController#applyMonthStyle} 按偏好
+     * （{@code CardPrefs.getMonthStyle}）算好塞进来 ——
+     * 🔴 渲染函数不读 prefs / 不发请求（docs/03 §3），与 {@link #achievementText} 同款口径。
+     *
+     * 🔴 v0.8.1（TASK-014）：默认值由偏好决定，**默认 = 热力图**（用户 2026-09-27 拍板）。
+     */
+    boolean monthHeatmap = false;
     /**
      * 「本记」形态「更新于 HH:MM」的时间来源（毫秒）。
      *
@@ -316,6 +329,18 @@ public class WeekCardView extends View {
         boolean same = (s == null) ? (achievementText == null) : s.equals(achievementText);
         if (same) return;
         achievementText = s;
+        invalidate();
+    }
+
+    /**
+     * 设本月呈现方式（TASK-014）：true = 热力图 / false = 打卡网格。
+     *
+     * same-check + invalidate 与 {@link #setAchievementText} 同款 —— 模式没变就不重绘
+     *（墨水屏每次全屏刷新肉眼可见，能省则省）。切模式本身 = 一次整卡重绘（拍板可接受）。
+     */
+    public void setMonthHeatmap(boolean v) {
+        if (monthHeatmap == v) return;
+        monthHeatmap = v;
         invalidate();
     }
 

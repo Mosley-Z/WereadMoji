@@ -5,6 +5,7 @@ import com.inkread.weekread.a11y.CardA11yService;
 import com.inkread.weekread.core.BookStats;
 import com.inkread.weekread.core.BookStore;
 import com.inkread.weekread.core.CardDebug;
+import com.inkread.weekread.core.CardPrefs;
 import com.inkread.weekread.core.CoverStore;
 import com.inkread.weekread.core.NoteStats;
 import com.inkread.weekread.core.NoteStore;
@@ -248,10 +249,24 @@ public class MainActivity extends Activity {
         return (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
     }
 
+    /**
+     * 把「本月呈现 = 打卡 / 热力图」偏好塞给卡片（TASK-014）。
+     *
+     * 与桌面卡片侧 {@code CardContentController.applyMonthStyle} 同款口径：
+     * 只读本地 prefs，渲染端不读 prefs。App 主页与桌面卡片**共用同一个 WeekCardView 类**，
+     * 但设内容走的是两条路径 —— 所以这里必须**各自补一次**，否则两者观感会不一致。
+     */
+    private void applyMonthStyle() {
+        if (card == null) return;
+        card.setMonthHeatmap(
+                CardPrefs.getMonthStyle(this) == CardPrefs.MONTH_STYLE_HEATMAP);
+    }
+
     /** 按当前选项卡 + 锚点渲染一帧（缓存里没有就走空态，不会画错数据） */
     private void show() {
         tabbar.setSelected(indexOf(tabMode));
         card.setMode(tabMode);
+        applyMonthStyle();       // 本月呈现（打卡/热力图）随偏好刷新（TASK-014）
 
         // 「全部 / 只看想法」不再独占屏顶一行（v0.4.5）—— 它是卡片内按钮行最左边那一格，
         // 由 WeekCardView 自己画，这里只需要把状态同步给它（进度行与筛选格都读这个标记）
@@ -365,6 +380,7 @@ public class MainActivity extends Activity {
                 if (mode.equals(tabMode) && a == anchor()) {
                     card.setMode(stats.mode);
                     card.setStats(stats, emptyNote(mode, a, stats));
+                    applyMonthStyle();   // 本月呈现随新数据同步（TASK-014）
                     picker.setPeriod(mode, a);
                 }
                 // 数据更新后同步到桌面卡片

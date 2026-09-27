@@ -23,6 +23,21 @@ public final class CardPrefs {
     /** 默认绑定 = 本周 + 本书（进度/封面数据常看，值得每次顺手带上） */
     public static final int DEFAULT_BIND_TARGETS = BIND_WEEK | BIND_BOOK;
 
+    // ── TASK-014：本月呈现方式（打卡网格 ↔ 阅读热力图）──
+
+    /** 本月呈现 = 打卡网格（v0.8.0 及以前的形态：实心黑块 + 白对勾） */
+    public static final int MONTH_STYLE_CHECKIN = 0;
+    /** 本月呈现 = 阅读热力图（5 档黑度网点，TASK-014） */
+    public static final int MONTH_STYLE_HEATMAP = 1;
+
+    /**
+     * 默认呈现 = **热力图**（用户 2026-09-27 拍板：「热力图开发完成后，默认值改为热力图」）。
+     *
+     * ⚠️ 这**改变首装/未设置用户的默认观感** —— 默认不再是 v0.8.0 的打卡网格。
+     * 「打卡模式」作为可选项保留（设置页单选），切过去与 v0.8.0 **逐像素一致**。
+     */
+    public static final int DEFAULT_MONTH_STYLE = MONTH_STYLE_HEATMAP;
+
     private CardPrefs() {
     }
 
@@ -57,5 +72,17 @@ public final class CardPrefs {
 
     public static void setBindTargets(Context c, int v) {
         sp(c).edit().putInt("bind_targets", v).commit();
+    }
+
+    /**
+     * 本月呈现方式（TASK-014）：{@link #MONTH_STYLE_CHECKIN} / {@link #MONTH_STYLE_HEATMAP}。
+     * 默认 {@link #DEFAULT_MONTH_STYLE}（= 热力图）。只影响本月形态的格子画法。
+     */
+    public static int getMonthStyle(Context c) {
+        return sp(c).getInt("month_style", DEFAULT_MONTH_STYLE);
+    }
+
+    public static void setMonthStyle(Context c, int v) {
+        sp(c).edit().putInt("month_style", v).commit();
     }
 }

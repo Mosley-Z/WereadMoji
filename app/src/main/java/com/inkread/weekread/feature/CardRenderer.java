@@ -530,7 +530,8 @@ final class CardRenderer {
             boolean past = todayIdx >= 0 && i <= todayIdx;
 
             if (!past) continue;                                 // 未来 → 留白
-            drawCalCell(c, x, y, cell, host.stats.daySec[i] > 0);
+            if (host.monthHeatmap) drawHeatCell(c, x, y, cell, host.stats.daySec[i]);
+            else                   drawCalCell(c, x, y, cell, host.stats.daySec[i] > 0);
         }
 
         // ── 左栏：主数字 / 日均阅读 / 较上月 ──
@@ -687,11 +688,126 @@ final class CardRenderer {
             int slot = firstOffset + i;
             float x = gridLeft + (slot % 7) * (cell + gap);
             float y = cellTop0 + (slot / 7) * (cell + rowGap);
-            drawCalCell(c, x, y, cell, host.stats.daySec[i] > 0);
+            if (host.monthHeatmap) drawHeatCell(c, x, y, cell, host.stats.daySec[i]);
+            else                   drawCalCell(c, x, y, cell, host.stats.daySec[i] > 0);
         }
 
         host.p.setColor(INK);
         host.p.setTextAlign(Paint.Align.LEFT);
+    }
+
+    /**
+     * 4×4 Bayer 有序抖动矩阵（值域 0..15）。构造网点位图的"每点阈值表"。
+     *
+     * 用法：某点阈值 `< 该档黑点数(0/4/8/12)*?` 则涂黑。Bayer 矩阵的好处是
+     * 黑白点**均匀铺开**（不像随机抖动会结块），在 20px 小格上仍能拉出稳定黑度。
+     */
+    private static final int[][] BAYER_4 = {
+            {  0,  8,  2, 10 },
+            { 12,  4, 14,  6 },
+            {  3, 11,  1,  9 },
+            { 15,  7, 13,  5 },
+    };
+
+    /**
+     * 各档网点位图（懒加载，只建一次）。下标 = 档位 1..3 对应 25/50/75%；
+     * 0 档纯白不画、4 档直接画实心矩形，都不需要位图。
+     *
+     * 🔴 必须 `setAntiAlias(false)` + `setFilterBitmap(false)`：
+     * 否则拉伸 4×4 → 格边长时插值出**灰边**，违反 `docs/03` §1.3「只用纯黑白」硬规则。
+     * 🔴 拉伸目标必须是**整数像素**（调用方保证）：抗锯齿关闭后非整数尺寸仍会取整丢点。
+     */
+    private android.graphics.Bitmap[] heatPatterns;
+
+    /**
+     * TASK-014 热力图格：按当日秒数定档 → 网点填充 → 覆 1px 白边。
+     *
+     * 与 {@link #drawCalCell}（打卡格）并列、互斥：热力图模式下**不再画对勾**。
+     *
+     * 档位由 {@link CardSpec#HEAT_TIERS_SEC} 决定，黑度由 {@link CardSpec#HEAT_LEVELS} 决定：
+     * · 0 档（0 分钟）→ **纯白不画**（与"未来留白"同形，用户 2026-09-26 拍板接受）；
+     * · 1..3 档 → 4×4 Bayer 网点（4/8/12 个黑点）；
+     * · 4 档（> 3 小时）→ 实心黑方块。
+     */
+    private void drawHeatCell(Canvas c, float x, float y, float cell, int sec) {
+        int level = heatLevel(sec);
+        if (level <= 0) return;                       // 0 档：纯白，什么都不画
+
+        // 整数像素对齐（否则关闭抗锯齿后仍会有 1px 抖动）
+        float ix = Math.round(x), iy = Math.round(y);
+        float isz = Math.round(cell);
+
+        if (level >= 4) {                             // 4 档：实心
+            host.p.setStyle(Paint.Style.FILL);
+            host.p.setColor(INK);
+            c.drawRect(ix, iy, ix + isz, iy + isz, host.p);
+        } else {                                      // 1..3 档：网点
+            android.graphics.Bitmap pat = heatPattern(level);
+            if (pat != null) {
+                host.p.setStyle(Paint.Style.FILL);
+                host.p.setColor(INK);
+                // 关抗锯齿 + 关过滤，保证只有纯黑白（硬规则）
+                boolean aa = host.p.isAntiAlias(), fl = host.p.isFilterBitmap();
+                host.p.setAntiAlias(false);
+                host.p.setFilterBitmap(false);
+                c.drawBitmap(pat, null,
+                        new android.graphics.RectF(ix, iy, ix + isz, iy + isz), host.p);
+                host.p.setAntiAlias(aa);
+                host.p.setFilterBitmap(fl);
+            }
+        }
+
+        // ── 1px 白边：每格在网点之上描白线，深色格相邻也能分开 ──
+        // 画在白边之内的"内描边"：这样格子外沿尺寸不变（不侵占 gap）。
+        int bw = CardSpec.HEAT_CELL_BORDER_PX;
+        if (bw > 0 && isz > bw * 2 + 2) {
+            host.p.setStyle(Paint.Style.STROKE);
+            host.p.setStrokeWidth(bw);
+            host.p.setColor(0xFFFFFFFF);
+            host.p.setAntiAlias(false);
+            float half = bw / 2f;
+            c.drawRect(ix + half, iy + half, ix + isz - half, iy + isz - half, host.p);
+            host.p.setStyle(Paint.Style.FILL);
+            host.p.setAntiAlias(true);
+        }
+    }
+
+    /**
+     * 秒数 → 档位（0..4）。对照 {@link CardSpec#HEAT_TIERS_SEC} 的语义表。
+     * 独立成方法便于单点调参与日志核对。
+     */
+    static int heatLevel(int sec) {
+        int[] tiers = CardSpec.HEAT_TIERS_SEC;
+        if (sec <= tiers[0]) return 0;
+        int lvl = 1;
+        for (int k = 1; k < tiers.length; k++) {
+            if (sec > tiers[k]) lvl = k + 1;
+        }
+        return lvl;
+    }
+
+    /**
+     * 取/建某档的 4×4 网点位图。level 1..3 分别对应 4/8/12 个黑点
+     * （阈值 = round(level*4/4) → 4/8/12；用 BAYER_4 的值域 0..15 比较）。
+     *
+     * 位图只有 4×4 像素（16 个点），创建成本极低；懒加载避免类初始化期做图形操作。
+     */
+    private android.graphics.Bitmap heatPattern(int level) {
+        if (level < 1 || level > 3) return null;
+        if (heatPatterns == null) heatPatterns = new android.graphics.Bitmap[4];
+        if (heatPatterns[level] != null) return heatPatterns[level];
+        int black = level * 4;                        // 4 / 8 / 12
+        int[] px = new int[16];
+        for (int r = 0; r < 4; r++) {
+            for (int cc = 0; cc < 4; cc++) {
+                px[r * 4 + cc] = (BAYER_4[r][cc] < black) ? INK : 0xFFFFFFFF;
+            }
+        }
+        android.graphics.Bitmap bmp =
+                android.graphics.Bitmap.createBitmap(4, 4, android.graphics.Bitmap.Config.ARGB_8888);
+        bmp.setPixels(px, 0, 4, 0, 0, 4, 4);
+        heatPatterns[level] = bmp;
+        return bmp;
     }
 
     /**

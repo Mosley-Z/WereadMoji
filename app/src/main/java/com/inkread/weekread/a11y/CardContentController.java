@@ -78,6 +78,7 @@ final class CardContentController {
             // 卡片显示哪个形态由偏好决定（设置页定默认，左上角短按可临时切）
             String mode = StatsStore.getCardPeriod(ctx);
             cardView().setMode(mode);
+            applyMonthStyle();                  // 本月呈现（打卡/热力图）随偏好刷新（TASK-014）
             // 「本书」的数据在 BookStore、「本记」在 NoteStore（都是文件缓存）—— 分开取
             if (PeriodRange.BOOK.equals(mode)) {
                 BookStats b = BookStore.load(ctx);
@@ -92,6 +93,23 @@ final class CardContentController {
             }
         }
         ov.applyVisibility();
+    }
+
+    // ── v0.8.1（TASK-014）：本月呈现方式 ──
+
+    /**
+     * 把「本月呈现 = 打卡 / 热力图」偏好塞给卡片（零网络、零新增请求）。
+     *
+     * 与 {@link #applyAchievement} 同款口径：只读本地 prefs，渲染端不读 prefs。
+     * 两个挂点都调（refresh + 数据落卡后），保证**切模式后 App 与卡片同步生效**。
+     *
+     * ⚠️ 只对**本月形态**有意义；但这里**无条件塞**（不做 isMonthly 判断）——
+     * 因为 mode 会变（用户左上角短按切形态），预先塞好避免"切到本月时还是旧值"。
+     */
+    private void applyMonthStyle() {
+        if (cardView() == null) return;
+        cardView().setMonthHeatmap(
+                CardPrefs.getMonthStyle(ctx) == CardPrefs.MONTH_STYLE_HEATMAP);
     }
 
     // ── v0.9（TASK-013）：成就行 ──
@@ -340,6 +358,7 @@ final class CardContentController {
                     if (cardView() != null && stats.mode.equals(now)) {
                         cardView().setMode(stats.mode);
                         cardView().setStats(stats);
+                        applyMonthStyle();       // 本月呈现随新数据同步（TASK-014）
                         applyAchievement(stats); // 新数据落卡 → 成就行同步重算（v0.9，TASK-013）
                     }
                     CardDebug.note(ctx, "fetch ok mode=" + stats.mode

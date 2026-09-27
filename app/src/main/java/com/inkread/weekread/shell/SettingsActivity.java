@@ -86,6 +86,11 @@ public class SettingsActivity extends Activity {
     private RadioButton rbMonth;
     private RadioButton rbBook;
     private RadioButton rbNote;
+
+    // ── v0.8.1（TASK-014）本月呈现方式（自定义页 · 桌面卡片分区）──
+    private RadioButton rbMonthStyleCheckin;   // 打卡网格
+    private RadioButton rbMonthStyleHeatmap;   // 阅读热力图（默认）
+
     private TextView tvStatus;
     private TextView tvVersion;
     private TextView tvUpdateStatus;
@@ -132,6 +137,10 @@ public class SettingsActivity extends Activity {
         rbAchvMonthCustom = (RadioButton) findViewById(R.id.rb_achv_month_custom);
         etAchvWeekHours = (EditText) findViewById(R.id.et_achv_week);
         etAchvMonthHours = (EditText) findViewById(R.id.et_achv_month);
+
+        // v0.8.1（TASK-014）本月呈现方式
+        rbMonthStyleCheckin = (RadioButton) findViewById(R.id.rb_month_style_checkin);
+        rbMonthStyleHeatmap = (RadioButton) findViewById(R.id.rb_month_style_heatmap);
 
         rbWeek = (RadioButton) findViewById(R.id.rb_period_week);
         rbMonth = (RadioButton) findViewById(R.id.rb_period_month);
@@ -340,6 +349,24 @@ public class SettingsActivity extends Activity {
         etAchvMonthHours.setText(minToHours(AchievementPrefs.getMonthMin(this)));
         etAchvMonthHours.setEnabled(mk == AchievementPrefs.KIND_CUSTOM);
         etAchvMonthHours.addTextChangedListener(hoursWatcher(false));
+
+        // ── v0.8.1（TASK-014）本月呈现方式：打卡 / 热力图（默认热力图） ──
+        // 与成就单选同款：先回填（不触发回调），再挂监听。切换 = 一次整卡重绘。
+        int ms = CardPrefs.getMonthStyle(this);
+        rbMonthStyleCheckin.setChecked(ms == CardPrefs.MONTH_STYLE_CHECKIN);
+        rbMonthStyleHeatmap.setChecked(ms == CardPrefs.MONTH_STYLE_HEATMAP);
+        CompoundButton.OnCheckedChangeListener monthStyleL = new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                if (!checked) return;               // 只管"被选中的那个"
+                int style = (b.getId() == R.id.rb_month_style_checkin)
+                        ? CardPrefs.MONTH_STYLE_CHECKIN : CardPrefs.MONTH_STYLE_HEATMAP;
+                CardPrefs.setMonthStyle(SettingsActivity.this, style);
+                CardA11yService.sync();
+            }
+        };
+        rbMonthStyleCheckin.setOnCheckedChangeListener(monthStyleL);
+        rbMonthStyleHeatmap.setOnCheckedChangeListener(monthStyleL);
 
         CompoundButton.OnCheckedChangeListener periodListener =
                 new CompoundButton.OnCheckedChangeListener() {

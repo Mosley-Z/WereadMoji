@@ -38,6 +38,12 @@
     <string name="hint_achv_week">自定义周目标（小时，如 1.25）</string>
     <string name="hint_achv_month">自定义月目标（小时，如 40）</string>
     <string name="label_achv_source">数据来源：微信读书 API 累计时长</string>
+
+    <!-- TASK-014：本月呈现方式（打卡网格 ↔ 阅读热力图） -->
+    <string name="label_month_style">本月呈现</string>
+    <string name="label_month_style_checkin">打卡</string>
+    <string name="label_month_style_heatmap">热力图</string>
+    <string name="label_month_style_tip">打卡＝读过打对勾；热力图＝按当天时长用深浅格子表示（0/30分钟/1小时/3小时四档）。只影响本月页。</string>
     <string name="label_period_week">本周</string>
     <string name="label_period_month">本月</string>
     <string name="label_period_book">本书</string>
