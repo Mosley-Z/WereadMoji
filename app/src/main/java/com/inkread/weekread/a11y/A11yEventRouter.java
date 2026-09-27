@@ -287,6 +287,11 @@ final class A11yEventRouter {
         // 如果不把它排除，卡片一显示就会收到这条事件、被误判成"用户切到了别的应用"，
         // 于是立刻把自己藏起来 —— 表现为"卡片永远不出现"（实测踩到过这个坑）。
         if (ctx.getPackageName().equals(pkg)) {
+            // 🔴 v0.8.1：自家包事件是"翻页窗口把无关事件误并了"的干净指纹 —— 若此刻
+            // 翻页窗口正开着（覆盖安装后服务重连时会出现这种并窗），把它记进去，
+            // 由 TomoPageGate.settleSwipe 决定不判向（否则卡片会被永久藏死）。
+            // 必须排在下面两个 return 之前。
+            tomo.noteOwnPkgEvent();
             boolean ownScreen = clsForLog.endsWith(".MainActivity") || clsForLog.endsWith(".SettingsActivity");
             if (!ownScreen) return;                // 自己的悬浮窗事件：忽略，维持现状
             // 用户在我们的界面里：桌面上那张卡片要让位（主页已经整屏显示同一张卡片了）

@@ -81,6 +81,15 @@ public class CardA11yService extends AccessibilityService {
      *
      * 用户主动点了这个按钮 = 明确要求"把卡片弄回来" ⇒ 破例重算一次是符合意图的，
      * 而且只走这一次（用完即清），不会破坏"常规离开不重算"的闪屏防护。
+     *
+     * ⚠️ **一点良性偏差（67 号审查指出，此处如实登记）**：本标记**可能滞后消费** ——
+     * 若在「点按钮」与「设置页 `onPause`」之间，`sOwnUiForeground` 被别处
+     * （如 {@code A11yEventRouter} 收到桌面事件时）先清成 `false`，则 `onPause` 的
+     * `noteOwnUiForeground(false)` 会**命中早退**（`sOwnUiForeground == fg` ⇒ return），
+     * 标记不被消费、遗留 `true`，改在**下一次**"离开自家界面"跃变时消费 ——
+     * 即一次**多余的** `applyVisibility()`。方向是"宁可多显示"，**无害**。
+     * 全路径（置位 = 按钮 click / 消费 = `onPause` / 作废 = `onServiceConnected`）
+     * **均在主线程**，静态字段无跨线程读写 ⇒ **不存在真并发绕过**。
      */
     private static boolean sForceRecomputeOnLeave = false;
 

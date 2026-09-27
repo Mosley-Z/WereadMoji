@@ -153,34 +153,41 @@ final class TomoPageGate {
     /** 桌面 TextView 事件与翻页指纹算作"同一次"的最大间隔（毫秒），见 {@link #lastHomeTextNodeAt} */
     private static final long HOME_TEXT_NODE_MS = 400L;
 
-    /**
-     * 「一条窗口的跨度超过这个值 ⇒ 认定它把不相关的事件误并了」的门槛（毫秒）。
-     *
-     * 🔴 v0.8.1 新增 —— 修「人在第 1 页、pageGate 却被误置位、卡片永久消失」的**根因**。
-     *
-     * ★ 真机抓到的两条对照（2026-09-27）──
-     *   真翻页（用户左滑离开第 1 页）：
-     *     `swipe sub=1→1 total=1→1 text=false zero=0 ws=false span=0ms   → 离开第1页` ✔
-     *   误判（覆盖安装后服务重连，桌面补发 resume 簇）：
-     *     `swipe sub=0→0 total=2→2 text=true  zero=0 ws=false span=968ms → 离开第1页` ✘
-     *
-     * 两条的 `span`（窗口内首末事件的间隔）差了三个数量级：**真翻页的两条事件
-     * 实测间隔 7–264ms**，而误判那条 **968ms** —— 说明窗口把"服务重连时桌面补发的
-     * 一次整窗重绘"和"Windows 状态/文本变化"这些**彼此无关**的事件并进了一起，
-     * 从而凑出了"`total≥2` 且 `text` 但 `sub==0`"这个本该代表"离开第 1 页"的组合。
-     *
-     * ★ 为什么选 500ms ──
-     * 实测真翻页最大 264ms，留了近一倍余量；而误判样本 968ms 远在其上。
-     * 一次翻页的两条事件哪怕慢一些也远不会到 500ms（真到了就说明这不是一次翻页）。
-     *
-     * ★ 失败方向 ──
-     * 命中守卫时**不判向**（保持闸门现状），符合本项目一贯的"宁可多显示"：
-     * 万一真的漏判了一次翻页，卡片多显示一会儿，下一次翻页就会纠正。
-     *
-     * ⚠️ **必须与 `zero == 0` 联用**（见 {@link #settleSwipe} 里的三条合取）：
-     * 单看 span 会误伤已实测的合法形态「亮屏+左滑并窗」（慢滑时 span 也可能偏大）。
-     */
-    private static final long SWIPE_MAX_SPAN_MS = 500L;
+    // ══════════════════ v0.8.1 并窗守卫（判据说明，无对应常量） ══════════════════
+    //
+    // 「窗口里混入了自家包事件 ⇒ 认定它把不相关的事件误并了」—— 这是个**布尔判据**，没有阈值常量。
+    //
+    // 🔴 v0.8.1 修订（原 span 判据已证伪、删除）—— 修「人在第 1 页、pageGate 却被误置位、
+    // 卡片永久消失」的**根因**。
+    //
+    // ★ 为什么要从 `span` 换成本判据（2026-09-27，67 号审查指出 + 全样本复算）──
+    //   原判据假设「合法翻页的两条事件间隔 7–264ms，误判样本 968ms」，
+    //   但**该假设被实测推翻**：`_verify060/samples/L/a4_左滑到P2.log` 是一次
+    //   **合法**左滑 P1→P2（下一条 `a5_P2启动应用` 证人在 P2），其
+    //   `span=628ms` 远超 500ms ⇒ 原守卫会吞掉它、把卡片留在 P2 上遮挡。
+    //   复算全部样本：合法翻页 span 实测 **0–628ms**，与误判的 968ms **区间重叠、无安全余量**；
+    //   而另一候选判据 `ws`（窗口态）也不行 —— 有 2 条合法样本 `ws=false`。
+    //
+    // ★ 干净判据：**窗口内是否混入「自家包（`com.inkread.weekread`）窗口事件」** ──
+    //   逐条核对 `_verify060/samples/` 全部 20+ 条合法翻页结算：**零命中**；
+    //   而误判样本含 **2 条** `WINDOW_STATE_CHANGED pkg=com.inkread.weekread`
+    //   （那是覆盖安装后服务重连、自身悬浮窗状态抖动发出来的）。
+    //   真机对照（2026-09-27 02:51:42–43）：
+    //     误判窗口 = Tomo FrameLayout×2 ＋ **OWN-PKG WS ×2**（无 LauncherActivity 窗口态）
+    //     合法窗口 = Tomo FrameLayout×2 ＋ LauncherActivity 窗口态（**无 OWN-PKG**）
+    //
+    // ★ 记录点：自家包事件在 `A11yEventRouter` 里走的是**早退分支**
+    //   （它不进翻页窗口计数），所以只在那一处调用 `noteOwnPkgEvent()`。
+    //
+    // ★ 生命周期：**开窗时清、窗口内存续期内只置不落**（见 `CardVisibilityState.swipeOwnPkg`）。
+    //   这样"卡片自己显示/隐藏"那条自家包事件若落在两窗之间，不会污染下一个窗口。
+    //
+    // ★ 失败方向 —— 命中时**不判向**（保持闸门现状），符合本项目一贯的"宁可多显示"：
+    //   万一真的漏判了一次翻页，卡片多显示一会儿，下一次翻页就会纠正。
+    //
+    // ★ 回归覆盖：`tomo_regress.sh` 07/08 = 「亮屏后左滑 P1→P2」(`text=true` 形态)，
+    //   即本次守卫误伤过的分支；01–06 全是 `text=false`，不进该分支。
+    // ═══════════════════════════════════════════════════════════════════════════
 
     /**
      * 亮屏后多久之内的翻页指纹一律忽略（毫秒）。
@@ -300,20 +307,21 @@ final class TomoPageGate {
             return;
         }
 
-        // 🔴 v0.8.1 根因修复：**只针对"明确的误并形态"**不判向（见 SWIPE_MAX_SPAN_MS）。
-        // 判定必须同时满足三条，缺一不可 —— 因为已实测存在的合法形态
-        //「亮屏+左滑并窗」（`cct=1,cct=0,cct=3,cct=2`，含 `zero≥1`）在慢滑时
-        // span 也可能偏大，单看 span 会误伤它：
-        //   ① `zero == 0`：误判样本**没有** `cct=0`（桌面 resume 标记）；
-        //      而所有实测过的合法并窗形态都至少带一条 `cct=0`。
-        //   ② `text == true`：误判样本靠 TEXT 位凑出方向。
-        //   ③ `span > SWIPE_MAX_SPAN_MS`：真翻页两条事件实测 7–264ms，样本 968ms。
-        // 三条同时成立时，这个窗口不可能是"一次翻页"，只能是彼此无关的事件被并了进来
-        // ⇒ 不判向（保持闸门现状，符合"宁可多显示"）。
-        long span = st.swipeLastAt - st.swipeFirstAt;
-        if (zero == 0 && text && span > SWIPE_MAX_SPAN_MS) {
-            CardDebug.note(ctx, "swipe drop (误并形态: zero=0 text=true span=" + span + "ms > "
-                    + SWIPE_MAX_SPAN_MS + "ms ⇒ 不判向; sub=" + sub + " total=" + total + ")");
+        // 🔴 v0.8.1 根因修复：**只针对"明确的误并形态"**不判向。
+        // 判据 = 本窗口内混入过「自家包（com.inkread.weekread）窗口事件」——
+        // 这是"彼此无关的事件被并了进来"的唯一干净指纹（见上方守卫注释）：
+        //   · 合法翻页窗口从不含自家包事件（全部 20+ 条样本零命中）；
+        //   · 误判样本（服务重连，桌面补发 resume 簇）含 2 条自家包 WINDOW_STATE_CHANGED。
+        // 原 span 判据（首末事件跨度 > 500ms）**已被实测证伪**（合法样本 L/a4 span=628ms），
+        // 故整条替换为下面这条布尔判据，不再与 zero/text 联用。
+        boolean own = st.swipeOwnPkg;
+        long ownAt = st.swipeOwnPkgAt;
+        st.swipeOwnPkg = false;
+        st.swipeOwnPkgAt = 0L;
+        if (own) {
+            CardDebug.note(ctx, "swipe drop (误并形态: 窗口混入自家包事件 ownPkgAt=" + ownAt
+                    + " ⇒ 不判向; sub=" + sub + " total=" + total
+                    + " text=" + text + " zero=" + zero + " ws=" + ws + ")");
             return;
         }
 
@@ -405,6 +413,25 @@ final class TomoPageGate {
     }
 
     /**
+     * 记下"翻页窗口存续期内来了一条**自家包（`com.inkread.weekread`）窗口事件**"（v0.8.1 修订）。
+     *
+     * ★ 这是"窗口把彼此无关的事件误并了"的**唯一干净指纹** —— 见
+     * {@link CardVisibilityState#swipeOwnPkg} 与 {@link #settleSwipe} 里的守卫说明。
+     *
+     * ⚠️ 调用点只有一个：{@code A11yEventRouter} 处理自家包 `WINDOW_STATE_CHANGED`
+     * 的**早退分支**里（自家包事件不进翻页窗口计数，只能在那一处补记）。
+     * **必须在早退 `return` 之前调用**，否则记不上。
+     *
+     * 生命周期：只在窗口**开着**时置位（`!st.swipeOpen` 时忽略）——
+     * 落在两窗之间的自家包事件不属于任何一次翻页，不该污染下一个窗口。
+     */
+    void noteOwnPkgEvent() {
+        if (!st.swipeOpen) return;
+        if (!st.swipeOwnPkg) st.swipeOwnPkgAt = android.os.SystemClock.uptimeMillis();
+        st.swipeOwnPkg = true;
+    }
+
+    /**
      * 记下"桌面自己的 TextView 内容变化"（时钟/日期块）—— 见 {@link #lastHomeTextNodeAt}。
      *
      * ⚠️ 必须在 {@link #handleLauncherSwipe} **之前**调用：实测时钟整分时
@@ -458,6 +485,12 @@ final class TomoPageGate {
         // （实测 7ms 到 264ms 都有），早结算会把它俩拆成两个窗口、判据只看到
         // 两条"时钟整分"，方向就丢了。窗口的唯一出口是截止时间（见 SWIPE_LINGER_MS）。
         if (!st.swipeOpen) st.swipeFirstAt = now;
+        if (!st.swipeOpen) {
+            // 🔴 开新窗先把"自家包事件"标记清掉：这样**上一个窗口遗留**的自家包事件
+            //（例如卡片自己显示/隐藏那条落在两窗之间）不会污染这一窗（见 swipeOwnPkg）。
+            st.swipeOwnPkg = false;
+            st.swipeOwnPkgAt = 0L;
+        }
         st.swipeOpen = true;
         st.swipeTotal++;
         // ⚠️ 必须是 `cct == 1`，不能写成 `(cct & 1) != 0` —— cct=3 也含 SUBTREE 位，

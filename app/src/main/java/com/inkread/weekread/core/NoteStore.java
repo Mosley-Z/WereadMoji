@@ -574,7 +574,7 @@ public final class NoteStore {
         return v;
     }
 
-    /** 「更新于」时间戳的按书记忆（16 本 LRU，够覆盖"最近在记的几本"）；见 {@link #noteFetchedAt} */
+    /** 「更新于」时间戳的按书记忆（24 本 LRU，够覆盖"最近在记的几本"）；见 {@link #noteFetchedAt} */
     private static final LinkedHashMap<String, Long> sNoteAt =
             new LinkedHashMap<String, Long>(16, 0.75f, true) {
                 @Override
