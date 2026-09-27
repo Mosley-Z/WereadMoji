@@ -42,6 +42,28 @@ public final class NoteExport {
     private static final float PAD_X = 56f;
     /** 正文字号三档：小 / 中 / 大（导出图专用，与屏幕上那套"号"无关） */
     private static final float[] TIERS = {26f, 32f, 40f};
+
+    // ── TASK-016（v0.9）：App 内本记页的字号也由 `sizeTier` 决定 ──
+    //
+    // 以前 App 内是"按字数自动分档"（19/17/15/14），与卡片档同样有"字多就变小"的毛病。
+    // 现在三档**固定**：小 / 中 / 大 = 15 / 17 / 19 号（用户 2026-09-27 拍板 C1：
+    // 中档 = 卡片默认 17 号，两处观感统一）。长文靠**已有的正文滚动**消化，不再缩字号。
+    //
+    // ⚠️ 与上面的 {@link #TIERS}（导出图 px）是**两套单位**：导出图固定 480 宽、字号按 px，
+    // App 内按「号」（= 屏高×0.0015）。两者只共享"第几档"这个选择，值不互相推导。
+
+    /** 字号三档对应的「号」值：小 / 中 / 大 */
+    public static final float[] TIER_NUMS = {15f, 17f, 19f};
+
+    /** sizeTier 的默认档（中）。原先硬编码在 {@code getInt("sizeTier", 1)} 里，提常量供两处共用 */
+    public static final int SIZE_TIER_DEFAULT = 1;
+
+    /** 档 → 号（越界钳回三档内，与 {@link #TIERS} 的钳位同款防御） */
+    public static float tierToNum(int tier) {
+        if (tier < 0) tier = 0;
+        if (tier >= TIER_NUMS.length) tier = TIER_NUMS.length - 1;
+        return TIER_NUMS[tier];
+    }
     /** 想法段的小标与屏幕保持同一个词 */
     private static final String IDEA_TAG = "想法";
     private static final String FOOT = "微读墨记 · 本记";
@@ -65,9 +87,9 @@ public final class NoteExport {
         prefs(c).edit().putInt("paper", v).commit();
     }
 
-    /** 正文字号档：0 小 / 1 中 / 2 大 */
+    /** 正文字号档：0 小 / 1 中 / 2 大（同时决定**App 内本记页**的字号，见 {@link #TIER_NUMS}） */
     public static int sizeTier(Context c) {
-        return prefs(c).getInt("sizeTier", 1);
+        return prefs(c).getInt("sizeTier", SIZE_TIER_DEFAULT);
     }
 
     public static void setSizeTier(Context c, int v) {

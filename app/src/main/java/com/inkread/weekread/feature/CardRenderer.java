@@ -118,28 +118,30 @@ final class CardRenderer {
     // 正文行数不写死：**按可用高度算**（长句多给几行，短句自然留白），杜绝压到署名。
     private static final float SZ_NOTE_QUOTE = 30f;       // 开头的大引号
     private static final float SZ_NOTE_QUOTE_FULL = 40f;
-    private static final float SZ_NOTE_TEXT = 14f;        // 划线正文（卡片档）
-    private static final float SZ_NOTE_TEXT_FULL = 19f;   // 划线正文（App 全屏档）
+    // ⚠️ 正文**没有**字号常量了（TASK-016）：字号是**固定 + 可调**的用户偏好，
+    //    卡片档来自 `WeekCardView#noteCardSize`（默认 17 号，可调 12–24，见 CardPrefs），
+    //    App 档来自 `noteFullSize`（sizeTier 三档 15/17/19，见 NoteExport#TIER_NUMS）。
+    //    以前写在这里的 SZ_NOTE_TEXT / SZ_NOTE_TEXT_FULL / SZ_NOTE_CARD_BIG /
+    //    NOTE_CARD_BIG_CHARS / NOTE_FULL_STEPS / NOTE_FULL_SIZES 属于"按字数动态分档"，
+    //    已随该机制一并删除（用户 2026-09-27 拍板 D1）。
     private static final float SZ_NOTE_TITLE = 14f;       // 署名：书名
     private static final float SZ_NOTE_TITLE_FULL = 17f;
     private static final float SZ_NOTE_AUTHOR = 12f;      // 署名：作者
     private static final float SZ_NOTE_AUTHOR_FULL = 15f;
     private static final float SZ_NOTE_META = 11.5f;      // 末行：章节 · 日期
     private static final float SZ_NOTE_META_FULL = 14f;
-    /** 正文行数上下限（算出来是动态值，钳在这里面）。上限 16 是给 App 档小字号
-     *  长文的（14号需 16 行才能装下 373 字）；卡片档自然算出的行数 ≤7，碰不到上限 */
+    /**
+     * 正文行数下限（卡片档）。🔴 **是口径记录，不是开关**：真正的行数由"可用高度 ÷ 行高"
+     * 算出来（`bodyH / lineH`），这里只记"卡片档至少要能放 3 行"这条设计底线 ——
+     * `CardPrefs.NOTE_CARD_SIZE_MAX = 24` 这个上限正是按"24 号时仍 = 3 行"反推出来的。
+     */
     private static final int NOTE_LINES_MIN = 3;
+    /** 上限（历史值）。App 档早已不限行数（超出靠滚动），这里仅作口径记录 */
     private static final int NOTE_LINES_MAX = 16;
-    /** 卡片档两档分界（v0.4.1 拍板①）：≤70 字（实测 80% 划线）用 18 号大字 */
-    private static final int NOTE_CARD_BIG_CHARS = 70;
-    private static final float SZ_NOTE_CARD_BIG = 18f;
-    /** App 档自适应分档（v0.4.1 拍板②）：19→17→15→14 号，容量 188/250/304/373 字 */
-    private static final int[] NOTE_FULL_STEPS = {188, 250, 304};
-    private static final float[] NOTE_FULL_SIZES = {19f, 17f, 15f, 14f};
 
     // ── v0.4.4「本记」两段式（原文 + 想法）──
-    // 分档口径改成「原文 + 想法」的**合计字数**（NoteStats#displayChars），
-    // 分界仍是用户拍板的 188/250/304（沿用），只是喂进去的数字变大了。
+    // ⚠️ 「按合计字数（NoteStats#displayChars）分档」这套机制已随 v0.9（TASK-016）**取消**：
+    //    字号改成固定 + 可调，不再看字数。两段式排版本身照旧（它决定行数与截断，不是字号）。
     /** 想法段上方的小标（把"书里的话"和"我写的话"分开） */
     private static final String IDEA_TAG = "想法";
     private static final float SZ_NOTE_IDEA_TAG = 11f;         // 卡片档
@@ -1189,9 +1191,13 @@ final class CardRenderer {
      * 两段之间画一个小字「想法」，把"书里的话"和"我的话"分开 ——
      * 墨水屏是纯黑白，靠颜色区分不可能，靠字号又会读起来跳，加个标记最省事。
      *
-     * 字号分档的用户拍板分界是 188/250/304（沿用 v0.4.1），但**字数口径变了**：
-     * 取 NoteStats#displayChars()（原文 + 想法 + 小标开销），
-     * 否则带想法的条目会被分到过大的字号、一屏塞不下。
+     * ── 字号（v0.9，TASK-016）：**固定值，不再按字数分档** ──
+     * 以前卡片档 ≤70 字用 18 号、否则 14 号，App 档 19/17/15/14 按 188/250/304 字分界 ——
+     * 字数一多字就变小，观感跳。现在两档各取一个注入进来的固定号值：
+     *   · 卡片档 = {@code host.noteCardSize}（默认 17 号 = 桌面应用名字号，可调 12–24）；
+     *   · App 档 = {@code host.noteFullSize}（由 sizeTier 决定，15/17/19 号）。
+     * ⚠️ 长文因此**不再靠缩字号消化** —— 那正是要去掉的机制。缺口由下面两处分担：
+     *   卡片档限行 + 省略号（TASK-017 起末尾还有「展开▽」）、App 档靠滚动。
      *
      * ── 滚动（v0.4.4）──
      * 卡片档（桌面）：两段各自限行（原文 2 行 / 想法 4 行），**装不下就逐级往下收紧**，
@@ -1233,17 +1239,10 @@ final class CardRenderer {
         }
 
         float qSize = (host.fullscreen ? SZ_NOTE_QUOTE_FULL : SZ_NOTE_QUOTE) * host.unit;
-        // ── 字号分档：短句大字、长句小字；字数口径 = 原文 + 想法（v0.4.4）──
-        int chars = host.note.displayChars();
-        float tNum;
-        if (host.fullscreen) {
-            tNum = NOTE_FULL_SIZES[NOTE_FULL_SIZES.length - 1];      // 最长尾档 14 号
-            for (int i = 0; i < NOTE_FULL_STEPS.length; i++) {
-                if (chars <= NOTE_FULL_STEPS[i]) { tNum = NOTE_FULL_SIZES[i]; break; }
-            }
-        } else {
-            tNum = (chars <= NOTE_CARD_BIG_CHARS) ? SZ_NOTE_CARD_BIG : SZ_NOTE_TEXT;
-        }
+        // ── 字号（v0.9，TASK-016）：**固定值**，由两条注入路径各塞一个号进来 ──
+        // 卡片档 ← CardPrefs.note_card_size（默认 17 = 桌面应用名字号）；
+        // App 档  ← NoteExport.sizeTier 三档（15/17/19）。都**不看字数**。
+        float tNum = host.fullscreen ? host.noteFullSize : host.noteCardSize;
         float tSize = tNum * host.unit;
         float tagSize = (host.fullscreen ? SZ_NOTE_IDEA_TAG_FULL : SZ_NOTE_IDEA_TAG) * host.unit;
         float tiSize = (host.fullscreen ? SZ_NOTE_TITLE_FULL : SZ_NOTE_TITLE) * host.unit;

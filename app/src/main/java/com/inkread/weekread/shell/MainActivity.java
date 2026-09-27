@@ -457,6 +457,12 @@ public class MainActivity extends Activity {
     private void showNoteItem(NoteStats n) {
         // 进度行按「当前模式」取数：只看想法模式下用的是另一套序号空间（见 NoteStore.pick）
         card.setNoteSlot(NoteStore.ideasOnly(this));
+        // v0.9（TASK-016）：App 内本记页的字号由「导出字号」档决定（小/中/大 = 15/17/19 号），
+        // 不再按字数自动分档。
+        // 🔴 **两条注入路径里的"App 那条"**（桌面卡片那条在
+        // `CardContentController#applyNoteFont`，走 CardPrefs.note_card_size）。
+        // 这里读的是 prefs，但由 Activity 注入字段 —— 渲染函数本身仍不碰 prefs（docs/03 §3）。
+        card.setNoteFullSize(NoteExport.tierToNum(NoteExport.sizeTier(this)));
         if (n == null) {
             // 🔴 渲染函数**绝不发起同步**（v0.5.3，R02）。
             // 上一版这里是 `refreshNotes(...)`，而同步结束的回调又会回到本函数：

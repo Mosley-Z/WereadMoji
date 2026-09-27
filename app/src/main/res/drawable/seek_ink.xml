@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  TASK-016：设置页「本记字号（卡片）」滑杆的轨道。
+
+  为什么自己画而不是用系统默认：默认轨道是 Material 的彩色 + 半透明，
+  墨水屏上灰阶不可控（docs/03 §1.3 的硬规则），且蓝紫色在黑白屏上没有意义。
+  这里只用两级纯色：已选段纯黑、未选段浅灰 —— 与设置页其它控件（btn_ink）同款黑白观感。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@android:id/background">
+        <shape android:shape="rectangle">
+            <size android:height="4dp" />
+            <solid android:color="#FFB8B8B8" />
+        </shape>
+    </item>
+    <item android:id="@android:id/progress">
+        <clip>
+            <shape android:shape="rectangle">
+                <size android:height="4dp" />
+                <solid android:color="#FF000000" />
+            </shape>
+        </clip>
+    </item>
+</layer-list>

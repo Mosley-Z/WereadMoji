@@ -79,6 +79,7 @@ final class CardContentController {
             String mode = StatsStore.getCardPeriod(ctx);
             cardView().setMode(mode);
             applyMonthStyle();                  // 本月呈现（打卡/热力图）随偏好刷新（TASK-014）
+            applyNoteFont();                    // 本记字号（卡片）随偏好刷新（TASK-016）
             // 「本书」的数据在 BookStore、「本记」在 NoteStore（都是文件缓存）—— 分开取
             if (PeriodRange.BOOK.equals(mode)) {
                 BookStats b = BookStore.load(ctx);
@@ -110,6 +111,28 @@ final class CardContentController {
         if (cardView() == null) return;
         cardView().setMonthHeatmap(
                 CardPrefs.getMonthStyle(ctx) == CardPrefs.MONTH_STYLE_HEATMAP);
+    }
+
+    // ── v0.9（TASK-016）：本记字号（卡片）──
+
+    /**
+     * 把「桌面卡片本记正文字号」偏好塞给卡片（零网络、零新增请求）。
+     *
+     * 与 {@link #applyMonthStyle} 完全同款：只读本地 prefs，渲染端不读 prefs。
+     * 无条件塞（不做 isNote() 判断）—— 因为形态会变（左上角短按切形态），
+     * 预先塞好避免"切到本记时还是旧值"。
+     *
+     * 🔴 **这是两条注入路径里的"桌面那条"**：App 内本记页由 {@code MainActivity}
+     * 按 {@code NoteExport.sizeTier} 注入 {@code setNoteFullSize}。
+     * 两个字号是**两套偏好**（卡片字号 / 导出字号），用户 2026-09-26 拍板不许混 ——
+     * 改任何一边都要回头看另一边有没有跟上。
+     *
+     * 偏好值本身在 {@link CardPrefs#getNoteCardSize} 里已钳进 [12, 24] 号，
+     * 这里不再重复钳（越界防御留在口径唯一处）。
+     */
+    private void applyNoteFont() {
+        if (cardView() == null) return;
+        cardView().setNoteCardSize(CardPrefs.getNoteCardSize(ctx));
     }
 
     // ── v0.9（TASK-013）：成就行 ──
