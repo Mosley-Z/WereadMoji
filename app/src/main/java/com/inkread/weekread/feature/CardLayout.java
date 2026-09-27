@@ -132,6 +132,24 @@ final class CardLayout {
      */
     static NoteBody layoutNote(String quote, String idea, float textW, float tSize,
                                float tagSize, int maxQ, int maxI) {
+        return layoutNote(quote, idea, textW, tSize, tagSize, maxQ, maxI, 0f, 0f);
+    }
+
+    /**
+     * 同上，另给两段各自的**末行预留宽度**（v0.9，TASK-017）。
+     *
+     * 用途：行末要挂「展开▽ / 收起△」时，末行的可用宽度得先扣掉按钮那一截 ——
+     * 否则省略号会顶到行尾、按钮被挤出行外（或被裁剪框切掉）。
+     *
+     * 🔴 **只给"要挂按钮的那一段"传非 0**（渲染侧自己判是哪一段），另一段传 0：
+     * 给两段都预留会让"没挂按钮那段"的末行也平白少几个字，那是无谓的像素变化。
+     *
+     * ⚠️ 预留**只会让末行变短，不会让行数变多** —— 行数已被 `maxLines` 封顶，
+     * 所以调用方按"不预留"算出来的行预算（{@code fit}）在预留后依然成立，不会顶到署名。
+     */
+    static NoteBody layoutNote(String quote, String idea, float textW, float tSize,
+                               float tagSize, int maxQ, int maxI,
+                               float reserveQ, float reserveI) {
         NoteBody b = new NoteBody();
         b.lineH = tSize * 1.55f;
         b.tagSize = tagSize;
@@ -145,7 +163,7 @@ final class CardLayout {
         float y = 0f;
         if (hasQ) {
             b.quote = (maxQ <= 0) ? wrapAll(quote.trim(), textW, tSize)
-                    : wrapMax(quote.trim(), textW, maxQ, tSize);
+                    : wrapMax(quote.trim(), textW, maxQ, tSize, reserveQ);
             y += b.quote.length * b.lineH;
         }
         if (hasI) {
@@ -157,7 +175,7 @@ final class CardLayout {
             // 末行被页脚压住。判定必须与绘制同源：**有没有想法**，而不是有没有原文。
             y += b.tagBlock;
             b.idea = (maxI <= 0) ? wrapAll(idea.trim(), textW, tSize)
-                    : wrapMax(idea.trim(), textW, maxI, tSize);
+                    : wrapMax(idea.trim(), textW, maxI, tSize, reserveI);
             y += b.idea.length * b.lineH;
         }
         b.height = y;
@@ -185,20 +203,37 @@ final class CardLayout {
      * 返回**实际行数**的数组（无 null 尾）—— 卡片档的"上文下想法都限行数"靠它。
      */
     static String[] wrapMax(String text, float maxW, int maxLines, float size) {
+        return wrapMax(text, maxW, maxLines, size, 0f);
+    }
+
+    /**
+     * 同上，另给**末行**预留 {@code reserveLast} 的宽度（v0.9，TASK-017）。
+     *
+     * 只有"最多 {@code maxLines} 行里最后那一行"按 `maxW − reserveLast` 折，前面各行照旧 ——
+     * 这样预留不会把正文挤成更多行，只会让末行（以及它的省略号位置）少几个字。
+     *
+     * 🔴 兜底：预留后连一个「…」都放不下时（`lastW ≤ ellW`）**放弃预留**，
+     * 宁可让按钮压住末行尾部，也不能折出一堆单字行。
+     */
+    static String[] wrapMax(String text, float maxW, int maxLines, float size, float reserveLast) {
         Paint mp = measurePaint(size);
         if (maxLines <= 0) return new String[]{text};
         if (mp.measureText(text) <= maxW) return new String[]{text};
-        java.util.ArrayList<String> out = new java.util.ArrayList<String>();
         float ellW = mp.measureText("…");
+        float lastW = maxW - reserveLast;
+        if (lastW <= ellW) lastW = maxW;
+        java.util.ArrayList<String> out = new java.util.ArrayList<String>();
         int n = text.length(), start = 0;
         while (start < n && out.size() < maxLines) {
+            boolean lastLine = (out.size() == maxLines - 1);
+            float lineW = lastLine ? lastW : maxW;
             int i = Math.min(start + 1, n);
-            while (i <= n && mp.measureText(text, start, i) <= maxW) i++;
+            while (i <= n && mp.measureText(text, start, i) <= lineW) i++;
             int end = i - 1;
             if (end <= start) end = start + 1;
-            boolean last = (out.size() == maxLines - 1) || (end >= n);
+            boolean last = lastLine || (end >= n);
             if (last && end < n) {
-                while (end > start && mp.measureText(text, start, end) + ellW > maxW) end--;
+                while (end > start && mp.measureText(text, start, end) + ellW > lineW) end--;
                 out.add(text.substring(start, end) + "…");
                 break;
             }

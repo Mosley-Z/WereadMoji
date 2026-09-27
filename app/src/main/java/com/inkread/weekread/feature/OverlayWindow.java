@@ -27,14 +27,25 @@ public final class OverlayWindow {
         return WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY;
     }
 
-    /** 卡片主体：整块穿透，不吃任何触摸 */
+    /** 卡片主体（收起态）：整块穿透，不吃任何触摸 */
     public static WindowManager.LayoutParams params(int type) {
+        return params(type, CardSpec.cardHeight());
+    }
+
+    /**
+     * 卡片主体，高度由调用方给（TASK-017：本记「展开▽」后窗口要变高）。
+     *
+     * 🔴 卡片主体**始终**带 `FLAG_NOT_TOUCHABLE` —— 桌面手势（长按加卡片、滑动翻页）
+     * 必须穿透。窗口变高只是把"画的地方"变大，**不会**多吃一片触摸
+     * （这也是 TASK-017 敢把卡片拉到 660px 高的前提，见 `验证记录/59` 项④）。
+     */
+    public static WindowManager.LayoutParams params(int type, int h) {
         int flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                 | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
                 | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
 
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
-                CardSpec.cardWidth(), CardSpec.cardHeight(), type, flags, PixelFormat.OPAQUE);
+                CardSpec.cardWidth(), h, type, flags, PixelFormat.OPAQUE);
         lp.gravity = Gravity.TOP | Gravity.LEFT;
         lp.x = CardSpec.CARD_LEFT;
         lp.y = CardSpec.CARD_TOP;
@@ -87,6 +98,17 @@ public final class OverlayWindow {
      * （两边共用同一组常量，改几何只改 CardSpec）。
      */
     public static WindowManager.LayoutParams paramsOpenTouch(int type) {
+        return paramsOpenTouch(type, CardSpec.cardHeight());
+    }
+
+    /**
+     * 同上，卡片的**当前高度**由调用方给（TASK-017）。
+     *
+     * 本记展开后卡片变高，页内按钮按 `h` 定位**随下沿下移**（用户拍板②）⇒
+     * 这个触摸窗也得跟着下移，否则它会停在收起态的位置，与画出来的框错开 ——
+     * 表现为"点框没反应、点框上方空白处反而有反应"。
+     */
+    public static WindowManager.LayoutParams paramsOpenTouch(int type, int h) {
         int flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                 | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
 
@@ -94,7 +116,7 @@ public final class OverlayWindow {
                 CardSpec.OPEN_BOX_W, CardSpec.OPEN_BOX_H, type, flags, PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | Gravity.LEFT;
         lp.x = CardSpec.openBoxLeft();
-        lp.y = CardSpec.openBoxTop();
+        lp.y = CardSpec.openBoxTop(h);
         lp.setTitle("微读墨记·打开");
         return lp;
     }
@@ -107,6 +129,11 @@ public final class OverlayWindow {
      * 与 {@link WeekCardView} 画出来的框**严格对齐**（两边共用同一组常量）。
      */
     public static WindowManager.LayoutParams paramsPrevTouch(int type) {
+        return paramsPrevTouch(type, CardSpec.cardHeight());
+    }
+
+    /** 同上，卡片的**当前高度**由调用方给（TASK-017）—— 与「打开」同一条水平线 */
+    public static WindowManager.LayoutParams paramsPrevTouch(int type, int h) {
         int flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                 | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
 
@@ -114,8 +141,29 @@ public final class OverlayWindow {
                 CardSpec.OPEN_BOX_W, CardSpec.OPEN_BOX_H, type, flags, PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | Gravity.LEFT;
         lp.x = CardSpec.prevBoxLeft();
-        lp.y = CardSpec.prevBoxTop();
+        lp.y = CardSpec.prevBoxTop(h);
         lp.setTitle("微读墨记·上一条");
+        return lp;
+    }
+
+    /**
+     * 本记**行末**「展开▽ / 收起△」的触摸区（TASK-017）。
+     *
+     * 🔴 与其余触摸窗不同：这个按钮**没有固定坐标** —— 它挂在正文末行的行末，
+     * 落在第几行取决于这条划线有多长。所以位置与尺寸全部由绘制时回写的
+     * {@link WeekCardView#expandBox}（已换算成**屏幕坐标**）给，每次变化都
+     * `updateViewLayout`。写死坐标必然对不齐（用户点了没反应）。
+     */
+    public static WindowManager.LayoutParams paramsExpandTouch(int type, int x, int y, int w, int h) {
+        int flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
+
+        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                w, h, type, flags, PixelFormat.TRANSLUCENT);
+        lp.gravity = Gravity.TOP | Gravity.LEFT;
+        lp.x = x;
+        lp.y = y;
+        lp.setTitle("微读墨记·展开");
         return lp;
     }
 
@@ -128,11 +176,16 @@ public final class OverlayWindow {
      * 菜单 8 秒自动消失，且用户此刻本来就是在操作卡片。
      */
     public static WindowManager.LayoutParams paramsMenu(int type) {
+        return paramsMenu(type, CardSpec.cardHeight());
+    }
+
+    /** 同上，卡片的**当前高度**由调用方给（TASK-017：菜单铺满卡片，展开态要跟着变高） */
+    public static WindowManager.LayoutParams paramsMenu(int type, int h) {
         int flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                 | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
 
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
-                CardSpec.cardWidth(), CardSpec.cardHeight(), type, flags, PixelFormat.TRANSLUCENT);
+                CardSpec.cardWidth(), h, type, flags, PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | Gravity.LEFT;
         lp.x = CardSpec.CARD_LEFT;
         lp.y = CardSpec.CARD_TOP;

@@ -6,11 +6,13 @@ import com.inkread.weekread.core.CardDebug;
 import com.inkread.weekread.core.CardPrefs;
 import com.inkread.weekread.core.PeriodRange;
 import com.inkread.weekread.core.StatsStore;
+import com.inkread.weekread.core.CardSpec;
 import com.inkread.weekread.feature.OverlayWindow;
 import com.inkread.weekread.feature.WeekCardView;
 import com.inkread.weekread.ui.CardMenuView;
 
 import android.content.Context;
+import android.graphics.RectF;
 import android.view.View;
 import android.view.WindowManager;
 
@@ -40,9 +42,31 @@ final class OverlayController {
     private View openView;
     /** 左下角「上一条」按钮的透明触摸区（只在本记形态出现） */
     private View prevView;
+    /** 本记**行末**「展开▽ / 收起△」的透明触摸区（TASK-017，位置随绘制结果走） */
+    private View expandView;
     /** 长按抬头弹出的菜单（铺满卡片的透明窗口，平时 GONE） */
     private CardMenuView menuView;
     private boolean windowAdded = false;
+
+    // ══════════════════════ 本记「展开▽」（v0.9，TASK-017）══════════════════════
+
+    /**
+     * 卡片主体窗口的**当前高度**（收起 = {@code CardSpec.cardHeight()}）。
+     *
+     * 展开态只是把这个值换成 {@code CardSpec.cardHeightExpanded()}，
+     * 底部那两个按钮的触摸窗与菜单窗都按它重算 ⇒ 三处永远与画出来的框重合。
+     */
+    private int cardH = CardSpec.cardHeight();
+
+    /** 最近一次回写出来的行末按钮矩形（**屏幕**坐标）；空 = 这次没有按钮 */
+    private final RectF expandBoxScreen = new RectF();
+    /**
+     * 卡片主体**此刻是否可见**（{@link #applyVisibility} 算出来的那个 `show`）。
+     *
+     * 「展开/收起」窗的可见性要跟着它走 —— 卡片藏起来时这个窗必须也走开，
+     * 否则会在看不见的地方继续吃掉桌面的点击（与 openView/prevView 同一条纪律）。
+     */
+    private boolean cardVisible = false;
 
     OverlayController(Context ctx, android.os.Handler ui, CardVisibilityState st) {
         this.ctx = ctx;
@@ -133,6 +157,20 @@ final class OverlayController {
             // 卡片窗口就是卡片的左右边界，所以内容不再留横向内边距，
             // 分隔线/柱状图两端才正好落在 56 / 423 这两个图标描边上
             view.setPadXRatio(0f);
+            cardH = CardSpec.cardHeight();
+            // 「展开▽ / 收起△」的宿主回调（TASK-017）：窗口高度与行末按钮的位置都由卡片回写驱动，
+            // 本类只负责把它们落到 WindowManager —— **不碰任何让位判据**。
+            view.setExpandListener(new WeekCardView.ExpandListener() {
+                @Override
+                public void onExpanded(boolean expanded) {
+                    setCardHeight(expanded ? CardSpec.cardHeightExpanded() : CardSpec.cardHeight());
+                }
+
+                @Override
+                public void onExpandBox(RectF box) {
+                    updateExpandTouch(box);
+                }
+            });
             String m0 = StatsStore.getCardPeriod(ctx);
             view.setMode(m0);
             if (PeriodRange.BOOK.equals(m0)) {
@@ -211,6 +249,20 @@ final class OverlayController {
             });
             wm.addView(prevView, OverlayWindow.paramsPrevTouch(OverlayWindow.typeAccessibility()));
 
+            // 行末「展开▽ / 收起△」（TASK-017）：初始尺寸给个 1×1 并先 GONE ——
+            // 真正的位置要等第一帧画完才知道（按钮挂在第几行取决于这条划线有多长）。
+            expandView = new View(ctx);
+            expandView.setVisibility(View.GONE);
+            expandView.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (view != null) view.toggleNoteExpanded();
+                }
+            });
+            wm.addView(expandView, OverlayWindow.paramsExpandTouch(
+                    OverlayWindow.typeAccessibility(),
+                    CardSpec.CARD_LEFT, CardSpec.CARD_TOP, 1, 1));
+
             // 长按菜单：铺满卡片的透明窗口，平时 GONE —— 见 CardMenuView 的说明
             menuView = new CardMenuView(ctx);
             menuView.setItems(MENU_ITEMS);
@@ -235,8 +287,75 @@ final class OverlayController {
             hitView = null;
             titleView = null;
             openView = null;
+            prevView = null;
+            expandView = null;
             menuView = null;
+            cardH = CardSpec.cardHeight();
             windowAdded = false;
+        }
+    }
+
+    // ══════════════════════ 卡片高度 / 行末按钮窗（TASK-017）══════════════════════
+
+    /**
+     * 改卡片主体窗口的高度，并让**所有随高度走**的窗口跟着重摆。
+     *
+     * @param h 目标高度（{@code CardSpec.cardHeight()} 或 {@code cardHeightExpanded()}）
+     */
+    private void setCardHeight(int h) {
+        if (wm == null || view == null) return;
+        if (cardH == h) return;              // 没变就别动 —— 每次 updateViewLayout 都是一次合成
+        cardH = h;
+        try {
+            wm.updateViewLayout(view, OverlayWindow.params(OverlayWindow.typeAccessibility(), h));
+            // 页内两个按钮按 h 定位，天然随下沿下移 ⇒ 触摸窗必须同步，否则框与窗错位
+            if (openView != null) {
+                wm.updateViewLayout(openView,
+                        OverlayWindow.paramsOpenTouch(OverlayWindow.typeAccessibility(), h));
+            }
+            if (prevView != null) {
+                wm.updateViewLayout(prevView,
+                        OverlayWindow.paramsPrevTouch(OverlayWindow.typeAccessibility(), h));
+            }
+            if (menuView != null) {
+                wm.updateViewLayout(menuView,
+                        OverlayWindow.paramsMenu(OverlayWindow.typeAccessibility(), h));
+            }
+            CardDebug.note(ctx, "card height=" + h);
+        } catch (Throwable t) {
+            // 窗口已经被摘（服务重建的竞态）⇒ 记一笔就好，别把异常抛进绘制回调
+            CardDebug.note(ctx, "setCardHeight failed h=" + h);
+        }
+    }
+
+    /**
+     * 按绘制回写出来的矩形摆「展开/收起」触摸窗。
+     *
+     * @param box **View 内坐标**的按钮矩形；null 或空 = 这次没有按钮 ⇒ 把窗藏起来
+     */
+    private void updateExpandTouch(RectF box) {
+        if (wm == null || expandView == null) return;
+        if (box == null || box.isEmpty()) {
+            expandBoxScreen.setEmpty();
+            expandView.setVisibility(View.GONE);
+            return;
+        }
+        // View 内坐标 → 屏幕坐标（与 openBox/prevBox 同款换算：窗口左上角就在 CARD_LEFT/CARD_TOP）
+        expandBoxScreen.set(CardSpec.CARD_LEFT + box.left, CardSpec.CARD_TOP + box.top,
+                CardSpec.CARD_LEFT + box.right, CardSpec.CARD_TOP + box.bottom);
+        int x = Math.round(expandBoxScreen.left);
+        int y = Math.round(expandBoxScreen.top);
+        int w = Math.max(1, Math.round(expandBoxScreen.width()));
+        int h = Math.max(1, Math.round(expandBoxScreen.height()));
+        try {
+            wm.updateViewLayout(expandView,
+                    OverlayWindow.paramsExpandTouch(OverlayWindow.typeAccessibility(), x, y, w, h));
+            // 只有"卡片此刻确实可见 且 是本记形态"才接管触摸 —— 其它形态下必须让开，
+            // 否则会在看不见的地方吃掉桌面的点击（与 openView/prevView 同一条纪律）
+            expandView.setVisibility(cardVisible ? View.VISIBLE : View.GONE);
+        } catch (Throwable t) {
+            expandView.setVisibility(View.GONE);
+            CardDebug.note(ctx, "updateExpandTouch failed");
         }
     }
 
@@ -285,6 +404,12 @@ final class OverlayController {
                 && !st.hideGate                         // 用户长按选择"隐藏 N 分钟" → 让位（v0.3.4）
                 && !st.settingsGate                     // ELauncher「设置」页（内容探测命中）→ 让位（TASK-009）
                 && pageAllow;                           // 翻页让位（v0.6.0 + PAGE_HIDE_FROM 兜底）—— 仅一页模式可短路（TASK-011）
+        cardVisible = show;
+        // ── TASK-017：让位 / 隐藏 ⇒ **强制收起**本记展开态 ──
+        // 理由（用户拍板⑥）：卡片被藏起来时如果还留着 660px 的展开态，恢复显示时会"露出一大块"，
+        // 或只露出一半 —— 收起态才是"随时可以显示"的安全形态。
+        // 🔴 只在这一行加钩子，**不动上面任何一个判据**（让位逻辑已由 TASK-010 收口）。
+        if (!show) view.collapseNote();
         view.setVisibility(show ? View.VISIBLE : View.GONE);
         // 触摸区跟着一起显隐 —— 卡片藏起来时它们必须也走开，
         // 否则会在看不见的地方继续吃掉桌面的点击
@@ -300,6 +425,12 @@ final class OverlayController {
         // 「上一条」只在本记形态存在 —— 其它形态下它必须完全让开，否则会吃掉左下角的桌面手势（v0.4.2）
         if (prevView != null) {
             prevView.setVisibility((show && noteMode) ? View.VISIBLE : View.GONE);
+        }
+        // 「展开▽ / 收起△」只在本记形态、卡片可见、且这一帧真画出了按钮时才接管触摸。
+        // 其它形态 / 卡片藏起来时一律 GONE —— 它就在正文区里，藏不掉就会吃掉桌面的长按与滑动。
+        if (expandView != null) {
+            expandView.setVisibility(
+                    (show && noteMode && !expandBoxScreen.isEmpty()) ? View.VISIBLE : View.GONE);
         }
         if (menuView != null) {
             menuView.setVisibility((show && st.menuOpen) ? View.VISIBLE : View.GONE);
@@ -325,6 +456,7 @@ final class OverlayController {
         removeSafely(titleView);
         removeSafely(openView);
         removeSafely(prevView);
+        removeSafely(expandView);
         removeSafely(menuView);
 
         view = null;
@@ -332,7 +464,11 @@ final class OverlayController {
         titleView = null;
         openView = null;
         prevView = null;
+        expandView = null;
         menuView = null;
+        cardH = CardSpec.cardHeight();
+        cardVisible = false;
+        expandBoxScreen.setEmpty();
         windowAdded = false;
     }
 

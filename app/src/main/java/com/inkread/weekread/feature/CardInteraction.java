@@ -75,6 +75,14 @@ final class CardInteraction {
                     return true;
                 }
                 if (host.note == null) return true;
+                // 行末「展开▽ / 收起△」（TASK-017）：卡片档专属，放在正文矩形与其它按钮之间判 ——
+                // 桌面卡片主体是 NOT_TOUCHABLE，点它靠 OverlayController 另开的透明小窗；
+                // 这一句是给"卡片本体可触摸"的宿主（App / 预览）兜底的，顺序上先于底部按钮，
+                // 因为它在正文区里，与底部按钮矩形不重叠，先判后判都不会抢。
+                if (hit(host.expandBox, x, y)) {
+                    host.toggleNoteExpanded();
+                    return true;
+                }
                 if (hit(host.prevBox, x, y)) {
                     if (host.noteListener != null) host.noteListener.onPrevNote();
                 } else if (hit(host.openBox, x, y)) {

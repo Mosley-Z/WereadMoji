@@ -168,8 +168,30 @@ public class WeekCardView extends View {
     final RectF filterBox = new RectF();
     /** 本记形态左下角「上一条」按钮的矩形（v0.4.2） */
     final RectF prevBox = new RectF();
+    /**
+     * 本记**行末**「展开▽ / 收起△」的矩形（v0.9，TASK-017）。
+     *
+     * 🔴 **本 View 内部坐标**，且是**绘制时算出来回写的**（位置取决于末行落在第几行，
+     * 不同长度的划线落点不同）—— 所以触摸窗不能写死坐标，必须等画完再摆
+     * （见 {@link #publishExpandBox} 与 {@link ExpandListener#onExpandBox}）。
+     * 空矩形 = 这次没有按钮（短文本收起态 / 非本记形态 / App 全屏档）。
+     */
+    final RectF expandBox = new RectF();
+    /**
+     * 本记正文是否处于**展开态**（v0.9，TASK-017）。
+     *
+     * 只影响**桌面悬浮卡**（`fullscreen == false`）：App 全屏档正文本来就能滚动，
+     * 不需要也不画这个按钮 —— 判据统一写成 `!host.fullscreen`，无需额外开关。
+     *
+     * 🔴 **不记住展开态**（用户拍板）：切形态 / 换一条 / 上一条 / 被让位 **一律复位收起**，
+     * 复位点全部收在 {@link #collapseNote()} 一个方法里。
+     */
+    boolean noteExpanded = false;
     OpenListener openListener;
     NoteListener noteListener;
+    ExpandListener expandListener;
+    /** 上一次回写出去的按钮矩形（判"有没有变"，避免重复回调 ⇒ 墨水屏少闪） */
+    private final RectF expandBoxSent = new RectF();
 
     // ── v0.4.4：本记正文的滚动与导出模式 ──
 
@@ -234,6 +256,24 @@ public class WeekCardView extends View {
         void onToggleIdeas();
     }
 
+    /**
+     * 「展开▽ / 收起△」的宿主回调（v0.9，TASK-017）—— **只有桌面悬浮卡需要实现**。
+     *
+     * 为什么必须有回调：卡片主体窗口是 `FLAG_NOT_TOUCHABLE`（手势要穿透给桌面），
+     * 按钮是**画**在卡上的，点它靠 `OverlayController` 另开的透明小窗；
+     * 而窗口高度与按钮位置只有本 View 知道 ⇒ 变化时必须通知外面改 `WindowManager`。
+     *
+     * 两个方法是**两件事**，别合并：
+     * · {@link #onExpanded} —— **先**改窗口高度（下一步绘制用的 `h` 才是对的）；
+     * · {@link #onExpandBox} —— **后**摆触摸小窗（矩形要等那一帧画完才有）。
+     */
+    public interface ExpandListener {
+        /** 展开态变了 ⇒ 窗口高度要跟着改（true = 用 {@code CardSpec.cardHeightExpanded()}） */
+        void onExpanded(boolean expanded);
+        /** 行末按钮矩形画出来了 / 没了。{@code box} 是**副本**（View 内坐标）；空 = 没有按钮 */
+        void onExpandBox(RectF box);
+    }
+
     public WeekCardView(Context c) { this(c, null); }
 
     public WeekCardView(Context c, AttributeSet a) {
@@ -274,6 +314,7 @@ public class WeekCardView extends View {
         mode = v;
         noteHint = null;            // 换形态了，上一个形态的空态提示不再适用（v0.5.3）
         achievementText = null;     // 换形态了，成就行作废；controller 随 setStats 按新形态重算（v0.9）
+        collapseNote();             // 切形态 ⇒ 展开态复位（TASK-017 拍板：不记住展开态）
         invalidate();
     }
 
@@ -281,6 +322,12 @@ public class WeekCardView extends View {
 
     /** 设「本记」两个页内按钮的回调（v0.4.1） */
     public void setNoteListener(NoteListener l) { noteListener = l; }
+
+    /**
+     * 设「展开▽ / 收起△」的宿主回调（v0.9，TASK-017）—— 只有桌面悬浮卡需要（{@code OverlayController}）。
+     * App 全屏档与设置页预览不设，此时按钮要么不画（App）、要么画出来也点不动（预览，本来就是预览）。
+     */
+    public void setExpandListener(ExpandListener l) { expandListener = l; }
 
     public String getMode() {
         return mode;
@@ -323,6 +370,9 @@ public class WeekCardView extends View {
         // n == null 时无从查书 → 0；两路缓存都没时间戳 → 0（不画「更新于」）。
         noteFetchedAt = (n == null) ? 0L
                 : com.inkread.weekread.core.NoteStore.noteFetchedAt(getContext(), n.bookId);
+        // 换了一条划线 ⇒ 展开态复位（TASK-017 拍板）—— 「换一条 / 上一条」都走这里，
+        // 所以复位点只有这一个，不会漏路径（CardContentController 无绕过 setNote 的换条路）。
+        collapseNote();
         invalidate();
     }
 
@@ -400,6 +450,62 @@ public class WeekCardView extends View {
         invalidate();
     }
 
+    // ══════════════════════ 本记「展开▽ / 收起△」（v0.9，TASK-017）══════════════════════
+
+    /** 当前是否展开（包级 —— CardRenderer 判定按钮文案要用） */
+    boolean isNoteExpanded() {
+        return noteExpanded && !fullscreen;
+    }
+
+    /**
+     * 翻转展开态（触摸小窗 / App 内命中测试都走这里）。
+     *
+     * 🔴 顺序不能反：**先**通知宿主改窗口高度，**再** invalidate ——
+     * 因为下一步绘制用的 `h` 来自 `getHeight()`（CardRenderer#draw），
+     * 高度没先改，那一帧画出来的还是旧高度的版面（观感上就是"点了没反应"）。
+     * 两次请求（updateViewLayout + invalidate）落在同一次 traversal 里 ⇒ **只闪一次**。
+     */
+    public void toggleNoteExpanded() {
+        setNoteExpanded(!noteExpanded);
+    }
+
+    /** 直接设展开态（{@link #collapseNote} 与 {@link #toggleNoteExpanded} 共用） */
+    private void setNoteExpanded(boolean v) {
+        if (noteExpanded == v) return;
+        noteExpanded = v;
+        if (expandListener != null) expandListener.onExpanded(v);
+        invalidate();
+    }
+
+    /**
+     * **强制收起**（切形态 / 换一条 / 上一条 / 被让位，TASK-017 拍板）。
+     *
+     * 已收起时直接返回 ⇒ 频繁调用（让位路径每次状态变化都会过一遍）不会产生多余重绘。
+     */
+    public void collapseNote() {
+        setNoteExpanded(false);
+    }
+
+    /**
+     * 行末按钮矩形回写后**通知宿主**（包级，由 {@link #onDraw} 在画完那一帧调）。
+     *
+     * 用 `post` 而不是同步回调：本方法在 `onDraw` 里执行，同步调 `WindowManager` 会在绘制过程中
+     * 改动窗口，风险不可控；post 到消息队列 ⇒ 绘制结束后再改，且**矩形没变就完全不回调**
+     * （墨水屏每一次多余的全屏刷新都肉眼可见）。
+     */
+    private void publishExpandBox() {
+        if (expandBox.equals(expandBoxSent)) return;
+        expandBoxSent.set(expandBox);
+        if (expandListener == null) return;
+        final RectF copy = expandBox.isEmpty() ? new RectF() : new RectF(expandBox);
+        post(new Runnable() {
+            @Override
+            public void run() {
+                if (expandListener != null) expandListener.onExpandBox(copy);
+            }
+        });
+    }
+
     /**
      * 设封面位图（v0.3.5.1，方案 A 左封右文）。
      * 传 null = 没拿到（画描边占位框）。异步下载完成后再调一次即可，自动重绘。
@@ -456,6 +562,9 @@ public class WeekCardView extends View {
     @Override
     protected void onDraw(Canvas c) {
         renderer.draw(c);
+        // 行末「展开/收起」按钮的位置是这一帧才算出来的 ⇒ 画完再通知宿主摆触摸窗。
+        // （renderer 每帧开头都会先把 expandBox 清空，所以这里拿到的一定是本次的真实结果）
+        publishExpandBox();
     }
 
     @Override
