@@ -51,6 +51,12 @@ import java.util.List;
  * 🔴 **窗口内容使用点之二**（与 {@link SettingsPageProbe} 并列，全仓库仅这两个）——
  * 本类的存在不新增任何权限（canRetrieveWindowContent 已于 TASK-009 翻 true）。
  * 动本类之前必读 `docs/04` §2 与 `tasks/TASK-010_Ela三页内容探测.md`。
+ *
+ * <p>**v0.8.2（方案 A）新增第三个用途**：{@link #checkCurrentScreen()} —— 服务重连时
+ * 一次性判断"当前在桌面第 1 页 / 桌面其他页 / 不是桌面"，供 `CardA11yService`
+ * 修正"重连后无条件按第 1 页处理"的假设。它与上面那条**共用同一个
+ * `getRootInActiveWindow()` 调用点**（{@link #activeRoot()}）⇒ 窗口内容使用点
+ * 仍是"两处两个类"，能力面声明不变。
  */
 final class ElaHomeProbe {
 
@@ -71,6 +77,66 @@ final class ElaHomeProbe {
     private static final long PROBE_DELAY_MS = 650L;
     /** 首查命中后，等多久复核第二次（毫秒）。两次之间过渡残树会被回收 */
     private static final long RECHECK_DELAY_MS = 600L;
+
+    // ══════════════════ v0.8.2（方案 A）：服务重连时的「当前在前台哪一屏」一次性自检 ══════════════════
+    //
+    // ── 为什么需要它（真机实锤，2026-09-27）──
+    // 服务重连（覆盖安装后系统重启服务 / 关开无障碍开关 / 设备重启）时，原实现
+    // `CardVisibilityState.resetAll()` 会**无条件**把 `onDesktop=true` + `pageGate=false`，
+    // 即"假定人在桌面第 1 页"。可人完全可能在**第 2 页**（Tomo 尤为明显：Tomo 判向靠
+    // swipe 事件，重连后没有事件可依）⇒ 卡片错误显示、压住第 2 页图标，且**不会自愈**
+    //（实测 30s 后仍 VISIBLE，只有用户主动翻页才恢复）。
+    //
+    // ── 判据（与"落到 P1"那条同源：都是"可见的 P1 特征节点"）──
+    // 拿一次根窗口，按包名分三类，再对**已知桌面**查它的 P1 指纹：
+    //   · 包名不是桌面（别的应用 / 我们自己的界面）⇒ 当前就不该显示卡片
+    //   · 是桌面 且 可见的 P1 特征节点命中 ⇒ 第 1 页
+    //   · 是桌面 但没命中           ⇒ **不在第 1 页**（这就是要修的情形）
+    //   · 拿不到根窗口 / systemui 浮层 / 不认识的桌面 ⇒ **拿不准，维持原行为**
+    //
+    // ── 失败方向（符合本项目一贯的"宁可少让位、不可藏死"）──
+    // 只有**拿到正面证据**才改状态：命中 ⇒ 显示（与原行为一致）；桌面但未命中 ⇒ 让位
+    //（失败方向 = 多藏一次，下一次翻页/回桌面就会纠正）；前台非桌面 ⇒ onDesktop=false
+    //（这条同时让"从应用按 HOME 回来"重新满足 `desk != st.onDesktop` ⇒ 必然重算显示，
+    // 不会出现"藏死后回不来"）。三类都拿不准 ⇒ 一个字段都不动。
+    //
+    // ── 为什么放在本类、而不是新开一个 probe 类 ──
+    // 本类本就承担「桌面第 1 页特征节点的窗口内容探测」；重连自检用的是**同一件事**，
+    // 只是触发时机不同（一次同步查询 vs 延迟双命中）。放进本类可复用同一个
+    // `getRootInActiveWindow()` 调用点 ⇒ **不新增窗口内容使用点**（全仓库仍为
+    // 本类 + {@link SettingsPageProbe} 两处两个类），也免去扩能力面所需的单独拍板。
+    //
+    // ── 已知取舍（如实登记）──
+    // 类名带 `Ela` 前缀，而自检对 Tomo 也生效 ⇒ 命名比职责窄。不为此改名：改名要动
+    // 调用方与多处能力面文案，收益不抵风险；列为遗留。
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    /** 自检结论：确认在默认桌面**第 1 页** */
+    static final int CUR_HOME_P1 = 0;
+    /** 自检结论：确认在桌面，但**不在第 1 页**（要修的那一类） */
+    static final int CUR_HOME_NOT_P1 = 1;
+    /** 自检结论：前台**不是桌面**（别的应用 / 我们自己的界面） */
+    static final int CUR_NOT_HOME = 2;
+    /** 自检结论：**拿不准**（拿不到根窗口 / systemui 浮层 / 不认识的桌面）⇒ 不动作 */
+    static final int CUR_UNKNOWN = 3;
+
+    /** Tomo 桌面包 —— 自检时用来查它的 P1 时钟指纹 */
+    private static final String TOMO_PKG = "com.astraabove.tomo";
+    /**
+     * Tomo 的 P1 特征 id：桌面时钟容器。
+     *
+     * 2026-09-27 只读探针实测（`_shots/PROBE_tomo_p1_ui.xml` vs `PROBE_tomo_p2_ui.xml`）：
+     * `desk_clock` 系列（`desk_clock` / `desk_clock_only` / `desk_clock_only_date` /
+     * `desk_clock_row`）**只在 P1 存在**，P2 独有 `app_grid_more`。
+     *
+     * ⚠️ 与 ELauncher 不同，Tomo **不做邻页保留**（其翻页容器 `swipe_page` 的直接子节点
+     * 恒为 1 个 `home_stack`，内容整体替换）⇒ 没有"邻页残树"干扰；但仍照
+     * {@link #HOME_CLOCK_ID} 的规矩加上可见性过滤（多一道不会有坏处）。
+     */
+    private static final String TOMO_CLOCK_ID = "com.astraabove.tomo:id/desk_clock";
+
+    /** systemui 的窗口是浮层（下拉通知栏 / 音量条），此刻"当前应用"没变 ⇒ 一律拿不准，不动作 */
+    private static final String SYSTEMUI_PKG = "com.android.systemui";
 
     /** 探测序号：每调度一次 +1；回调时对不上号 = 期间有新事件 ⇒ 结果过期，丢弃 */
     private int seq = 0;
@@ -167,45 +233,118 @@ final class ElaHomeProbe {
      * 任何 false 都只导致「维持隐藏」。
      */
     private boolean probeOnce() {
-        try {
-            AccessibilityNodeInfo root = svc.getRootInActiveWindow();
-            if (root == null) {
-                CardDebug.note(ctx, "home probe 拿不到根窗口 → 不动作");
-                return false;
-            }
-            CharSequence pkg = root.getPackageName();
-            if (pkg == null || !ELA_PKG.equals(pkg.toString())) {
-                CardDebug.note(ctx, "home probe 窗口非 ELauncher("
-                        + (pkg == null ? "null" : pkg) + ") → 不动作");
-                return false;
-            }
-            List<AccessibilityNodeInfo> hits =
-                    root.findAccessibilityNodeInfosByViewId(HOME_CLOCK_ID);
-            if (hits == null || hits.isEmpty()) return false;   // 确认不在 P1（静默，高频）
-            // 可见性过滤：保留邻页里的时钟节点 id 相同但不可见/在屏外，不能当"P1 实锤"
-            for (AccessibilityNodeInfo n : hits) {
-                boolean vis = false;
-                try {
-                    vis = n.isVisibleToUser();
-                } catch (Throwable ignored) {
-                }
-                android.graphics.Rect r = new android.graphics.Rect();
-                try {
-                    n.getBoundsInScreen(r);
-                } catch (Throwable ignored) {
-                }
-                String rb = r.toShortString();     // intersect 会改写 r，日志先留原值
-                boolean onScreen = r.intersect(0, 0,
-                        com.inkread.weekread.core.CardSpec.SCREEN_W,
-                        com.inkread.weekread.core.CardSpec.SCREEN_H);
-                CardDebug.note(ctx, "home probe 时钟节点 visible=" + vis
-                        + " bounds=" + rb + " onScreen=" + onScreen);
-                if (vis && onScreen) return true;
-            }
-            return false;
-        } catch (Throwable t) {
-            CardDebug.note(ctx, "home probe 异常 → 不动作");
+        AccessibilityNodeInfo root = activeRoot();
+        if (root == null) {
+            CardDebug.note(ctx, "home probe 拿不到根窗口 → 不动作");
             return false;
         }
+        CharSequence pkg = root.getPackageName();
+        if (pkg == null || !ELA_PKG.equals(pkg.toString())) {
+            CardDebug.note(ctx, "home probe 窗口非 ELauncher("
+                    + (pkg == null ? "null" : pkg) + ") → 不动作");
+            return false;
+        }
+        return hasVisibleNode(root, HOME_CLOCK_ID);
+    }
+
+    /**
+     * 读当前根窗口 —— **本类唯一的 `getRootInActiveWindow()` 调用点**。
+     *
+     * 抽出来是为了让「翻页落到 P1 的双命中探测」与「服务重连时的一次性自检」
+     *（v0.8.2 方案 A）共用同一个窗口内容入口 ⇒ 全仓库的窗口内容使用点仍为
+     * **两处两个类**（本类 + {@link SettingsPageProbe}），审查口径
+     * `grep -rn getRootInActiveWindow` 的**行数不变**。
+     * 拿不到（服务刚连上 / 异常）返回 null，调用方一律按"不动作"处理。
+     */
+    private AccessibilityNodeInfo activeRoot() {
+        try {
+            return svc.getRootInActiveWindow();
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * 在 root 子树里查 viewId，判断有没有**可见且在屏内**的命中节点。
+     *
+     * 🔴 可见性过滤不可省：ELauncher 的 ViewPager 会保留邻页 ⇒ P2/P3 树会短暂残留 P1
+     * 时钟节点（2026-09-26 真机 G 场景实锤），仅按 id 命中会在 P2 上误判"在 P1"。
+     * Tomo 无邻页保留，但同一道过滤对它也无害。
+     *
+     * ⚠️ 日志字样由"home probe 时钟节点"改为中性的"home probe 节点"（两条调用路径共用）。
+     * 该行只进 `card_debug.log`、不被任何回归脚本断言，故不影响判据。
+     */
+    private boolean hasVisibleNode(AccessibilityNodeInfo root, String viewId) {
+        List<AccessibilityNodeInfo> hits = root.findAccessibilityNodeInfosByViewId(viewId);
+        if (hits == null || hits.isEmpty()) return false;   // 确认不在 P1（静默，高频）
+        // 可见性过滤：保留邻页里的时钟节点 id 相同但不可见/在屏外，不能当"P1 实锤"
+        for (AccessibilityNodeInfo n : hits) {
+            boolean vis = false;
+            try {
+                vis = n.isVisibleToUser();
+            } catch (Throwable ignored) {
+            }
+            android.graphics.Rect r = new android.graphics.Rect();
+            try {
+                n.getBoundsInScreen(r);
+            } catch (Throwable ignored) {
+            }
+            String rb = r.toShortString();     // intersect 会改写 r，日志先留原值
+            boolean onScreen = r.intersect(0, 0,
+                    com.inkread.weekread.core.CardSpec.SCREEN_W,
+                    com.inkread.weekread.core.CardSpec.SCREEN_H);
+            CardDebug.note(ctx, "home probe 节点 visible=" + vis
+                    + " bounds=" + rb + " onScreen=" + onScreen);
+            if (vis && onScreen) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 服务重连时的一次性自检 —— 返回 {@link #CUR_HOME_P1} / {@link #CUR_HOME_NOT_P1} /
+     * {@link #CUR_NOT_HOME} / {@link #CUR_UNKNOWN}。调用点只有一个：
+     * `CardA11yService.onServiceConnected()`（排在任何 `applyVisibility()` 之前）。
+     *
+     * 🔴 **调用前必须保证 `st.launchers` 已填好**（`A11yRouter.loadLaunchers()` 已在
+     * 本类之前调用），否则会把桌面误判成"别的应用"。
+     */
+    int checkCurrentScreen() {
+        AccessibilityNodeInfo root = activeRoot();
+        if (root == null) {
+            CardDebug.note(ctx, "reconnect probe 拿不到根窗口 → 维持原行为（按第 1 页）");
+            return CUR_UNKNOWN;
+        }
+        CharSequence cs = root.getPackageName();
+        if (cs == null) return CUR_UNKNOWN;
+        String pkg = cs.toString();
+        // systemui 是**浮层**：此刻"当前应用"并没变，但它不是桌面 ⇒ 不能据此判"不在桌面"
+        //（否则下拉通知栏时重连会把 onDesktop 置成 false，而"收起通知栏"不会再发桌面事件
+        //  ⇒ 卡片可能一直回不来）。一律拿不准。
+        if (SYSTEMUI_PKG.equals(pkg)) {
+            CardDebug.note(ctx, "reconnect probe 前台是 systemui 浮层 → 维持原行为");
+            return CUR_UNKNOWN;
+        }
+        if (st.launchers == null || !st.launchers.contains(pkg)) {
+            CardDebug.note(ctx, "reconnect probe 前台非桌面 pkg=" + pkg + " ⇒ 不该显示卡片");
+            return CUR_NOT_HOME;
+        }
+        String id = firstPageIdOf(pkg);
+        if (id == null) {
+            // 本机只认 Tomo / ELauncher 两套指纹。别家桌面没有 P1 判据 ⇒ 拿不准，
+            // 维持原行为（显示）——对未知桌面"藏"会让卡片再也回不来，方向反了。
+            CardDebug.note(ctx, "reconnect probe 桌面 " + pkg + " 无已知 P1 指纹 → 维持原行为");
+            return CUR_UNKNOWN;
+        }
+        boolean hit = hasVisibleNode(root, id);
+        CardDebug.note(ctx, "reconnect probe pkg=" + pkg + " id=" + id + " hit=" + hit
+                + " → " + (hit ? "第1页" : "非第1页"));
+        return hit ? CUR_HOME_P1 : CUR_HOME_NOT_P1;
+    }
+
+    /** 已知桌面 → 它的 P1 特征 id；不认识的桌面返回 null（= 拿不准） */
+    private static String firstPageIdOf(String pkg) {
+        if (TOMO_PKG.equals(pkg)) return TOMO_CLOCK_ID;
+        if (ELA_PKG.equals(pkg)) return HOME_CLOCK_ID;
+        return null;
     }
 }
