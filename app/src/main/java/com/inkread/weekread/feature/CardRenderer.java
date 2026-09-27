@@ -48,6 +48,32 @@ final class CardRenderer {
     private static final float SZ_SUB = 17f;        // 空态/错误小字 / 本月左栏副标题
     private static final float SZ_CAL_HEAD = 12f;   // 卡片版日历表头「一…日」
 
+    // ── 成就行开启时，「周柱状图」版面的重排（TASK-013-R2，2026-09-27 用户拍板「方案 A · 43/57」）──
+    //
+    // 背景：成就行一开，贴底位让给它、统计行上移一行 ⇒ 上方必须让出一块高度 D。
+    // 现状（R1）是 **D 全由柱状图扛**（柱底 0.78 → 0.685），观感上柱子被压得偏矮。
+    // 用户改判：**主数字字号同时缩小，与柱状图分摊** —— D 的 43% 由上方（字号）出、
+    // 剩下 57% 才由柱状图出。
+    //
+    // 🔴 为什么不是用户最初要的 70/30：D 只有 `h×0.095 ≈ 32.9px`，70% 意味着字号要
+    // 从 38 号砍到 18.8 号，柱顶被抬高 23px、而柱状图只回退 9.9px ⇒ 柱高反而比成就行
+    // 关闭时还高 13px，净空 −11.9px **必然重叠**。43/57 是"主数字明显变小"里能装下的
+    // 上限（净空 7.0px）。详见 `.workbuddy/artifacts/TASK-013R2_成就行版面70-30可行性.md`。
+
+    // ⚠️ 前提：`achvOn` 只在**桌面悬浮卡**上为真 —— `achievementText` 全项目只有
+    // `CardContentController.applyAchievement` 一处注入，MainActivity 不塞（拍板：成就行只上桌面卡片）。
+    // 所以 `h` 恒为卡片高 346、`give` 恒 ≈14.07px（远小于主数字 45.6px），不会把字号减穿。
+    // 若将来把成就行搬进 App 全屏周视图（h≈800），**必须重新标定**这组系数。
+
+    /** 成就行开启时，上方需要让出的高度 D（相对 h）= 柱底 0.78 压到 0.685 的差值。 */
+    private static final float ACHV_GIVE_TOTAL = 0.095f;
+    /** D 里由**上方**（主数字字号 + 柱顶上移）承担的比例；柱状图承担 `1 − 此值` = 57%。 */
+    private static final float ACHV_UP_SHARE = 0.428f;
+    /** 成就行开启时的星期标签行距系数（原 1.5）—— 柱底回退后靠这条把净空补回 7px 量级。 */
+    private static final float ACHV_DAY_OFF = 1.30f;
+    /** 成就行开启时统计行上移的行距系数（原 1.6）—— 与 {@link #ACHV_DAY_OFF} 配套收紧。 */
+    private static final float ACHV_SHIFT_MUL = 1.30f;
+
     // ── App 内「本月」全屏大版的字号/尺寸（设计方案 §2.3 / §3.2）──
     // 卡片版是"信息密度优先"，全屏版是"看得清优先"：主数字 38→46 号，表头 12→16 号。
     private static final float SZ_BIG_FULL = 46f;    // 全屏主数字（卡片版是 38）
@@ -140,7 +166,13 @@ final class CardRenderer {
     private static final String FILTER_ALL = "全部";
     private static final String FILTER_IDEA = "想法";
 
-    private static final String[] DAY_NAMES = {"周一", "周二", "周三", "周四", "周五", "周六", "周日"};
+    /**
+     * 周形态 7 根柱的横坐标标签。**2026-09-27 用户拍板：由「周一…周日」简化为单字「一…日」**
+     * （柱宽 ~26px，两个字的「周一」在墨水屏上偏挤、且与下方日格视觉重复）。
+     * 与 {@link #CAL_HEAD} 同形但**语义独立**：那是月日历网格的列头，这是柱状图横轴，别合并。
+     * 桌面卡与 App 内周视图共用 {@link #drawWeekBody} ⇒ 改这里即双端生效。
+     */
+    private static final String[] DAY_NAMES = {"一", "二", "三", "四", "五", "六", "日"};
     /** 日历表头：**恒为「一…日」**，不随月份/语言变化（周一起算） */
     private static final String[] CAL_HEAD = {"一", "二", "三", "四", "五", "六", "日"};
 
@@ -380,8 +412,17 @@ final class CardRenderer {
         boolean isCur = host.stats.isCurrentPeriod();
         int todayIdx = isCur ? host.stats.todayIndex() : -1;
 
+        // ── 成就行开启判定（v0.9，TASK-013）──
+        // 成就行一开，贴底位让给它、统计行上移一行 ⇒ 上方要让出一块高度。
+        // 让法（TASK-013-R2 拍板「43/57」）：让出的总高度 D 里，上方（主数字字号 + 柱顶）
+        // 承担 43%，柱状图只承担剩下的 57% —— R1 是柱状图 100% 独扛。
+        boolean achvOn = host.achievementText != null && isCur;
+        float give = achvOn ? h * ACHV_GIVE_TOTAL * ACHV_UP_SHARE : 0f;
+
         // ── 主数字：本周总时长 ──
-        float bigSize = SZ_BIG * host.unit;
+        // 字号缩小 give ⇒ 字块底部（= 基线 bigY）随之上移 give，与下方 chartTop 的上移量一致
+        // （字块顶部 `ruleY + padY×0.45` 不动，只有底边上收）。
+        float bigSize = SZ_BIG * host.unit - give;
         host.p.setTextAlign(Paint.Align.LEFT);
         host.p.setTextSize(bigSize);
         host.p.setFakeBoldText(true);
@@ -391,8 +432,12 @@ final class CardRenderer {
         host.p.setFakeBoldText(false);
 
         // ── 7 天柱状图 ──
-        float chartTop = h * 0.40f;
-        float chartBottom = h * 0.78f;
+        // 成就行开启：柱底由 0.78 压到 0.685（0.685 = TASK-015 实测定死，0.70 时净空仅 7px 偏紧），
+        // 再把上方让出的 give 还回来 ⇒ 柱状图**实际只压 (D − give)**，即总让出量的 57%。
+        // 柱顶同步上移 give，贴住缩小后的主数字底边。
+        // 关闭（achievementText == null）时 give = 0，走原值 —— 与 v0.8.0 逐像素一致。
+        float chartTop = h * 0.40f - give;
+        float chartBottom = achvOn ? h * 0.685f + give : h * 0.78f;
         float chartH = chartBottom - chartTop;
         float slot = (right - left) / 7f;
         float barW = slot * 0.5f;
@@ -449,7 +494,10 @@ final class CardRenderer {
             host.p.setTextAlign(Paint.Align.CENTER);
             host.p.setTextSize(daySize);
             host.p.setColor(i == todayIdx ? INK : (future ? LIGHT : GRAY));
-            c.drawText(DAY_NAMES[i], cx, chartBottom + daySize * 1.5f, host.p);
+            // 成就行开启时行距 1.5 → 1.30：柱底已回退 give，靠这条把「星期底 → 统计行顶」
+            // 的净空补回 7px 量级（43/57 能装下的前提，见 ACHV_UP_SHARE 注释）。
+            c.drawText(DAY_NAMES[i], cx,
+                    chartBottom + daySize * (achvOn ? ACHV_DAY_OFF : 1.5f), host.p);
         }
 
         // ── 底部统计行（加粗；宽度不够时自动缩字号，绝不出框）──
@@ -461,7 +509,11 @@ final class CardRenderer {
             sb.append("  ·  较上周 ").append(v >= 0 ? "↑" : "↓")
               .append(Math.round(Math.abs(v) * 100)).append("%");
         }
-        drawBottomLine(c, (left + right) / 2f, h, padY, left, right, sb.toString());
+        // 成就行开启时统计行上移一行，贴底位让给成就行（v0.9）。
+        // 1.6 → 1.30（R2）：与 ACHV_DAY_OFF 配套收紧，给回退后的柱底腾出净空。
+        float lineY = h - padY * 0.85f - (achvOn ? ACHV_SHIFT_MUL * SZ_SUB * host.unit : 0f);
+        drawBottomLine(c, (left + right) / 2f, lineY, left, right, sb.toString());
+        if (achvOn) drawAchievementLine(c, (left + right) / 2f, h, padY, host.achievementText);
     }
 
     // ══════════════════════ 月：日历打卡网格（v0.3.3 新增） ══════════════════════
@@ -496,8 +548,11 @@ final class CardRenderer {
         int rows = (firstOffset + dayCount + 6) / 7;            // 上取整
         float gridH = headH + gap + rows * cell + (rows - 1) * rowGap;
 
+        // 成就行开启（v0.9，TASK-013）：左栏与网格整体上收一行，贴底位让给成就行；
+        // 关闭走原值 —— 逐像素一致（TASK-015 实测月卡富余 56px，上收一行很安全）
+        boolean achvOn = host.achievementText != null && host.stats.isCurrentPeriod();
         float contentTop = ruleY + padY * 0.55f;
-        float contentBottom = h - padY * 0.90f;
+        float contentBottom = h - padY * 0.90f - (achvOn ? 1.6f * SZ_SUB * host.unit : 0f);
         float gridTop = contentTop + Math.max(0f, (contentBottom - contentTop - gridH) / 2f);
 
         // ── 表头（一…日，不随月份变化）──
@@ -520,7 +575,8 @@ final class CardRenderer {
             boolean past = todayIdx >= 0 && i <= todayIdx;
 
             if (!past) continue;                                 // 未来 → 留白
-            drawCalCell(c, x, y, cell, host.stats.daySec[i] > 0);
+            if (host.monthHeatmap) drawHeatCell(c, x, y, cell, host.stats.daySec[i]);
+            else                   drawCalCell(c, x, y, cell, host.stats.daySec[i] > 0);
         }
 
         // ── 左栏：主数字 / 日均阅读 / 较上月 ──
@@ -559,8 +615,10 @@ final class CardRenderer {
         if (l3 != null) c.drawText(l3, left, base2 + subLine, host.p);
 
         // ── 底部统计行：本月只说"读了多少天"（日均/较上月已在左栏）──
-        drawBottomLine(c, (left + right) / 2f, h, padY, left, right,
+        float lineY = h - padY * 0.85f - (achvOn ? 1.6f * SZ_SUB * host.unit : 0f);
+        drawBottomLine(c, (left + right) / 2f, lineY, left, right,
                 "阅读 " + host.stats.readDays + "/" + dayCount + " 天");
+        if (achvOn) drawAchievementLine(c, (left + right) / 2f, h, padY, host.achievementText);
 
         host.p.setColor(INK);
         host.p.setTextAlign(Paint.Align.LEFT);
@@ -675,11 +733,185 @@ final class CardRenderer {
             int slot = firstOffset + i;
             float x = gridLeft + (slot % 7) * (cell + gap);
             float y = cellTop0 + (slot / 7) * (cell + rowGap);
-            drawCalCell(c, x, y, cell, host.stats.daySec[i] > 0);
+            if (host.monthHeatmap) drawHeatCell(c, x, y, cell, host.stats.daySec[i]);
+            else                   drawCalCell(c, x, y, cell, host.stats.daySec[i] > 0);
         }
 
         host.p.setColor(INK);
         host.p.setTextAlign(Paint.Align.LEFT);
+    }
+
+    /** 2×2 Bayer 序，索引 = `(row % 2) * 2 + (col % 2)`。正交 2px 点阵的 rank 依据。 */
+    private static final int[] sBayer2 = { 0, 2, 3, 1 };
+
+    /**
+     * 方案 D（正交 2px 点阵）的**点序**：把 inner×inner 的每个像素按 rank 升序排列
+     * （rank-order dithering）。取该序前 k 个涂黑 ⇒ 黑度**精确** = k/inner²，
+     * 且黑点按 2px 正交节奏均匀铺开 ⇒ 观感是均匀细密的灰，而非能"数出格/纹"的粗网点。
+     *
+     * rank 判据 = **2×2 Bayer 序**（{@link #sBayer2}），它与"正交 2px 点阵"等价：
+     * · 25% 档取 rank=0 ⇒ 每 2×2 块 1 个黑点（2px 单点阵）；
+     * · 50% 档取 rank≤1 ⇒ 2×2 块内黑 **对角**两点（2px 棋盘，最均匀）；
+     * · 75% 档取 rank≤2 ⇒ 2×2 块内黑 3 点。
+     * 4 个 rank 在块内各占 1/4，故 inner 为偶数时黑点数 = `round(inner²·pct/100)` **逐点精确**。
+     *
+     * 🔴 **为什么不用"离最近格点距离"排序**（那是方案 C 的做法）：
+     * 正交 2px 点阵下，2×2 块内 4 个点到最近格点的距离只有 {0,1,1,2} 三档，且两个 d=1 的点
+     * 恰在**对角** —— 若按距离序拔点，50% 档会取到"左上 + 右上/左下"⇒ **竖/横条纹**
+     * （方向偏置）。改用 Bayer 序后 50% 取**对角**两点 ⇒ 各向同性（R4 离线样图已对比）。
+     *
+     * 🔴 **为什么按目标像素直接生成，而不做"小位图拉伸"**：
+     * 卡片格 20px 对 16×16 是 `20 ÷ 16 = 1.25` 非整除，最近邻拉伸必然产生横向条纹
+     * （TASK-014-R2 样图已证）。直接按目标尺寸生成 ⇒ 无拉伸畸变，两种格尺寸都成立。
+     *
+     * 只在首格绘制时算一次，之后走 {@link #sHtmOrder} 缓存。
+     */
+    private static int[] htmOrder(int inner) {
+        synchronized (sHtmOrder) {
+            int[] hit = sHtmOrder.get(inner);
+            if (hit != null) return hit;
+        }
+        final int pitch = CardSpec.HEAT_HTM_PITCH;    // 2（正交点阵周期）
+        final int n = inner * inner;
+        long[] key = new long[n];
+        Integer[] idx = new Integer[n];
+        for (int r = 0; r < inner; r++) {
+            for (int cc = 0; cc < inner; cc++) {
+                // pitch=2 → 用 2×2 Bayer 序；其它 pitch 退化为"块内顺序 rank"（仍可用）
+                int rank = (pitch == 2)
+                        ? sBayer2[(r % 2) * 2 + (cc % 2)]
+                        : (r % pitch) * pitch + (cc % pitch);
+                key[r * inner + cc] = rank;
+                idx[r * inner + cc] = r * inner + cc;
+            }
+        }
+        java.util.Arrays.sort(idx, (a, b) -> Long.compare(key[a], key[b]));  // 稳定排序
+        int[] out = new int[n];
+        for (int i = 0; i < n; i++) out[i] = idx[i];
+        synchronized (sHtmOrder) { sHtmOrder.put(inner, out); }
+        return out;
+    }
+
+    /** 缓存的正交点阵点序（按 inner 边长缓存，只在首格绘制时算一次）。 */
+    private static final java.util.HashMap<Integer, int[]> sHtmOrder = new java.util.HashMap<>();
+
+    /**
+     * 各档图案位图（懒加载，只建一次）。key = `inner×100 + pct`（pct = 25/50/75/100）。
+     * 位图尺寸 = 内区边长 inner（**1:1 绘制，不做拉伸**）；0 档不建（空心框）、4 档走实心。
+     *
+     * 🔴 必须 `setAntiAlias(false)` + `setFilterBitmap(false)`：
+     * 否则会插值出**灰边**，违反 `docs/03` §1.3「只用纯黑白」硬规则。
+     */
+    private final java.util.HashMap<Integer, android.graphics.Bitmap> heatPatterns =
+            new java.util.HashMap<>();
+
+    /**
+     * TASK-014 热力图格：按当日秒数定档 → 内区画图案（方案 D 正交 2px 点阵）→ 覆 1px **黑框**。
+     *
+     * 与 {@link #drawCalCell}（打卡格）并列、互斥：热力图模式下**不再画对勾**。
+     *
+     * 档位由 {@link CardSpec#HEAT_TIERS_SEC} 决定，图案区黑度由 {@link CardSpec#HEAT_LEVELS} 决定：
+     * · 0 档（0 分钟）→ **空心黑框**（框内纯白，让"这天存在"可见，用户 2026-09-27 改）；
+     * · 1..3 档 → 正交 2px 点阵（25 / 50 / 75%）；
+     * · 4 档（> 3 小时）→ 实心黑方块（{@link CardSpec#HEAT_TOP_TIER_SOLID}）。
+     *
+     * 🔴 图案画在**内区**（扣掉 1px 框后的 `inner×inner`），且 **1:1 不拉伸** ——
+     * 这样内区黑度精确等于档位（验收口径同此），也彻底避免"小图拉伸出条纹"。
+     * 🔴 **每格都画框**（含 0 档）：参考同类墨水屏热力图，黑框形成"方块阵列"的秩序感。
+     */
+    private void drawHeatCell(Canvas c, float x, float y, float cell, int sec) {
+        int level = heatLevel(sec);
+
+        // 整数像素对齐（否则关闭抗锯齿后仍会有 1px 抖动）
+        int ix = Math.round(x), iy = Math.round(y);
+        int isz = Math.round(cell);
+        int bw = CardSpec.HEAT_CELL_BORDER_PX;
+        int inner = isz - bw * 2;                     // 图案区边长（扣框）
+
+        if (level >= 4 && CardSpec.HEAT_TOP_TIER_SOLID) {
+            host.p.setStyle(Paint.Style.FILL);
+            host.p.setColor(INK);
+            c.drawRect(ix, iy, ix + isz, iy + isz, host.p);       // 实心（连框位一起全黑）
+            return;
+        }
+
+        if (level >= 1 && inner > 0) {                // 1..3 档：内区画正交 2px 点阵（1:1）
+            android.graphics.Bitmap pat = heatPattern(inner, CardSpec.HEAT_LEVELS[level]);
+            if (pat != null) {
+                host.p.setStyle(Paint.Style.FILL);
+                host.p.setColor(INK);
+                // 关抗锯齿 + 关过滤，保证只有纯黑白（硬规则）
+                boolean aa = host.p.isAntiAlias(), fl = host.p.isFilterBitmap();
+                host.p.setAntiAlias(false);
+                host.p.setFilterBitmap(false);
+                c.drawBitmap(pat, ix + bw, iy + bw, host.p);       // 1:1，不缩放
+                host.p.setAntiAlias(aa);
+                host.p.setFilterBitmap(fl);
+            }
+        }
+        // level == 0：内区纯白（不填），只留下面画的框
+
+        // ── 每格描边：**内描边** ⇒ 格子外沿尺寸不变（不侵占 gap，用户要求"间距不变"）──
+        if (bw > 0 && isz > bw * 2 + 2) {
+            host.p.setStyle(Paint.Style.STROKE);
+            host.p.setStrokeWidth(bw);
+            host.p.setColor(CardSpec.HEAT_CELL_BORDER_INK ? INK : 0xFFFFFFFF);
+            host.p.setAntiAlias(false);
+            float half = bw / 2f;
+            c.drawRect(ix + half, iy + half, ix + isz - half, iy + isz - half, host.p);
+            host.p.setStyle(Paint.Style.FILL);
+            host.p.setAntiAlias(true);
+        }
+    }
+
+    /**
+     * 秒数 → 档位（0..4）。对照 {@link CardSpec#HEAT_TIERS_SEC} 的语义表。
+     * 独立成方法便于单点调参与日志核对。
+     */
+    static int heatLevel(int sec) {
+        int[] tiers = CardSpec.HEAT_TIERS_SEC;
+        if (sec <= tiers[0]) return 0;
+        int lvl = 1;
+        for (int k = 1; k < tiers.length; k++) {
+            if (sec > tiers[k]) lvl = k + 1;
+        }
+        return lvl;
+    }
+
+    /**
+     * 取/建某档图案位图（尺寸 = 内区边长 inner，1:1 使用，**不做拉伸**）。
+     *
+     * 黑点数 = `round(pct × inner² / 100)`，取自 {@link #htmOrder(int)} 的**前 k 个点** ⇒
+     * **图案区黑度精确等于目标 pct**（这是验收口径能收紧到 ±5% 的前提）。
+     * 位图最大 50×50 像素，创建成本极低；按 `inner×100+pct` 缓存，只建一次。
+     *
+     * 🔴 **参数语义 = 百分数 pct（1..100），不是档位 0..4**：
+     * 调用方传的是 {@link CardSpec#HEAT_LEVELS}[level]（= 25 / 50 / 75 / 100）。
+     * 早前 R3 重构把签名从 `heatPattern(int level)` 改成 `heatPattern(int inner, int level)` 时，
+     * 漏改了函数内守卫（仍是 `level < 1 || level > 4`）⇒ 传入 25/50/75 全部被 `return null`
+     * 拦掉，**1/2/3 档图案完全不画**（只有 4 档走实心分支不受影响）。
+     * 该 bug 由 TASK-014-R5 上机复测暴露（离线 Python 复现无此守卫，是自检盲区）；
+     * 现按"百分数"语义修正守卫上界为 100。
+     */
+    private android.graphics.Bitmap heatPattern(int inner, int pct) {
+        if (inner <= 0 || pct < 1 || pct > 100) return null;
+        int key = inner * 100 + pct;
+        android.graphics.Bitmap hit = heatPatterns.get(key);
+        if (hit != null) return hit;
+
+        int[] order = htmOrder(inner);
+        int n = inner * inner;
+        int black = Math.round(n * pct / 100f);       // 25/50/75/100% ⇒ 内区黑点数
+        int[] px = new int[n];
+        java.util.Arrays.fill(px, 0xFFFFFFFF);
+        for (int i = 0; i < black && i < n; i++) px[order[i]] = INK;
+
+        android.graphics.Bitmap bmp =
+                android.graphics.Bitmap.createBitmap(inner, inner,
+                        android.graphics.Bitmap.Config.ARGB_8888);
+        bmp.setPixels(px, 0, inner, 0, 0, inner, inner);
+        heatPatterns.put(key, bmp);
+        return bmp;
     }
 
     /**
@@ -723,8 +955,11 @@ final class CardRenderer {
         host.p.setStyle(Paint.Style.FILL);
     }
 
-    /** 底部统计行（加粗居中，宽度不够自动缩字号，绝不出框）。两条分支共用 */
-    private void drawBottomLine(Canvas c, float cx, float h, float padY,
+    /**
+     * 底部统计行（加粗居中，宽度不够自动缩字号，绝不出框）。两条分支共用。
+     * 基线 y 由调用方传入：成就行开启时贴底位让给成就行，统计行上移一行（v0.9，TASK-013）。
+     */
+    private void drawBottomLine(Canvas c, float cx, float lineY,
                                 float left, float right, String text) {
         host.p.setStyle(Paint.Style.FILL);
         host.p.setColor(INK);
@@ -737,8 +972,24 @@ final class CardRenderer {
             bSize -= 0.4f;
             host.p.setTextSize(bSize);
         }
-        c.drawText(text, cx, h - padY * 0.85f, host.p);
+        c.drawText(text, cx, lineY, host.p);
         host.p.setFakeBoldText(false);
+        host.p.setTextAlign(Paint.Align.LEFT);
+    }
+
+    /**
+     * 成就行（v0.9，TASK-013）：接管原统计行的贴底位（h − padY×0.85）。
+     * 与统计行反着来 —— **非加粗**、副字号（SZ_SUB）、居中，一眼分清主次。
+     * 文案由 controller 按偏好算好（{@code AchievementPrefs} / WeekCardView#achievementText），
+     * 这里不再判 isCurrentPeriod —— 调用方的 achvOn 已含（controller 侧还过滤了一轮）。
+     */
+    private void drawAchievementLine(Canvas c, float cx, float h, float padY, String text) {
+        host.p.setStyle(Paint.Style.FILL);
+        host.p.setColor(INK);
+        host.p.setTextAlign(Paint.Align.CENTER);
+        host.p.setFakeBoldText(false);
+        host.p.setTextSize(SZ_SUB * host.unit);
+        c.drawText(text, cx, h - padY * 0.85f, host.p);
         host.p.setTextAlign(Paint.Align.LEFT);
     }
 

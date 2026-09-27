@@ -84,6 +84,27 @@ final class CardVisibilityState {
     long swipeLastAt = 0L;
     long swipeFirstAt = 0L;
 
+    /**
+     * 本翻页窗口内**是否混入过「自家包（`com.inkread.weekread`）窗口事件」**（v0.8.1 修订）。
+     *
+     * ★ 它是"这个窗口把彼此无关的事件误并了"的**唯一干净判据** ——
+     *   真机实测（2026-09-27 复核全部样本）：
+     *   · **合法翻页窗口从不含自家包事件**（20+ 条样本逐条核对，零命中）；
+     *   · 误判样本（覆盖安装后服务重连，桌面补发 resume 簇）**含 2 条**
+     *     `WINDOW_STATE_CHANGED pkg=com.inkread.weekread`。
+     *
+     * ⚠️ 曾经的 `span`（首末事件跨度）判据**已被证伪、废弃**：合法翻页的跨度
+     *   实测 **0–628ms**（`_verify060/samples/L/a4_左滑到P2.log` 是 628ms 的合法
+     *   左滑 P1→P2），与误判样本的 968ms 区间重叠、无安全余量。
+     *
+     * 生命周期：**开窗时清、窗口存续期内只置不落**（见 {@link #swipeOwnPkgAt}）。
+     * 这样"卡片自己显示/隐藏"那条自家包事件若落在两窗之间，不会污染下一个窗口。
+     */
+    boolean swipeOwnPkg = false;
+
+    /** 本窗口首条自家包事件的到达时刻（`SystemClock.uptimeMillis()`），仅供日志 */
+    long swipeOwnPkgAt = 0L;
+
     // ── ELauncher 翻页判据的窗口状态 ──
 
     boolean elaOpen = false;
@@ -91,6 +112,26 @@ final class CardVisibilityState {
     boolean elaVp = false;
     int elaTextSx = 0;
     String elaPkg = null;
+
+    /**
+     * 本窗口见过 `ViewPager` 报出**负的 `scrollX`**（书架页指纹，v0.8.1 新增）。
+     *
+     * 2026-09-27 探针实证（`_verify060/samples/SHELF_PROBE/`）：ELauncher 点「书架」进入
+     * 书架页时投 `ViewPager cct=1 sx=-480`，**稳定复现 2/2**；而首页静置 / P1↔P2 / P2↔P3
+     * 翻页 / 边界回弹 / 进设置页**全部零负 sx**（逐一实测，`grep -c 'sx=-'` 均为 0）
+     * ⇒ 负 sx 是书架页独有的干净指纹。
+     *
+     * ⚠️ 与 {@link #elaTextSx} **语义相反**：那是"翻页伴随 TextView 的正残值"，这是
+     * "书架页 ViewPager 的负残值"，两者分属不同类的事件、互不覆盖。
+     *
+     * 🔴 **结算时 `elaFrame`（resume 指纹）优先于本标记** —— 从书架按 HOME 回首页时，
+     * 残留的负 sx 与 resume 的 `FrameLayout cct=3 sx=0` 会**并窗**到达；`frame` 是
+     * "人在 P1"的直接证据，本标记只是"曾经在书架"的痕迹 ⇒ frame 必须先判。
+     * （2026-09-27 真机踩到过抢先后卡片回不来的缺陷。）
+     *
+     * 生命周期：**开窗时清、窗口存续期内只置不落**（与 {@link #swipeOwnPkg} 同规矩）。
+     */
+    boolean elaVpNeg = false;
 
     // ── 亮屏 / 桌面 TextView 的时间戳 ──
 
@@ -115,11 +156,14 @@ final class CardVisibilityState {
         swipeZero = 0;
         swipeLastAt = 0L;
         swipeFirstAt = 0L;
+        swipeOwnPkg = false;
+        swipeOwnPkgAt = 0L;
         elaOpen = false;
         elaFrame = false;
         elaVp = false;
         elaTextSx = 0;
         elaPkg = null;
+        elaVpNeg = false;
     }
 
     /**

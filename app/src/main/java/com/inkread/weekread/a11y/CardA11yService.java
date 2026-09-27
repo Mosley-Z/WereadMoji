@@ -67,6 +67,32 @@ public class CardA11yService extends AccessibilityService {
      */
     static boolean sOwnUiForeground = false;
 
+    /**
+     * 「离开自家界面时强制重算一次显隐」的**一次性**意图标记（v0.8.1）。
+     *
+     * ★ 为什么需要它（真机复现，2026-09-27）──
+     * 设置页的「重新同步卡片显示」按钮调 {@link #resetPageGate()}，其中
+     * `ov.applyVisibility()` 在**设置页里**执行时，`sOwnUiForeground=true`
+     * ⇒ 恒定算出 GONE（这是对的：此刻人确实在设置页）。
+     * 但用户**离开设置页回桌面**时，{@link #noteOwnUiForeground(boolean)} 那一路
+     * 刻意什么都不做（防墨水屏闪屏），指望"紧随其后的窗口事件"接手重算 ——
+     * 而实测那条桌面窗口事件经常会因为 `wasOwnUi` 已被别的事件清成 false 而
+     * **不触发重算** ⇒ 卡片不会立即出现，按钮等于没生效。
+     *
+     * 用户主动点了这个按钮 = 明确要求"把卡片弄回来" ⇒ 破例重算一次是符合意图的，
+     * 而且只走这一次（用完即清），不会破坏"常规离开不重算"的闪屏防护。
+     *
+     * ⚠️ **一点良性偏差（67 号审查指出，此处如实登记）**：本标记**可能滞后消费** ——
+     * 若在「点按钮」与「设置页 `onPause`」之间，`sOwnUiForeground` 被别处
+     * （如 {@code A11yEventRouter} 收到桌面事件时）先清成 `false`，则 `onPause` 的
+     * `noteOwnUiForeground(false)` 会**命中早退**（`sOwnUiForeground == fg` ⇒ return），
+     * 标记不被消费、遗留 `true`，改在**下一次**"离开自家界面"跃变时消费 ——
+     * 即一次**多余的** `applyVisibility()`。方向是"宁可多显示"，**无害**。
+     * 全路径（置位 = 按钮 click / 消费 = `onPause` / 作废 = `onServiceConnected`）
+     * **均在主线程**，静态字段无跨线程读写 ⇒ **不存在真并发绕过**。
+     */
+    private static boolean sForceRecomputeOnLeave = false;
+
     /** 亮屏后多久之内的翻页指纹一律忽略（毫秒）—— 见 TomoPageGate 里的说明 */
     private static final long SCREEN_ON_IGNORE_MS = 700L;
     /** 只认"屏幕亮了"这一个动作 */
@@ -127,10 +153,21 @@ public class CardA11yService extends AccessibilityService {
         if (fg) {
             // 进自家界面：立刻隐藏，别让卡片压住主页/设置页
             sInstance.ov.applyVisibility();
+            return;
         }
         // 离开自家界面时刻意什么都不做：此刻 onDesktop 可能还是进入前那个旧值，
         // 立刻重算会让卡片闪一下（墨水屏上一次无谓刷新很显眼）。
         // 交给紧随其后的那个窗口事件去定：回桌面 → 桌面事件把它显示出来。
+        //
+        // 🔴 v0.8.1 例外：用户刚点过「重新同步卡片显示」⇒ 这是他**明确要求**把卡片
+        // 弄回来，而那个按钮在设置页里调用时必然被 sOwnUiForeground=true 压成 GONE。
+        // 若不在这里补一次重算，按钮就形同虚设（真机实测：清闸门后卡片仍不出现）。
+        // 只走一次，用完即清 —— 不破坏上面那条"常规离开不重算"的闪屏防护。
+        if (sForceRecomputeOnLeave) {
+            sForceRecomputeOnLeave = false;
+            CardDebug.note(sInstance, "ownUi=false → 强制重算（手动同步按钮意图）");
+            sInstance.ov.applyVisibility();
+        }
     }
 
     /**
@@ -148,6 +185,10 @@ public class CardA11yService extends AccessibilityService {
         sInstance.tomo.cancelSwipeWindow();
         sInstance.ela.cancelElaWindow();
         sInstance.ela.cancelHomeProbe();            // TASK-010：在途的"回 P1"探测一并作废
+        // 🔴 v0.8.1：此刻人在设置页（sOwnUiForeground=true），下面这次 applyVisibility()
+        // 必然算出 GONE；真正让它生效的是**离开设置页那一刻**的强制重算，所以这里
+        // 先把这个一次性意图挂上，见 sForceRecomputeOnLeave 的注释。
+        sForceRecomputeOnLeave = true;
         sInstance.ov.applyVisibility();
         CardDebug.note(sInstance, "resetPageGate (手动)");
     }
@@ -178,10 +219,54 @@ public class CardA11yService extends AccessibilityService {
             router.attach(ov, tomo, ela, probe);
         }
         st.resetAll();
+        sForceRecomputeOnLeave = false;             // v0.8.1：重连时旧的一次性意图作废
         registerScreenOn();
+        // 🆕 v0.8.2（方案 A）：resetAll() 是"无条件按第 1 页 / 在桌面"的乐观初值，而重连
+        // 时刻人完全可能在**第 2 页**或**别的应用里** —— 那样卡片会错误显示且**不会自愈**
+        //（真机实测：Tomo 第 2 页 + 覆盖安装 ⇒ 卡片压住图标，30s 后仍 VISIBLE）。
+        // 这里按"当前前台的正面证据"校正一次；拿不准就一个字段都不动（维持乐观初值）。
+        // 🔴 必须在 refresh()（内含 applyVisibility）**之前**，且此时本服务的悬浮窗还没
+        //    ensureWindow（onUnbind 已 removeWindow）⇒ getRootInActiveWindow() 拿到的
+        //    一定是**真正的前台**，不会被自家悬浮窗顶掉。
+        router.loadLaunchers();                     // 自检要用 launchers 名单（冷启动时仍为空）
+        calibrateOnReconnect();
         refresh();
         CardDebug.note(this, "service connected, enabled=" + CardPrefs.isEnabled(this)
                 + ", ownUi=" + sOwnUiForeground);
+    }
+
+    /**
+     * 服务重连时的**状态校正** —— 把"乐观初值"改成"按当前前台实测"（v0.8.2 / 方案 A）。
+     *
+     * <p>对照表（`ElaHomeProbe.checkCurrentScreen()` 的结论 → 状态）：
+     * <ul>
+     *   <li>{@link ElaHomeProbe#CUR_HOME_P1} ：什么都不用改 —— `resetAll()` 的乐观初值
+     *       （`onDesktop=true` + `pageGate=false`）**恰好就是**"在桌面第 1 页"。</li>
+     *   <li>{@link ElaHomeProbe#CUR_HOME_NOT_P1} ：`pageGate=true` ⇒ 卡片让位。
+     *       失败方向 = 多藏一次；用户一翻页就纠正（Tomo 落到 P1 / ELauncher resume 都会清）。</li>
+     *   <li>{@link ElaHomeProbe#CUR_NOT_HOME} ：`onDesktop=false` ⇒ 卡片让位。
+     *       这一条**同时**修好了"重连时前台是别的应用、卡片却压在阅读界面上"的同源缺陷，
+     *       并且让"从应用按 HOME 回来"重新满足 `desk != st.onDesktop` ⇒ 必然重算显示，
+     *       不会出现"藏死后回不来"。</li>
+     *   <li>{@link ElaHomeProbe#CUR_UNKNOWN} ：一个字段都不动（维持乐观初值 = 原行为）。</li>
+     * </ul>
+     *
+     * <p>⚠️ 本方法**只在校正状态、自己不算显隐**：紧接着的 {@code refresh()} →
+     * {@code OverlayController.applyVisibility()} 是唯一出口。
+     */
+    private void calibrateOnReconnect() {
+        int r = homeProbe.checkCurrentScreen();
+        if (r == ElaHomeProbe.CUR_HOME_NOT_P1) {
+            st.pageGate = true;
+            CardDebug.note(this, "reconnect calibrate: 在桌面但非第 1 页 ⇒ pageGate=true（让位）");
+        } else if (r == ElaHomeProbe.CUR_NOT_HOME) {
+            st.onDesktop = false;
+            CardDebug.note(this, "reconnect calibrate: 前台非桌面 ⇒ onDesktop=false（让位）");
+        } else if (r == ElaHomeProbe.CUR_UNKNOWN) {
+            CardDebug.note(this, "reconnect calibrate: 拿不准 ⇒ 维持乐观初值（按桌面第 1 页）");
+        } else {
+            CardDebug.note(this, "reconnect calibrate: 确认在桌面第 1 页");
+        }
     }
 
     @Override

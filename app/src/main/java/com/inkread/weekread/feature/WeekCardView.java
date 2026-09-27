@@ -90,6 +90,40 @@ public class WeekCardView extends View {
      * null = 用默认文案。
      */
     String noteHint = null;
+    /**
+     * 成就行文案（v0.9，TASK-013）。
+     *
+     * 非 null 且当前周期时，卡片**贴底位**画这行非加粗居中小字（原底部统计行的位置），
+     * 原统计行上移一行、周卡柱状图压短（几何见 {@code CardRenderer}，TASK-015 实测定死）。
+     * 文案由 {@code CardContentController#applyAchievement} 按偏好与数据**算好塞进来** ——
+     * 🔴 渲染函数不读 prefs / 不发请求（docs/03 §3），与 {@link #noteHint} 同款口径。
+     * null = 不画，且全部版面几何走原值 —— 与关闭态逐像素一致。
+     * App 内（MainActivity）不塞此字段，App 版面不变（拍板：成就行只上桌面卡片）。
+     */
+    String achievementText = null;
+
+    /**
+     * 本月呈现方式：**true = 热力图**（5 档黑度网点）/ **false = 打卡网格**（现状）。
+     *
+     * 只影响**本月**形态的日期格怎么画（{@code CardRenderer.drawMonthBody} /
+     * {@code drawMonthFullBody} 各分流一次）；周卡 / 本书 / 本记形态不受影响。
+     * 由 {@code CardContentController#applyMonthStyle} 按偏好
+     * （{@code CardPrefs.getMonthStyle}）算好塞进来 ——
+     * 🔴 渲染函数不读 prefs / 不发请求（docs/03 §3），与 {@link #achievementText} 同款口径。
+     *
+     * 🔴 v0.8.1（TASK-014）：默认值由偏好决定，**默认 = 热力图**（用户 2026-09-27 拍板）。
+     */
+    boolean monthHeatmap = false;
+    /**
+     * 「本记」形态「更新于 HH:MM」的时间来源（毫秒）。
+     *
+     * 🔴 v0.8.1 修复：以前这里是 `setNote()` 里的 `System.currentTimeMillis()` ——
+     * 那是**渲染当下**，每次重绘（含 App 静默刷新、切形态回来）都变，表现为"时钟"，
+     * 且离线也一直在变（它根本不是数据获取时刻）。
+     * 现在由 {@link #setNote} 取**该条内容所属书的真实落盘时刻**
+     * （{@code NoteStore.noteFetchedAt}：划线/想法两路缓存 fetchedAt 取较新者）。
+     * 0 = 没有时间戳（老数据 / 没同步过）→ 不画「更新于」（与周/月/本书口径一致）。
+     */
     long noteFetchedAt;
     /** 当前已解码的封面（{@code coverBmpId} 标明它属于哪本书，防止切书后串图） */
     android.graphics.Bitmap coverBmp;
@@ -213,6 +247,7 @@ public class WeekCardView extends View {
         if (v.equals(mode)) return;
         mode = v;
         noteHint = null;            // 换形态了，上一个形态的空态提示不再适用（v0.5.3）
+        achievementText = null;     // 换形态了，成就行作废；controller 随 setStats 按新形态重算（v0.9）
         invalidate();
     }
 
@@ -257,7 +292,11 @@ public class WeekCardView extends View {
         refreshing = false;
         phMain = null;
         emptyNote = null;
-        noteFetchedAt = System.currentTimeMillis();
+        // 🔴 v0.8.1：取该条内容所属书的**真实落盘时刻**，不再用"渲染当下"
+        // （后者每次重绘都变 → 「更新于」像时钟，离线也变；详见字段 javadoc）。
+        // n == null 时无从查书 → 0；两路缓存都没时间戳 → 0（不画「更新于」）。
+        noteFetchedAt = (n == null) ? 0L
+                : com.inkread.weekread.core.NoteStore.noteFetchedAt(getContext(), n.bookId);
         invalidate();
     }
 
@@ -278,6 +317,30 @@ public class WeekCardView extends View {
         boolean same = (s == null) ? (noteHint == null) : s.equals(noteHint);
         if (same) return;
         noteHint = s;
+        invalidate();
+    }
+
+    /**
+     * 设成就行文案（v0.9，TASK-013）。传 null = 不画（关闭 / 无有效目标 / 非当前周期）。
+     * same-check + invalidate 与 {@link #setNoteHint} 同款 —— 文案没变就不重绘，
+     * 墨水屏上每次全屏刷新都是肉眼可见的，能省则省。
+     */
+    public void setAchievementText(String s) {
+        boolean same = (s == null) ? (achievementText == null) : s.equals(achievementText);
+        if (same) return;
+        achievementText = s;
+        invalidate();
+    }
+
+    /**
+     * 设本月呈现方式（TASK-014）：true = 热力图 / false = 打卡网格。
+     *
+     * same-check + invalidate 与 {@link #setAchievementText} 同款 —— 模式没变就不重绘
+     *（墨水屏每次全屏刷新肉眼可见，能省则省）。切模式本身 = 一次整卡重绘（拍板可接受）。
+     */
+    public void setMonthHeatmap(boolean v) {
+        if (monthHeatmap == v) return;
+        monthHeatmap = v;
         invalidate();
     }
 

@@ -119,6 +119,24 @@ final class ElauncherPageGate {
     private static final int ELA_SX_HI = ELA_SX_TO_P2 + 10;
 
     /**
+     * 🔴 书架页指纹：`ViewPager` 事件的负 `scrollX` 实测值（v0.8.1 新增）。
+     *
+     * 2026-09-27 探针实证（`_verify060/samples/SHELF_PROBE/`）：ELauncher 点「书架」
+     * 进入书架页时投 `ViewPager cct=1 sx=-480`，**稳定复现 2/2**；
+     * 首页静置 / P1↔P2 / P2↔P3 翻页 / 边界回弹 / 进设置页**全部零负 sx**（逐一实测）。
+     *
+     * ★ 为什么必须精确匹配、不能写成 `sx < 0`：沿用本类「认不出的值一律不动」的纪律
+     *   （见 {@link #ELA_SX_LO} 注释）。精确值命中才置位，ROM 换残值 ⇒ 不动作，绝不改错。
+     *
+     * ★ 为什么不是"点按闸门"：方案 A（`TYPE_VIEW_CLICKED` → iconGate）于 2026-09-22 实测有效
+     *   （`K3_shelf_t9.png` 卡片 GONE），但那之后 ROM/ELauncher 行为漂移 ——
+     *   2026-09-27 探针原样记录点书架事件面，**全程零 `TYPE_VIEW_CLICKED`**
+     *   ⇒ 旧方案在当前版本下已原理性失效（`handleDesktopClick` 从未被调用）。
+     *   本判据是它的替代物，走 `ViewPager` 事件面而非点按事件面。
+     */
+    private static final int ELA_VP_NEG_SHELF = -480;
+
+    /**
      * 作废 ELauncher 判据的未结算窗口（不清 {@code st.pageGate} 本身）。
      *
      * 用途与 {@link #cancelSwipeWindow} 对称：亮屏、服务重连、手动重置时，
@@ -131,6 +149,7 @@ final class ElauncherPageGate {
         st.elaFrame = false;
         st.elaVp = false;
         st.elaPkg = null;
+        st.elaVpNeg = false;
         if (ui != null) ui.removeCallbacks(applyElaWindow);
     }
 
@@ -141,6 +160,7 @@ final class ElauncherPageGate {
         st.elaFrame = false;
         st.elaVp = false;
         st.elaPkg = null;
+        st.elaVpNeg = false;
     }
 
     /**
@@ -174,9 +194,18 @@ final class ElauncherPageGate {
             }
             if (cct != CCT_TEXT) return;           // 翻页伴随那条实测是 cct=2
         }
+        // 🔴 v0.8.1「开新窗即清」：上一窗的负 sx 标记绝不能漏进下一窗
+        //（否则"书架 → 回首页 → 再翻页"会把旧标记带进来，误判成离开）。
+        // 与 swipeOwnPkg 同规矩：开窗时清、窗口存续期内只置不落。
+        if (!st.elaOpen) st.elaVpNeg = false;
         st.elaOpen = true;
         st.elaPkg = pkg;
-        if (isVp) st.elaVp = true;
+        if (isVp) {
+            st.elaVp = true;
+            // 🔴 v0.8.1 书架页指纹：ViewPager 报负 sx（实测 -480，稳定 2/2）。
+            // 只认精确值 —— 认不出的负值不置位（宁可不判也不判错）。
+            if (sx == ELA_VP_NEG_SHELF) st.elaVpNeg = true;
+        }
         if (isFrame) st.elaFrame = true;
         if (isText) st.elaTextSx = sx;
         if (ui != null) {
@@ -209,6 +238,26 @@ final class ElauncherPageGate {
         st.elaPkg = null;
         // ① 没有 ViewPager ⇒ 不是"发 ViewPager 的那类桌面"的翻页/resume
         if (!vp || pkg == null || !st.sawViewPager.contains(pkg)) return;
+        // ② 🔴 v0.8.1 书架页：ViewPager 报过负 sx（实测 -480）⇒ 判「离开第 1 页」。
+        //    ⚠️ **必须让 `frame`（resume 指纹）优先** —— 真机实测踩到：从书架按 HOME 回首页时，
+        //    残留的 `ViewPager sx=-480` 与 resume 的 `FrameLayout cct=3 sx=0` **并窗**到达，
+        //    若书架分支抢先命中，就会把"人确实回了首页"这条实锤吃掉 ⇒ 卡片回不来
+        //    （2026-09-27 10:58:47 复现：`elaSwipe 书架页 … (cur=true)` 后首页无卡片）。
+        //    `frame` 是"人在 P1"的直接证据，负 sx 只是"曾经在书架"的痕迹 ⇒ frame 优先。
+        //    语义与"翻页离开"一致 ⇒ 复用同一条隐藏路径（置 pageGate），
+        //    恢复仍走既有 resume（HOME/亮屏的 frame 指纹）—— 零新增恢复机制。
+        boolean shelf = st.elaVpNeg && !frame;
+        st.elaVpNeg = false;
+        if (shelf) {
+            CardDebug.note(ctx, "elaSwipe 书架页 (ViewPager sx=" + ELA_VP_NEG_SHELF
+                    + ") → 离开第1页 (cur=" + st.pageGate + ")");
+            cancelHomeProbe();                      // 人不在 P1，作废在途的"回 P1"探测
+            if (!st.pageGate) {
+                st.pageGate = true;
+                ov.applyVisibility();
+            }
+            return;
+        }
         boolean leave;
         if (frame) {
             leave = false;                          // ② 桌面 resume ⇒ 回到第 1 页
