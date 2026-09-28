@@ -7,7 +7,7 @@
 | 类 | 一句话 |
 |---|---|
 | `MainActivity` | 主页（全屏四态：本周 / 本月 / 本书 / 本记）+ dev 包的 `--es api_key` 调试入口 |
-| `SettingsActivity` | 设置页（三段页签：初始化 / 自定义 / 实验室） |
+| `SettingsActivity` | 设置页（三段页签：初始化 / 自定义 / 实验室）；**TASK-020**：「版本与更新」区含「更新通道」选择器（正式版 / Beta） |
 | `HelpActivity` | 「怎么用」（正文在 `res/raw/help.txt`） |
 
 > 🧹 `StatsWidgetProvider` 已删（2026-09-25 · TASK-008）：标准 AppWidget 死代码，本机两个桌面

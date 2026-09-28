@@ -1,6 +1,7 @@
 package com.inkread.weekread.net;
 
 import com.inkread.weekread.core.CardDebug;
+import com.inkread.weekread.core.CardPrefs;
 
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -22,6 +23,11 @@ import java.util.ArrayList;
  *
  * 「有没有新版本」只认 versionCode，不比较 versionName 字符串。
  *
+ * 🆕 **TASK-020 双通道**：读哪一份清单由「更新通道」偏好决定
+ * （`main/dist/update.json` 正式版 / `beta/dist/update.json` Beta）；
+ * 默认正式版 —— 分支段是字面量 `main`，与改造前逐字相同（老用户行为零差异）。
+ * 缓存里的远端信息带通道标记，换通道后不会被旧数据的"有新版本"误导。
+ *
  * 清单有两个源，按顺序尝试：
  *   ① raw.githubusercontent.com —— 缓存只有几分钟，能立刻反映新版本，作主源
  *   ② cdn.jsdelivr.net          —— CDN 更快，但分支引用(@main)有数小时缓存，作回落
@@ -35,10 +41,28 @@ public final class UpdateChecker {
     /** GitHub 仓库（与 README、jsDelivr 路径、tools/build.sh 保持一致） */
     public static final String REPO = "Mosley-Z/WereadMoji";
 
-    private static final String[] MANIFEST_URLS = {
+    /**
+     * 清单地址（TASK-020 双通道）：按「更新通道」选分支段。
+     *
+     * 🔴 **正式版（默认）分支段是字面量 `main`，与改造前逐字相同**（验收 A1：默认零差异，
+     *    老用户升级上来行为与升级前一致）。Beta 读 `beta` 分支的同名文件。
+     *
+     * 顺序：raw 主源（缓存只有几分钟，能立刻反映新版本）→ jsDelivr 回落（@branch 有缓存滞后）。
+     */
+    private static final String[] MANIFEST_URLS_STABLE = {
             "https://raw.githubusercontent.com/" + REPO + "/main/dist/update.json",
             "https://cdn.jsdelivr.net/gh/" + REPO + "@main/dist/update.json",
     };
+    private static final String[] MANIFEST_URLS_BETA = {
+            "https://raw.githubusercontent.com/" + REPO + "/beta/dist/update.json",
+            "https://cdn.jsdelivr.net/gh/" + REPO + "@beta/dist/update.json",
+    };
+
+    /** 本机当前通道对应的清单地址列表（channel ∈ {stable, beta}）。 */
+    private static String[] manifestUrls(Context c) {
+        return CardPrefs.CHANNEL_BETA.equals(CardPrefs.getUpdateChannel(c))
+                ? MANIFEST_URLS_BETA : MANIFEST_URLS_STABLE;
+    }
 
     private static final int TIMEOUT_MS = 8000;
 
@@ -50,6 +74,8 @@ public final class UpdateChecker {
     private static final String K_REMOTE_CODE = "upd_remote_code";
     private static final String K_REMOTE_NAME = "upd_remote_name";
     private static final String K_REMOTE_NOTES = "upd_remote_notes";
+    /** 🆕（TASK-020）：缓存里的远端信息属于哪条通道 —— 换通道后旧缓存不能再显示 */
+    private static final String K_REMOTE_CHANNEL = "upd_remote_channel";
 
     private UpdateChecker() {
     }
@@ -126,20 +152,39 @@ public final class UpdateChecker {
                 .putInt(K_REMOTE_CODE, info.versionCode)
                 .putString(K_REMOTE_NAME, info.versionName)
                 .putString(K_REMOTE_NOTES, info.notes)
+                .putString(K_REMOTE_CHANNEL, CardPrefs.getUpdateChannel(c))
                 .apply();
     }
 
-    /** 上次查到的远端 versionCode（0 = 还没查到过） */
+    /**
+     * 缓存里的远端信息是否属于**当前通道**（TASK-020 双通道）。
+     *
+     * 🔴 缓存的远端版本是"上次检查时那条通道"的。用户换通道后，旧缓存会误导
+     *    （例如拿着正式版的"有新版本"去 Beta 通道显示）。故按通道隔离：
+     *    **老数据没有通道字段时按 stable 论**（向后兼容 ⇒ 老用户升级上来零差异，验收 A1）。
+     */
+    private static boolean remoteCacheMatchesChannel(Context c) {
+        String saved = sp(c).getString(K_REMOTE_CHANNEL, CardPrefs.CHANNEL_STABLE);
+        if (saved == null) {
+            saved = CardPrefs.CHANNEL_STABLE;
+        }
+        return saved.equals(CardPrefs.getUpdateChannel(c));
+    }
+
+    /** 上次查到的远端 versionCode（0 = 还没有效缓存 / 缓存不属于当前通道） */
     public static int remoteVersionCode(Context c) {
+        if (!remoteCacheMatchesChannel(c)) return 0;
         return sp(c).getInt(K_REMOTE_CODE, 0);
     }
 
     public static String remoteVersionName(Context c) {
+        if (!remoteCacheMatchesChannel(c)) return "";
         String s = sp(c).getString(K_REMOTE_NAME, "");
         return (s == null) ? "" : s;
     }
 
     public static String remoteNotes(Context c) {
+        if (!remoteCacheMatchesChannel(c)) return "";
         String s = sp(c).getString(K_REMOTE_NOTES, "");
         return (s == null) ? "" : s;
     }
@@ -170,7 +215,12 @@ public final class UpdateChecker {
                 String err = null;
                 String usedUrl = null;
 
-                for (String url : MANIFEST_URLS) {
+                // TASK-020：按通道选清单；并把实际使用的通道 / URL 写进日志（验收 A2 的判据）
+                final String channel = CardPrefs.getUpdateChannel(app);
+                final String[] urls = manifestUrls(app);
+                CardDebug.note(app, "[upd] 通道=" + channel + " 开始检查（manual=" + manual + "）");
+
+                for (String url : urls) {
                     try {
                         String body = fetch(url);
                         Info parsed = parse(body);
@@ -182,7 +232,7 @@ public final class UpdateChecker {
                         break;
                     } catch (Exception e) {
                         err = shortReason(e);
-                        CardDebug.note(app, "[upd] 源失败 " + host(url) + " : " + err);
+                        CardDebug.note(app, "[upd] 源失败 " + url + " : " + err);
                     }
                 }
 
@@ -190,7 +240,8 @@ public final class UpdateChecker {
                     markChecked(app);
                     saveRemote(app, info);
                     final Info fi = info;
-                    CardDebug.note(app, "[upd] 清单 OK via " + host(usedUrl)
+                    CardDebug.note(app, "[upd] 清单 OK via " + usedUrl
+                            + " 通道=" + channel
                             + " 远端 vc=" + fi.versionCode + " 本机 vc=" + currentVersionCode(app)
                             + " 有新版=" + isNewer(app, fi));
                     if (manual || isNewer(app, fi)) {
@@ -281,15 +332,6 @@ public final class UpdateChecker {
     }
 
     // ────────────────────────── 小工具 ──────────────────────────
-
-    private static String host(String url) {
-        if (url == null) {
-            return "?";
-        }
-        int a = url.indexOf("://");
-        int b = url.indexOf('/', a + 3);
-        return (b > 0) ? url.substring(a + 3, b) : url;
-    }
 
     /** 把异常压成一句人话（给设置页显示，也给日志） */
     private static String shortReason(Exception e) {
