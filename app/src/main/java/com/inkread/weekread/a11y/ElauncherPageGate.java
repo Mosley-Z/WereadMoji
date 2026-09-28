@@ -115,7 +115,14 @@ final class ElauncherPageGate {
      */
     private static final int ELA_SX_SPLIT = (ELA_SX_TO_P1 + ELA_SX_TO_P2) / 2;
     /** 认得出这两个实测值的范围；超出即"认不出"⇒ 不动作（宁可不改也不改错） */
-    private static final int ELA_SX_LO = ELA_SX_TO_P1 - 10;
+    // 🔴 2026-09-28：LO 从 TO_P1−10 放宽到 −12。实测（_verify060/t017/）右滑回 P1 的
+    // TextView 残值已从 524255 漂移到 **524244**（y=500 干净滑动 2/2 复现；左滑离开侧
+    // 524266 未漂）——旧 LO=524245 差 1 把它挡在"认不出"区间 ⇒ pageGate 卡 true、
+    // 卡片在 P1 上不显示（ela4 t2/t4/t5/t13/t15 挂的直接根因）。
+    // 安全性：「落到」方向自 TASK-010 起不直接显示，须经 ElaHomeProbe 内容探测
+    // 双命中（P1 时钟块可见）才显示 —— P2/P3 无时钟块 ⇒ 524254 等同族值进入本区间
+    // 也只会触发一次无害探测，绝不误显示。
+    private static final int ELA_SX_LO = ELA_SX_TO_P1 - 12;
     private static final int ELA_SX_HI = ELA_SX_TO_P2 + 10;
 
     /**

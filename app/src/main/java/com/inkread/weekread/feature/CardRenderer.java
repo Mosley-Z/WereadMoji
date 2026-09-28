@@ -168,6 +168,29 @@ final class CardRenderer {
     private static final String FILTER_ALL = "全部";
     private static final String FILTER_IDEA = "想法";
 
+    // ── 行末「展开▽ / 收起△」（v0.9，TASK-017）──
+    //
+    // 用户拍板 **E3 = 无边框**：不像「换一条」那样描个框，而是"文字 + 小三角"，
+    // 像一个链接 —— 理由是它挂在正文末行的行末，描边框会把读者的视线从正文拽走，
+    // 而且末行右侧本来就紧，框的 2px 描边 + 内缩会把字挤得更窄。
+    //
+    // 🔴 三角用 **Path 画**，不写字形 ▽/△：本机字体不保证带这两个码位
+    // （既有教训见 {@link #drawSwitchIcon} 与 {@link #drawFilterBox} 的注释）。
+
+    /** 「展开▽」/「收起△」两个文案（等宽，两字） */
+    private static final String EXPAND_LABEL_DOWN = "展开";
+    private static final String EXPAND_LABEL_UP = "收起";
+    /** 按钮小字的字号（号）—— 与末行「章节 · 日期」同号（SZ_NOTE_META），观感一家人 */
+    private static final float SZ_EXPAND = 11.5f;
+    /** 三角的宽 / 高 / 与文字的间距（号） */
+    private static final float EXPAND_TRI_W = 7f;
+    private static final float EXPAND_TRI_H = 5f;
+    private static final float EXPAND_TRI_GAP = 3f;
+    /** 按钮与正文末行尾部之间的留白（号）—— 别让「…」和「展开」贴在一起 */
+    private static final float EXPAND_GAP = 5f;
+    /** 触摸框相对按钮外扩（号）—— 墨水屏上手指按得准，框要比字大一圈 */
+    private static final float EXPAND_BOX_PAD = 4f;
+
     /**
      * 周形态 7 根柱的横坐标标签。**2026-09-27 用户拍板：由「周一…周日」简化为单字「一…日」**
      * （柱宽 ~26px，两个字的「周一」在墨水屏上偏挤、且与下方日格视觉重复）。
@@ -181,6 +204,9 @@ final class CardRenderer {
     /** 承接原 onDraw 体（440–506 行逐行平移）。壳的 onDraw 只剩一行委托。 */
     void draw(Canvas c) {
         c.drawColor(0xFFFFFFFF);
+        // 行末「展开/收起」按钮每帧重新判定：先清空，本记分支里若判定要画再回写。
+        // 这样"上一帧有按钮、这一帧没了"（切形态 / 换一条 / 收起）也能正确撤掉触摸窗。
+        host.expandBox.setEmpty();
         float w = host.getWidth(), h = host.getHeight();
         if (host.phMain != null) {
             drawCentered(c, w / 2f, h * 0.42f, host.phMain, SZ_EMPTY * host.unit, INK);
@@ -261,7 +287,10 @@ final class CardRenderer {
      */
     private float drawHeader(Canvas c, float w, float h) {
         float padX = w * host.padXRatio;
-        float padY = h * 0.055f;
+        // 上沿定位基准：桌面卡片展开态锚定在收起态高度（346），标题/分隔线不随展开下移
+        //（用户 2026-09-28 拍板「展开时上半部分保持不动」）。其余形态本式与旧版逐位等价：
+        // 周/月/本书 h 恒 = cardHeight()，App 全屏档 isNoteExpanded() 恒 false。
+        float padY = (host.isNoteExpanded() ? CardSpec.cardHeight() : h) * 0.055f;
         float left = padX;
         float right = w - padX;
 
@@ -1264,7 +1293,10 @@ final class CardRenderer {
         float signY = metaY - mSize * 1.9f;
 
         // 正文区：抬头分隔线以下 ~ 署名以上
-        float textTop = ruleY + padY * 0.75f;
+        // 正文上沿与 drawHeader 同源：展开态锚定收起态基准，上半部分不随卡片高度下移；
+        // 底部署名/章节日期/按钮仍用传入的 padY（随展开下移），这里只固定上沿这一处。
+        float padTop = (host.isNoteExpanded() ? CardSpec.cardHeight() : h) * 0.055f;
+        float textTop = ruleY + padTop * 0.75f;
         float bodyBottom = signY - tSize * 1.4f;
         float bodyH = bodyBottom - textTop;
         if (bodyH < tSize * 1.6f) bodyH = tSize * 1.6f;
@@ -1286,6 +1318,8 @@ final class CardRenderer {
         float tx = hasQuote ? left + quoteW * 0.85f : left;
         float textW = right - tx;
         int maxQ, maxI;
+        /** 不限行数的"自然"排版结果 —— 卡片档用它判溢出（TASK-017），App 档为 null */
+        CardLayout.NoteBody nat = null;
         if (host.fullscreen) {
             maxQ = 0;
             maxI = 0;                       // 不限行数：超出屏幕的部分靠滚动看
@@ -1296,7 +1330,7 @@ final class CardRenderer {
             // 根本没有想法，固定 2 行会让正文只占 2×33 ≈ 67px，而正文区可用高 177px
             // —— **110px（卡片高度的三分之一）白空着**。真机截图逐行量过：
             // 正文两行落在卡片内 y 64…121，下一处墨迹要等到 y 254 的署名行。
-            CardLayout.NoteBody nat = CardLayout.layoutNote(host.note.markText, host.note.ideaText, textW, tSize, tagSize, 0, 0);
+            nat = CardLayout.layoutNote(host.note.markText, host.note.ideaText, textW, tSize, tagSize, 0, 0);
             int qn = nat.quote.length, iv = nat.idea.length;
             int fit = (int) (Math.floor(bodyH / nat.lineH + 1e-3));
             if (fit < 1) fit = 1;
@@ -1335,6 +1369,68 @@ final class CardRenderer {
                 if (maxI > 1) maxI--;
                 else maxQ--;
                 body = CardLayout.layoutNote(host.note.markText, host.note.ideaText, textW, tSize, tagSize, maxQ, maxI);
+            }
+        }
+
+        // ── ②b 行末「展开▽ / 收起△」的判定 + 末行预留（v0.9，TASK-017）──
+        //
+        // 只在**卡片档**出现：App 全屏档正文可滚动，不需要也不该有这个按钮
+        // （`MainActivity` 全局 setFullscreen(true)，桌面卡片恒 false ⇒ 一条判据就够，不用额外开关）。
+        //
+        // 🔴 **溢出判据 = "限行后行数 < 自然行数"**，不是 `maxScroll > 0`：
+        // 卡片档限行之后 `noteContentH ≤ noteViewH` ⇒ maxScroll 恒为 0，
+        // 用它判会永远判成"没溢出"，按钮一次都不出现（开工前点名的坑）。
+        String expandLabel = null;
+        if (!host.fullscreen && nat != null) {
+            boolean overflow = (nat.quote.length > body.quote.length)
+                    || (nat.idea.length > body.idea.length);
+            if (host.noteExpanded) expandLabel = EXPAND_LABEL_UP;      // 展开态：恒给「收起△」
+            else if (overflow) expandLabel = EXPAND_LABEL_DOWN;        // 收起态：只在溢出时给「展开▽」
+        }
+        float expandW = 0f;
+        float expandAnchorX = 0f;
+        boolean expandNextLine = false;
+        if (expandLabel != null) {
+            host.p.setTypeface(android.graphics.Typeface.DEFAULT);
+            host.p.setTextSize(SZ_EXPAND * host.unit);
+            expandW = host.p.measureText(expandLabel)
+                    + (EXPAND_TRI_GAP + EXPAND_TRI_W) * host.unit;
+            // 末行要先把按钮这一截让出来，否则「…」顶到行尾、按钮被挤出卡片（或被裁剪框切掉）
+            float reserve = expandW + EXPAND_GAP * host.unit;
+            // 按钮挂在哪一段的末行：**想法段优先**（有想法时它排在最后）
+            boolean onIdea = body.idea.length > 0;
+            // 🔴 把 maxLines 收紧到**实际行数**再预留 —— 预留必须落在"真正有字的最后一行"上。
+            // 内容没被截断时两者本应相等；但 `NOTE_CARD_IDEA_MIN` 会把 maxI 顶到 2 而实际只有 1 行，
+            // 这种时候不收紧就会把宽度预留在一个根本不存在的行上，末行照旧顶满 ⇒ 按钮压字。
+            int rq = body.quote.length > 0 ? body.quote.length : maxQ;
+            int ri = body.idea.length > 0 ? body.idea.length : maxI;
+
+            // 🆕 方案 A（2026-09-28 用户拍板）：展开态内容**已全显**（自然行数 ≤ fit）时，
+            // 不做末行预留——「收起△」要么挂末行文字末尾，要么（末行恰好满行）挂下一行，
+            // 绝不把末行挤短截字（否则"空间够 12 行、内容只有 5 行，末行却因按钮预留
+            // 被截成假省略号"）。收起态 / 展开态内容仍截断（超长笔记）时保持原"预留+贴右"。
+            boolean fullShown = host.noteExpanded
+                    && (nat.quote.length <= body.quote.length)
+                    && (nat.idea.length <= body.idea.length);
+            if (fullShown) {
+                String[] seg = onIdea ? body.idea : body.quote;
+                float lastW = 0f;
+                if (seg.length > 0) {
+                    host.p.setTypeface(android.graphics.Typeface.SERIF);
+                    host.p.setTextSize(tSize);
+                    lastW = host.p.measureText(seg[seg.length - 1]);
+                    host.p.setTypeface(android.graphics.Typeface.DEFAULT);
+                }
+                if (tx + lastW + reserve <= right) {
+                    expandAnchorX = tx + lastW + EXPAND_GAP * host.unit;   // 挂末行文字末尾
+                } else {
+                    expandAnchorX = right - expandW;                        // 末行满 → 挂下一行
+                    expandNextLine = true;
+                }
+            } else {
+                body = CardLayout.layoutNote(host.note.markText, host.note.ideaText, textW, tSize,
+                        tagSize, rq, ri, onIdea ? 0f : reserve, onIdea ? reserve : 0f);
+                expandAnchorX = right - expandW;                        // 预留 + 贴右（原行为）
             }
         }
 
@@ -1390,6 +1486,19 @@ final class CardRenderer {
         }
         host.p.setTypeface(android.graphics.Typeface.DEFAULT);
         c.restore();
+
+        // ── ③b 画行末「展开▽ / 收起△」+ 回写触摸矩形（v0.9，TASK-017）──
+        if (expandLabel != null) {
+            float lastBaseY;
+            if (body.idea.length > 0) {
+                lastBaseY = textTop + body.quote.length * body.lineH + body.tagBlock
+                        + (body.idea.length - 1) * body.lineH + tSize - sy;
+            } else {
+                lastBaseY = textTop + (body.quote.length - 1) * body.lineH + tSize - sy;
+            }
+            if (expandNextLine) lastBaseY += body.lineH;   // 末行满 → 按钮挂下一行
+            drawExpandToggle(c, expandLabel, expandAnchorX, lastBaseY, expandW);
+        }
 
         // ── ④ 滚动条：只在真的超出一屏时出现，贴最右侧，不抢文字 ──
         if (maxScroll > 0f) {
@@ -1467,6 +1576,54 @@ final class CardRenderer {
             host.p.setTextAlign(Paint.Align.LEFT);
             host.p.setColor(INK);
         }
+    }
+
+    /**
+     * 行末的「展开▽ / 收起△」（v0.9，TASK-017）—— **无边框**（用户拍板 E3）。
+     *
+     * 位置：贴正文末行**行尾右侧**，与末行同一条基线。按钮左端由调用方传 {@code anchorX}：
+     * · 收起态 / 展开态末行顶满时 → `anchorX = right − btnW`（贴右），排版阶段已用
+     *   {@code CardLayout#wrapMax} 的 `reserveLast` 扣掉 `btnW + EXPAND_GAP`，正文不压字；
+     * · 展开态内容全显时（方案 A）→ `anchorX = 末行文字末尾 + EXPAND_GAP`（挂行尾，不截字）。
+     *
+     * @param anchorX 按钮**左端** x（文字起点）
+     * @param baseY   末行的**基线** y
+     * @param btnW    按钮总宽（文字 + 间距 + 三角），由调用方量好传进来（与本方法用同一支画笔，不会算歪）
+     */
+    private void drawExpandToggle(Canvas c, String label, float anchorX, float baseY, float btnW) {
+        float sz = SZ_EXPAND * host.unit;
+        float x = anchorX;
+
+        host.p.setStyle(Paint.Style.FILL);
+        host.p.setTypeface(android.graphics.Typeface.DEFAULT);
+        host.p.setTextAlign(Paint.Align.LEFT);
+        host.p.setColor(INK);
+        host.p.setTextSize(sz);
+        c.drawText(label, x, baseY, host.p);
+
+        // 三角：**收起态画 ▽（点它展开）/ 展开态画 △（点它收起）**
+        float tw = EXPAND_TRI_W * host.unit;
+        float th = EXPAND_TRI_H * host.unit;
+        float tx0 = x + host.p.measureText(label) + EXPAND_TRI_GAP * host.unit;
+        float cy = baseY - sz * 0.30f;                 // 视觉中线（基线往上约小三成字高）
+        host.path.reset();
+        if (!host.noteExpanded) {
+            host.path.moveTo(tx0, cy - th / 2f);
+            host.path.lineTo(tx0 + tw, cy - th / 2f);
+            host.path.lineTo(tx0 + tw / 2f, cy + th / 2f);
+        } else {
+            host.path.moveTo(tx0 + tw / 2f, cy - th / 2f);
+            host.path.lineTo(tx0, cy + th / 2f);
+            host.path.lineTo(tx0 + tw, cy + th / 2f);
+        }
+        host.path.close();
+        c.drawPath(host.path, host.p);
+
+        // 回写触摸矩形（**View 内坐标**）—— 桌面那个透明小窗按它摆（OverlayController）。
+        // 纵向比字大一圈：墨水屏上手指按不准，字高只有 13.8px，框给到 ≈33px。
+        // 右端 = 按钮左端 + 总宽（贴右时 `x + btnW = right`，与旧行为逐位一致）。
+        float pad = EXPAND_BOX_PAD * host.unit;
+        host.expandBox.set(x - pad, baseY - sz * 1.5f, x + btnW + pad, baseY + sz * 0.9f);
     }
 
     /**

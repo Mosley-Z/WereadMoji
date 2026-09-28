@@ -64,6 +64,29 @@ public final class CardSpec {
         return CARD_BOTTOM - CARD_TOP;
     }
 
+    // ══════════════════════ 本记「展开▽」态（v0.9，TASK-017）══════════════════════
+    //
+    // 🔴 **CARD_BOTTOM = 416 一个字没动** —— 那个值是"不与桌面图标重叠"逐像素量出来的，
+    // 收起态必须维持原样（用户 2026-09-26 拍板）。
+    // 这里只是**新增**一个"展开态底边"，只有本记形态、且用户点了「展开▽」之后才用。
+    //
+    // 值 = 750 的由来：730 是按 ELauncher 量到末排应用名 `bounds.bottom`=737 留 7px 余量，
+    //   但上机实测（Tomo）展开后点「换一张」按钮时容易误触到下方末排应用 ⇒ 2026-09-28
+    //   用户拍板**增大到 750**，把末排应用图标及名称一并盖住（受控的有意遮挡，防误触）。
+    // ⚠️ 该值"仅测一次、固化成常量"（用户要求），不要再动态算 —— a11y 侧不读节点几何。
+    //
+    // ⚠️ 展开态**会盖住下方一排应用图标及名称**，这是**受控的有意行为**（用户已确认）：
+    // 卡片整幅白底（CardRenderer#draw 的 `c.drawColor(0xFFFFFFFF)`）把新暴露区域涂白，
+    // 观感就是"卡片向下展开、把下面那排盖住"。收起即恢复。
+
+    /** 展开态底边（屏幕坐标）。见上面的量测说明 */
+    public static final int CARD_BOTTOM_EXPANDED = 750;
+
+    /** 展开态卡片高度 = 750 − 70 = 680 */
+    public static int cardHeightExpanded() {
+        return CARD_BOTTOM_EXPANDED - CARD_TOP;
+    }
+
     public static int tapLeft() {
         return CARD_RIGHT - TAP_W;
     }
@@ -217,9 +240,20 @@ public final class CardSpec {
         return CARD_LEFT + cardWidth() - OPEN_BOX_W - OPEN_BOX_MARGIN_R;
     }
 
-    /** 框上边界（**屏幕**坐标） */
+    /** 框上边界（**屏幕**坐标）—— 收起态（h = {@link #cardHeight()}） */
     public static int openBoxTop() {
-        return CARD_TOP + cardHeight() - OPEN_BOX_H - OPEN_BOX_MARGIN_B;
+        return openBoxTop(cardHeight());
+    }
+
+    /**
+     * 框上边界（**屏幕**坐标）—— 高度由调用方给（TASK-017）。
+     *
+     * 本记「展开▽」后卡片变高，页内按钮按 `h` 定位**天然随下沿下移**（用户拍板②）⇒
+     * 桌面那两个透明触摸窗也得跟着下移，否则会停在老位置、与画出来的框错开。
+     * 收起态传 {@link #cardHeight()} 时与旧的无参版**逐位相同**（不破坏既有对齐）。
+     */
+    public static int openBoxTop(int h) {
+        return CARD_TOP + h - OPEN_BOX_H - OPEN_BOX_MARGIN_B;
     }
 
     // ── 「上一条」按钮（v0.4.2 本记态）：与右下角「换一条」**左右对称** ──
@@ -237,8 +271,13 @@ public final class CardSpec {
         return CARD_LEFT + PREV_BOX_MARGIN_L;
     }
 
-    /** 框上边界（**屏幕**坐标）—— 与「换一条」同一条水平线 */
+    /** 框上边界（**屏幕**坐标）—— 与「换一条」同一条水平线（收起态） */
     public static int prevBoxTop() {
-        return openBoxTop();
+        return openBoxTop(cardHeight());
+    }
+
+    /** 同上，高度由调用方给（TASK-017 展开态）—— 与 {@link #openBoxTop(int)} 同源 */
+    public static int prevBoxTop(int h) {
+        return openBoxTop(h);
     }
 }

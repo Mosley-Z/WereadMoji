@@ -230,9 +230,50 @@ final class SettingsPageProbe {
             CharSequence pkg = root.getPackageName();
             if (pkg == null || !ELA_PKG.equals(pkg.toString())) return st.settingsGate;
             List<AccessibilityNodeInfo> hits = root.findAccessibilityNodeInfosByViewId(SETTINGS_ID);
-            return hits != null && !hits.isEmpty();
+            if (hits == null || hits.isEmpty()) return false;
+            // 🔴 2026-09-28（验证记录/74 t13）：ELauncher 新版的 **P1 首页也出现了
+            // settings_top 同名节点**（真机实测：P1 边界右滑 → sx=480 → 触发本探测 →
+            // 在 P1 上命中 settings_top → settingsGate 误置位 → 卡片消失）。
+            // 单靠 settings_top 已无法区分"设置页"与"P1" ⇒ 交叉验证 P1 时钟块：
+            // txt_clock 在 P1 必然可见（验证记录/55 实测恰 1 处），设置页没有。
+            // ⚠️ 必须做可见性 + 在屏过滤：设置页是 ViewPager 隐藏页，可能保留
+            // 不可见的 P1 时钟残树（同 ElaHomeProbe 的纪律）。
+            if (hasVisibleNode(root, HOME_CLOCK_ID)) {
+                CardDebug.note(ctx, "probe hit 但 P1 时钟块可见 → 判 P1（新桌面指纹污染）不置位");
+                return false;
+            }
+            return true;
         } catch (Throwable t) {
             return st.settingsGate;
         }
+    }
+
+    /** ELauncher P1 时钟块（与 ElaHomeProbe 同一指纹，各自持有一份常量 —— 两 Gate 先例） */
+    private static final String HOME_CLOCK_ID = "com.wetao.elauncher:id/txt_clock";
+
+    /**
+     * 在 root 子树里查 viewId 是否有**可见且在屏内**的命中。
+     * 与 {@link ElaHomeProbe#hasVisibleNode} 同判据（可见性过滤不可省，理由见上）。
+     */
+    private boolean hasVisibleNode(AccessibilityNodeInfo root, String viewId) {
+        List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByViewId(viewId);
+        if (nodes == null || nodes.isEmpty()) return false;
+        for (AccessibilityNodeInfo n : nodes) {
+            boolean vis = false;
+            try {
+                vis = n.isVisibleToUser();
+            } catch (Throwable ignored) {
+            }
+            android.graphics.Rect r = new android.graphics.Rect();
+            try {
+                n.getBoundsInScreen(r);
+            } catch (Throwable ignored) {
+            }
+            boolean onScreen = r.intersect(0, 0,
+                    com.inkread.weekread.core.CardSpec.SCREEN_W,
+                    com.inkread.weekread.core.CardSpec.SCREEN_H);
+            if (vis && onScreen) return true;
+        }
+        return false;
     }
 }
