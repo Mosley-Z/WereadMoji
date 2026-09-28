@@ -59,6 +59,9 @@ import java.util.Locale;
  *   · **自定义**（纯个性化）：本记导出模板，即时生效。
  * v0.7（TASK-000）再加第三页：
  *   · **实验室**：设备能力自检（🔴 只读）+ 常显一行「当前系统默认桌面」。
+ * TASK-020 在「初始化」页的**版本与更新**区加一行「更新通道」（正式版 / Beta）：
+ *   · 两条通道共用同一包名/签名、同一个全局 vc 池，唯一差别 = 读哪一份清单；
+ *   · 两个并排选项 + 一条常显说明行，**不做弹窗**；换通道后重置更新区状态。
  * 三个页面是同一 ScrollView 里的三个容器，切页只切 visibility —— 已填的 Key、已选的
  * 单选按钮状态天然保留，不需要在多个 Activity 之间搬运。
  */
@@ -101,6 +104,11 @@ public class SettingsActivity extends Activity {
     private TextView tvVersion;
     private TextView tvUpdateStatus;
     private Button btnUpdate;
+
+    // ── TASK-020：更新通道（初始化页 · 版本与更新区）──
+    private RadioButton rbChannelStable;      // 正式版（稳定，默认）
+    private RadioButton rbChannelBeta;        // Beta（尝鲜）
+    private TextView tvChannelTip;            // 常显说明行（按通道切换）
 
     // ── v0.7（TASK-000）实验室 · 设备能力自检（🔴 只读）──
     private TextView tvLabHome;      // 常显行：当前系统默认桌面
@@ -156,6 +164,9 @@ public class SettingsActivity extends Activity {
         tvVersion = (TextView) findViewById(R.id.tv_version);
         tvUpdateStatus = (TextView) findViewById(R.id.tv_update_status);
         btnUpdate = (Button) findViewById(R.id.btn_update);
+        rbChannelStable = (RadioButton) findViewById(R.id.rb_channel_stable);
+        rbChannelBeta = (RadioButton) findViewById(R.id.rb_channel_beta);
+        tvChannelTip = (TextView) findViewById(R.id.tv_channel_tip);
         tvLabHome = (TextView) findViewById(R.id.tv_lab_home);
         tvLabResult = (TextView) findViewById(R.id.tv_lab_result);
         btnLabRun = (Button) findViewById(R.id.btn_lab_run);
@@ -506,6 +517,32 @@ public class SettingsActivity extends Activity {
             }
         });
 
+        // ── TASK-020：更新通道（正式版 / Beta）──
+        // 两个并排选项（RadioGroup 自带选中态高亮）+ 一条常显说明行。🔴 无弹窗（墨水屏约定）。
+        // 先回填（不触发回调）再挂监听。换通道 ⇒ 重置更新区状态（缓存里的远端信息属于旧通道）。
+        String chNow = CardPrefs.getUpdateChannel(this);
+        rbChannelStable.setChecked(!CardPrefs.CHANNEL_BETA.equals(chNow));
+        rbChannelBeta.setChecked(CardPrefs.CHANNEL_BETA.equals(chNow));
+        refreshChannelTip();
+        CompoundButton.OnCheckedChangeListener channelL = new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                if (!checked) return;            // 只管"被选中的那个"
+                String v = (b.getId() == R.id.rb_channel_beta)
+                        ? CardPrefs.CHANNEL_BETA : CardPrefs.CHANNEL_STABLE;
+                CardPrefs.setUpdateChannel(SettingsActivity.this, v);
+                // 归零更新区：uInfo 属于旧通道，别让它串台；按钮回到「检查更新」
+                uState = U_IDLE;
+                uInfo = null;
+                btnUpdate.setText(getString(R.string.btn_check_update));
+                tvUpdateStatus.setText("");
+                refreshChannelTip();
+                refreshUpdateUi();
+            }
+        };
+        rbChannelStable.setOnCheckedChangeListener(channelL);
+        rbChannelBeta.setOnCheckedChangeListener(channelL);
+
         // ── v0.7（TASK-000）：实验室 · 设备能力自检（🔴 只读）──
         btnLabRun.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -527,6 +564,7 @@ public class SettingsActivity extends Activity {
         // 和主页一样：告诉服务"用户在自家界面"，桌面卡片要让位
         CardA11yService.noteOwnUiForeground(true);
         refreshStatus();
+        refreshChannelTip();       // TASK-020：说明行按当前通道刷新（无弹窗）
         refreshUpdateUi();
     }
 
@@ -682,6 +720,38 @@ public class SettingsActivity extends Activity {
     // ────────────────────── v0.5.0：版本与更新 ──────────────────────
 
     /**
+     * 更新通道的常显说明行（TASK-020 验收 A4）。
+     *
+     * 🔴 必须含「两条通道的版本号不可直接比较」的等价表述 —— 否则用户看到
+     * 「正式版 0.9.1」与「Beta 1.0.0-beta.1」会以为前者更旧而误判。
+     * 用常显行承担知情同意，**不做弹窗**（沿用「墨水屏上弹窗尤其讨厌」约定）。
+     */
+    private void refreshChannelTip() {
+        if (tvChannelTip == null) return;
+        boolean beta = CardPrefs.CHANNEL_BETA.equals(CardPrefs.getUpdateChannel(this));
+        tvChannelTip.setText(getString(
+                beta ? R.string.channel_tip_beta : R.string.channel_tip_stable));
+    }
+
+    /**
+     * 「已是最新」或「降级窗口」的状态行文案（TASK-020 验收 A5 / ⑤）。
+     *
+     * 🔴 本机是 Beta 出身（versionName 含 "-beta"）且通道 = 正式版、而正式版 vc ≤ 本机 vc 时，
+     *    如实说「无法直接退回」，**不写空头承诺** —— App 拿不到安装成功/失败回调
+     *    （`ApkInstaller` 一发 intent 即走），必须**在点安装之前**就把限制讲清。
+     */
+    private String latestText(UpdateChecker.Info info) {
+        boolean stable = !CardPrefs.CHANNEL_BETA.equals(CardPrefs.getUpdateChannel(this));
+        boolean localBeta = UpdateChecker.currentVersionName(this).contains("-beta");
+        if (stable && localBeta
+                && info != null && info.versionName != null && info.versionName.length() > 0) {
+            return getString(R.string.upd_downgrade_blocked, info.versionName);
+        }
+        return getString(stable ? R.string.upd_latest_stable : R.string.upd_latest_beta,
+                UpdateChecker.currentVersionName(this));
+    }
+
+    /**
      * 进设置页时刷新版本区。
      *
      * 这里是「静默检查」的存在意义：启动时顺手查一次、结果落盘，用户打开设置页立刻就能
@@ -752,7 +822,7 @@ public class SettingsActivity extends Activity {
                     uState = U_IDLE;
                     uInfo = null;
                     btnUpdate.setText(getString(R.string.btn_check_update));
-                    tvUpdateStatus.setText(getString(R.string.upd_latest));
+                    tvUpdateStatus.setText(latestText(info));   // TASK-020：通道相关 + 降级窗口如实
                 }
             }
         });
