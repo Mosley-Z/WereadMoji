@@ -13,6 +13,7 @@
         android:layout_height="44dp" />
 
     <View
+        android:id="@+id/sep_top"
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:background="#FF000000" />
@@ -29,6 +30,7 @@
          把 60px 全部让给正文。 -->
 
     <View
+        android:id="@+id/sep_mid"
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:background="#FFD8D8D8" />
@@ -41,9 +43,25 @@
         android:layout_weight="1" />
 
     <View
+        android:id="@+id/sep_card"
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:background="#FFD8D8D8" />
+
+    <!-- TASK-018：phone 角色（手机端遥控器）时替代卡片区显示；其余卡片 UI 整块隐藏 -->
+    <TextView
+        android:id="@+id/tv_remote_notice"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:lineSpacingExtra="4dp"
+        android:paddingLeft="24dp"
+        android:paddingRight="24dp"
+        android:text="@string/main_remote_notice"
+        android:textColor="#FF3C3C3C"
+        android:textSize="15sp"
+        android:visibility="gone" />
 
     <!-- 两个独立按钮：刷新 / 设置。
          v0.4.1：「导出」搬进本记页内（只对那一页有意义），三个按钮变两个；

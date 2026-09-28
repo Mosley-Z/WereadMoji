@@ -17,6 +17,7 @@ import com.inkread.weekread.feature.WeekCardView;
 import com.inkread.weekread.net.NoteSync;
 import com.inkread.weekread.net.UpdateChecker;
 import com.inkread.weekread.net.WereadApi;
+import com.inkread.weekread.remote.RemoteRole;
 import com.inkread.weekread.ui.PeriodPickerView;
 import com.inkread.weekread.ui.TabBarView;
 import com.inkread.weekread.update.ApkInstaller;
@@ -71,6 +72,9 @@ public class MainActivity extends Activity {
      */
     private int lastNoteState = NoteSync.STATE_OK;
 
+    /** TASK-018：本机是否处于 phone 角色（手机端遥控器）—— 是则隐藏卡片相关 UI（A7）。 */
+    private boolean remotePhone;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -84,6 +88,22 @@ public class MainActivity extends Activity {
         card = (WeekCardView) findViewById(R.id.card);
         tabbar = (TabBarView) findViewById(R.id.tabbar);
         picker = (PeriodPickerView) findViewById(R.id.picker);
+
+        // ── TASK-018：手机端遥控器角色（remote_role=phone）⇒ 隐藏卡片相关 UI（A7）──
+        // 手机上这个 App 只当遥控器用，统计卡片没有使用场景（ADR-010 决定 4：
+        // 「phone = 隐藏卡片相关 UI、不启用卡片悬浮服务」）。
+        // 只保留「设置」入口（用户要在那里把角色改回来），其余卡片 UI 整块隐藏。
+        if (RemoteRole.from(this) == RemoteRole.PHONE) {
+            remotePhone = true;
+            applyPhoneMode();
+            ((Button) findViewById(R.id.btn_settings)).setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    startActivity(new Intent(MainActivity.this, SettingsActivity.class));
+                }
+            });
+            return;
+        }
 
         // 本记页的「全部 / 只看想法」筛选（v0.4.4 是屏顶独占一行的页签，
         // v0.4.5 起并进卡片内的按钮行，由 WeekCardView 画成一格两态的「筛选」按钮）。
@@ -311,9 +331,29 @@ public class MainActivity extends Activity {
         return PeriodRange.MONTHLY.equals(mode) ? "这个月没有阅读记录" : "这一周没有阅读记录";
     }
 
+    /**
+     * phone 角色：整块隐藏卡片相关 UI，只留一句提示 + 设置入口（A7，TASK-018）。
+     *
+     * 「卡片悬浮服务不启动」= 该机在系统无障碍里只需打开「微读墨记 · 遥控」，
+     * 不需要打开卡片服务（卡片分区在设置页也被隐藏，见 {@code SettingsActivity#refreshRoleUi}）。
+     */
+    private void applyPhoneMode() {
+        findViewById(R.id.tabbar).setVisibility(View.GONE);
+        findViewById(R.id.sep_top).setVisibility(View.GONE);
+        findViewById(R.id.picker).setVisibility(View.GONE);
+        findViewById(R.id.sep_mid).setVisibility(View.GONE);
+        findViewById(R.id.card).setVisibility(View.GONE);
+        findViewById(R.id.sep_card).setVisibility(View.GONE);
+        findViewById(R.id.btn_refresh).setVisibility(View.GONE);
+        findViewById(R.id.tv_remote_notice).setVisibility(View.VISIBLE);
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
+        if (remotePhone) {
+            return;                 // 手机端遥控器：卡片 UI 已隐藏，无需让位/同步/取数
+        }
         // 先声明"用户现在在我们自己的界面里" —— 桌面卡片必须让位。
         // 必须在 sync() 之前：sync() 会让服务重算一次可见性，
         // 而服务自己无法从无障碍事件里知道"当前前台是本 App"
@@ -328,6 +368,9 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        if (remotePhone) {
+            return;
+        }
         CardA11yService.noteOwnUiForeground(false);
     }
 
