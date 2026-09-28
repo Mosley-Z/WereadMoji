@@ -126,4 +126,33 @@ public final class CardPrefs {
         if (v > NOTE_CARD_SIZE_MAX) v = NOTE_CARD_SIZE_MAX;
         sp(c).edit().putInt("note_card_size", v).commit();
     }
+
+    // ── TASK-020：更新通道（正式版 stable / Beta）──
+    //
+    // 两条通道共用同一包名/签名、同一个全局 vc 池，**唯一差别 = 读哪一份清单**
+    // （`main/dist/update.json` vs `beta/dist/update.json`）。详见 `ADR-011`。
+
+    /** 更新通道：正式版（稳定，默认）—— 读 `main` 分支的清单 */
+    public static final String CHANNEL_STABLE = "stable";
+    /** 更新通道：Beta（尝鲜）—— 读 `beta` 分支的清单 */
+    public static final String CHANNEL_BETA = "beta";
+    /** 默认通道 = 正式版（老用户升级上来行为零差异） */
+    public static final String DEFAULT_UPDATE_CHANNEL = CHANNEL_STABLE;
+
+    /**
+     * 更新通道（TASK-020 验收 A6 · 向后兼容读取）。
+     *
+     * 🔴 **容错铁律**：未设 / 非法值 / 来自未来版本的未知值 ⇒ **一律按 stable 处理，绝不崩**。
+     * 只认字面量 {@code "beta"} 走 Beta，其余全部归 stable —— 这样正式版读 Beta 留下的脏偏好也安全。
+     */
+    public static String getUpdateChannel(Context c) {
+        String v = sp(c).getString("update_channel", DEFAULT_UPDATE_CHANNEL);
+        return CHANNEL_BETA.equals(v) ? CHANNEL_BETA : CHANNEL_STABLE;
+    }
+
+    public static void setUpdateChannel(Context c, String v) {
+        sp(c).edit()
+                .putString("update_channel", CHANNEL_BETA.equals(v) ? CHANNEL_BETA : CHANNEL_STABLE)
+                .commit();
+    }
 }

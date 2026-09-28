@@ -318,6 +318,55 @@
                     android:textColor="#FF3C3C3C"
                     android:textSize="13sp" />
 
+                <!-- ── TASK-020：更新通道（正式版 / Beta）──
+                     两个并排选项（RadioGroup 提供原生选中态，墨水屏上最直白）
+                     + 一条**常显**说明行。🔴 无模态弹窗（沿用「墨水屏上弹窗尤其讨厌」约定）。 -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="@string/label_update_channel"
+                    android:textColor="#FF000000"
+                    android:textSize="15sp" />
+
+                <RadioGroup
+                    android:id="@+id/rg_update_channel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:orientation="horizontal">
+
+                    <RadioButton
+                        android:id="@+id/rb_channel_stable"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/channel_stable"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_channel_beta"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/channel_beta"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+                </RadioGroup>
+
+                <!-- 常显说明行（文案由 SettingsActivity 按通道切换；含"版本号不可跨通道比较"，验收 A4） -->
+                <TextView
+                    android:id="@+id/tv_channel_tip"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:lineSpacingExtra="3dp"
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="13sp" />
+
                 <!-- 一个按钮走完全程：检查 → 下载并安装 → 下载中 xx% -->
                 <Button
                     android:id="@+id/btn_update"

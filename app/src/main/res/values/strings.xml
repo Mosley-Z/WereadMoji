@@ -85,6 +85,20 @@
     <string name="upd_failed">检查失败：%1$s</string>
     <string name="upd_dl_failed">下载失败：%1$s</string>
 
+    <!-- TASK-020：更新通道（正式版 / Beta）—— 双通道发布的用户侧入口 -->
+    <string name="label_update_channel">更新通道</string>
+    <string name="channel_stable">正式版（稳定）</string>
+    <string name="channel_beta">Beta（尝鲜）</string>
+    <!-- 🔴 常显说明行（验收 A4）：必须含「版本号不可跨通道比较」的等价表述；
+         只写已验证能力（A8）：禁「断开即省电」「自动更新」「读取屏幕内容」等超范围措辞。 -->
+    <string name="channel_tip_stable">当前：正式版，更新更稳。两条通道的版本号不可直接比较（例如正式版 0.9.1 实际比 Beta 1.0.0-beta.1 更新）。</string>
+    <string name="channel_tip_beta">当前：Beta（含未定型功能，可能不稳定）。点「检查更新」查看。两条通道的版本号不可直接比较（例如正式版 0.9.1 实际比 Beta 1.0.0-beta.1 更新）。</string>
+    <string name="upd_latest_stable">已是最新正式版 %1$s</string>
+    <string name="upd_latest_beta">已是最新 Beta %1$s</string>
+    <!-- 🔴 降级窗口如实（验收 A5）：本机是 Beta、切回正式版但正式版 vc ≤ 本机时；
+         不得写「即将支持」之类空头承诺（App 拿不到安装失败回调，必须在点之前讲清）。 -->
+    <string name="upd_downgrade_blocked">当前运行的 Beta 版本比最新正式版（%1$s）更新，无法直接退回。正式版下个版本发布后可切换。</string>
+
     <!-- v0.7（TASK-000）：设置页第三段「实验室」· 设备能力自检（🔴 纯只读） -->
     <string name="label_lab">实验室</string>
     <string name="lab_tip">一键探测「这台设备能不能做某件事」。全程只读：不改任何系统设置、不申请任何权限、不联网。每项都给出「可用 / 不可用 / 本次探测不确定」三档结论和原始证据。</string>

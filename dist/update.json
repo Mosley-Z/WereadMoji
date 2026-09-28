@@ -1,13 +1,13 @@
 {
-  "versionCode": 32,
-  "versionName": "0.9.0",
-  "tag": "v0.9.0",
-  "notes": "本记桌面卡片体验增强：卡片字号可调（12–24 号，App 三档）、正文支持展开查看完整内容；修复展开后正文被截断、展开时标题与正文上沿下移的问题。覆盖升级无需重开无障碍。",
-  "apk": "dist/weread-stats-0.9.0.apk",
-  "size": 288560,
-  "sha256": "7021b778bda6e6acf2d50f7488844da9c7c5c98a1171f7516c7693b3bb71d5ac",
+  "versionCode": 33,
+  "versionName": "0.9.1",
+  "tag": "v0.9.1",
+  "notes": "新增「更新通道」选择器（设置页「版本与更新」区）：可在正式版与 Beta 之间一键切换更新来源。覆盖升级无需重开无障碍。",
+  "apk": "dist/weread-stats-0.9.1.apk",
+  "size": 292656,
+  "sha256": "95757e120175e361968af9e157736c183452e186062da7243637c8380bf327ea",
   "urls": [
-    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v0.9.0/dist/weread-stats-0.9.0.apk",
-    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v0.9.0/dist/weread-stats-0.9.0.apk"
+    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v0.9.1/dist/weread-stats-0.9.1.apk",
+    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v0.9.1/dist/weread-stats-0.9.1.apk"
   ]
 }
