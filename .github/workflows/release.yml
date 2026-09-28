@@ -168,9 +168,16 @@ jobs:
               echo "$T 已有 Release，跳过（如需重建请先在网页上删除）"
               continue
             fi
+            # 双通道发布（TASK-019）：tag 含 "-beta" ⇒ 标 Pre-release
+            #   （不进 Latest，路人不会被 Beta 误导；正式版 tag 不含 -beta，命令行逐字不变）。
+            PRERELEASE=""
+            case "$T" in
+              *-beta*) PRERELEASE="--prerelease" ;;
+            esac
             gh release create "$T" \
               --title "$T" \
               --notes-file /tmp/release-notes.md \
+              $PRERELEASE \
               "$APK"
             echo "✅ 已创建 Release $T"
           done
