@@ -1,13 +1,13 @@
 {
-  "versionCode": 31,
-  "versionName": "0.8.2",
-  "tag": "v0.8.2",
-  "notes": "新增阅读成就提示（达成目标时卡片底部显示）、本月热力图（按当日时长分五档灰度，样式改为细腻点阵+黑框）；周视图横坐标简化为「一…日」；修复无障碍服务重连时误判桌面页码、卡片错显示且不自愈的问题；另含若干使用反馈修复。覆盖升级无需重开无障碍。",
-  "apk": "dist/weread-stats-0.8.2.apk",
-  "size": 284320,
-  "sha256": "176610a3da461b9246a991a97875584a4553874de196147b2e00d856445f0be6",
+  "versionCode": 32,
+  "versionName": "0.9.0",
+  "tag": "v0.9.0",
+  "notes": "本记桌面卡片体验增强：卡片字号可调（12–24 号，App 三档）、正文支持展开查看完整内容；修复展开后正文被截断、展开时标题与正文上沿下移的问题。覆盖升级无需重开无障碍。",
+  "apk": "dist/weread-stats-0.9.0.apk",
+  "size": 288560,
+  "sha256": "7021b778bda6e6acf2d50f7488844da9c7c5c98a1171f7516c7693b3bb71d5ac",
   "urls": [
-    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v0.8.2/dist/weread-stats-0.8.2.apk",
-    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v0.8.2/dist/weread-stats-0.8.2.apk"
+    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v0.9.0/dist/weread-stats-0.9.0.apk",
+    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v0.9.0/dist/weread-stats-0.9.0.apk"
   ]
 }
