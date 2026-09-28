@@ -7,17 +7,15 @@ import com.inkread.weekread.core.CardPrefs;
 import com.inkread.weekread.core.PeriodRange;
 import com.inkread.weekread.core.StatsStore;
 import com.inkread.weekread.feature.NoteExport;
-import com.inkread.weekread.feature.lab.DefaultHomeProbe;
-import com.inkread.weekread.feature.lab.LabRunner;
-import com.inkread.weekread.feature.lab.ProbeResult;
 import com.inkread.weekread.net.UpdateChecker;
 import com.inkread.weekread.net.WereadApi;
+import com.inkread.weekread.remote.RemoteKeyService;
+import com.inkread.weekread.remote.RemoteLinkManager;
+import com.inkread.weekread.remote.RemoteRole;
 import com.inkread.weekread.ui.SegTabView;
 import com.inkread.weekread.update.ApkInstaller;
 
 import android.app.Activity;
-import android.content.ClipData;
-import android.content.ClipboardManager;
 import android.content.Intent;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -36,7 +34,6 @@ import android.widget.Toast;
 
 
 import java.io.File;
-import java.util.List;
 import java.util.Locale;
 
 /**
@@ -57,8 +54,10 @@ import java.util.Locale;
  *   · **初始化**（默认页，第一次装完照顺序做）：API Key（含取 Key 说明）→ 无障碍 → 桌面卡片
  *     （开关 + 显示周期 + 状态）→「怎么用」；
  *   · **自定义**（纯个性化）：本记导出模板，即时生效。
- * v0.7（TASK-000）再加第三页：
- *   · **实验室**：设备能力自检（🔴 只读）+ 常显一行「当前系统默认桌面」。
+ * v0.7（TASK-000）再加第三页「实验室」（设备能力自检 · 只读）；
+ * **v1.0 Beta（TASK-018）第三页改版**：
+ *   · **实验室**：实验性功能页 —— 遥控翻页的角色开关 + 提示（原「设备能力自检」已按
+ *     `docs/FEATURES/lab.md` 清除清单删除）。
  * TASK-020 在「初始化」页的**版本与更新**区加一行「更新通道」（正式版 / Beta）：
  *   · 两条通道共用同一包名/签名、同一个全局 vc 池，唯一差别 = 读哪一份清单；
  *   · 两个并排选项 + 一条常显说明行，**不做弹窗**；换通道后重置更新区状态。
@@ -110,12 +109,23 @@ public class SettingsActivity extends Activity {
     private RadioButton rbChannelBeta;        // Beta（尝鲜）
     private TextView tvChannelTip;            // 常显说明行（按通道切换）
 
-    // ── v0.7（TASK-000）实验室 · 设备能力自检（🔴 只读）──
-    private TextView tvLabHome;      // 常显行：当前系统默认桌面
-    private TextView tvLabResult;    // 五项结论 + 原始证据
-    private Button btnLabRun;
-    private boolean labRunning = false;
-    private String labText;          // 最近一次汇总文本（供「复制结果」）
+    // ── V1.0 Beta（TASK-018）实验室 · 遥控翻页 ──
+    // 页面元素：角色三选一 + 按角色变化的说明 + 会话开关/状态 + 空闲超时 + 互斥提示。
+    private RadioButton rbRoleOff;
+    private RadioButton rbRoleEink;
+    private RadioButton rbRolePhone;
+    private TextView tvRoleHint;         // 按角色变化的说明文本
+    private View llRemoteSession;        // 会话控件容器（role != off 才显示）
+    private Button btnRemoteStart;
+    private Button btnRemoteStop;
+    private TextView tvRemoteStatus;     // 「状态：…」
+    private EditText etRemoteIdle;       // 空闲自动断开（秒）
+    // phone 角色整块隐藏「桌面卡片」分区（A7）
+    private View sectionCardInit;        // 初始化页 ③ 桌面卡片
+    private View sectionCardCustom;      // 自定义页「桌面卡片」
+
+    /** 本会话是否处于 phone 角色（onCreate 时定一次；角色改变只在实验室页内发生）。 */
+    private boolean remotePhone;
 
     // ── v0.5.0 更新区状态机 ──
     // 一个按钮走完全程（检查 → 下载并安装 → 下载中 xx%），按钮文字始终说明「下一步会发生什么」。
@@ -167,9 +177,19 @@ public class SettingsActivity extends Activity {
         rbChannelStable = (RadioButton) findViewById(R.id.rb_channel_stable);
         rbChannelBeta = (RadioButton) findViewById(R.id.rb_channel_beta);
         tvChannelTip = (TextView) findViewById(R.id.tv_channel_tip);
-        tvLabHome = (TextView) findViewById(R.id.tv_lab_home);
-        tvLabResult = (TextView) findViewById(R.id.tv_lab_result);
-        btnLabRun = (Button) findViewById(R.id.btn_lab_run);
+
+        // ── V1.0 Beta（TASK-018）实验室 · 遥控翻页 ──
+        rbRoleOff = (RadioButton) findViewById(R.id.rb_role_off);
+        rbRoleEink = (RadioButton) findViewById(R.id.rb_role_eink);
+        rbRolePhone = (RadioButton) findViewById(R.id.rb_role_phone);
+        tvRoleHint = (TextView) findViewById(R.id.tv_role_hint);
+        llRemoteSession = findViewById(R.id.ll_remote_session);
+        btnRemoteStart = (Button) findViewById(R.id.btn_remote_start);
+        btnRemoteStop = (Button) findViewById(R.id.btn_remote_stop);
+        tvRemoteStatus = (TextView) findViewById(R.id.tv_remote_status);
+        etRemoteIdle = (EditText) findViewById(R.id.et_remote_idle);
+        sectionCardInit = findViewById(R.id.section_card_init);
+        sectionCardCustom = findViewById(R.id.section_card_custom);
 
         // ── v0.4.3 顶部页签「初始化 / 自定义」；v0.7 加第三段「实验室」──
         // 三个页面是同一个 ScrollView 里的三个容器，切页只切 visibility。
@@ -188,8 +208,8 @@ public class SettingsActivity extends Activity {
                 pageLab.setVisibility(index == 2 ? View.VISIBLE : View.GONE);
                 // 切页回到顶部：各页高度不同，留着旧滚动位置会看着像"卡住了"
                 svSettings.scrollTo(0, 0);
-                // 常显行只在页面可见时算一次 —— 不轮询、不常驻
-                if (index == 2) refreshLabHome();
+                // 进实验室页时刷一次角色/状态显示 —— 不轮询、不常驻（会话状态由 Listener 推）
+                if (index == 2) refreshRoleUi();
             }
         });
 
@@ -543,19 +563,108 @@ public class SettingsActivity extends Activity {
         rbChannelStable.setOnCheckedChangeListener(channelL);
         rbChannelBeta.setOnCheckedChangeListener(channelL);
 
-        // ── v0.7（TASK-000）：实验室 · 设备能力自检（🔴 只读）──
-        btnLabRun.setOnClickListener(new View.OnClickListener() {
+        // ── V1.0 Beta（TASK-018）：实验室 · 遥控翻页 ──
+        //
+        // 角色三选一：写 remote_role → 重算本页显隐（说明 / 会话控件 / 卡片分区）。
+        // 🔴 不调 CardA11yService.sync()：遥控与卡片无关；卡片分区显隐只由本页决定。
+        int roleNow = CardPrefs.getRemoteRole(this);
+        rbRoleOff.setChecked(roleNow == CardPrefs.REMOTE_ROLE_OFF);
+        rbRoleEink.setChecked(roleNow == CardPrefs.REMOTE_ROLE_EINK);
+        rbRolePhone.setChecked(roleNow == CardPrefs.REMOTE_ROLE_PHONE);
+        CompoundButton.OnCheckedChangeListener roleL = new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                if (!checked) return;            // 只管"被选中的那个"
+                int id = b.getId();
+                int role = (id == R.id.rb_role_eink) ? CardPrefs.REMOTE_ROLE_EINK
+                        : (id == R.id.rb_role_phone) ? CardPrefs.REMOTE_ROLE_PHONE
+                        : CardPrefs.REMOTE_ROLE_OFF;
+                CardPrefs.setRemoteRole(SettingsActivity.this, role);
+                if (role == CardPrefs.REMOTE_ROLE_OFF
+                        && RemoteLinkManager.get().getState() != RemoteLinkManager.STATE_IDLE) {
+                    RemoteLinkManager.get().stopSession();   // 关遥控顺带断会话
+                }
+                refreshRoleUi();
+            }
+        };
+        rbRoleOff.setOnCheckedChangeListener(roleL);
+        rbRoleEink.setOnCheckedChangeListener(roleL);
+        rbRolePhone.setOnCheckedChangeListener(roleL);
+
+        // 开始 / 结束遥控（按需连接策略的唯一入口）
+        btnRemoteStart.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                runLab();
+                if (!RemoteKeyService.isAlive()) {
+                    toast("先到系统无障碍里打开「微读墨记 · 遥控」，再点「开始遥控」");
+                }
+                // 🔴 兜底（TASK-018 上机实测教训）：这里是主线程按钮入口，任何未捕获异常都会
+                //    **直接杀掉进程** —— 进程一死，本 App 的两个无障碍服务被系统一起解绑/停用，
+                //    用户侧观感就是「两边无障碍一起崩溃关闭 + App 崩溃」，且要手动重开无障碍。
+                //    故 fail-closed：把失败只写进状态行，不炸进程。
+                try {
+                    RemoteLinkManager.get().startSession(SettingsActivity.this);
+                } catch (Throwable t) {
+                    if (tvRemoteStatus != null) {
+                        tvRemoteStatus.setText(getString(R.string.lab_status_prefix) + "启动失败：" + t);
+                    }
+                    return;
+                }
+                refreshSessionButtons(RemoteLinkManager.get().getState());
             }
         });
-        ((Button) findViewById(R.id.btn_lab_copy)).setOnClickListener(new View.OnClickListener() {
+        btnRemoteStop.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                copyLabResult();
+                RemoteLinkManager.get().stopSession();
             }
         });
+
+        // 空闲超时：输入过程逐字符解析，但只在"落在合法区间且值真变了"才落盘
+        // （否则打一个字就写一次 prefs）。失焦时把非法/空值回填成已存值。
+        etRemoteIdle.setText(String.valueOf(CardPrefs.getRemoteIdleTimeout(this)));
+        etRemoteIdle.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) { }
+            @Override public void afterTextChanged(Editable s) {
+                String t = (s == null) ? "" : s.toString().trim();
+                if (t.length() == 0) return;             // 清空中间态：不落盘、不回填
+                int v;
+                try {
+                    v = Integer.parseInt(t);
+                } catch (NumberFormatException e) {
+                    return;
+                }
+                if (v < CardPrefs.REMOTE_IDLE_MIN || v > CardPrefs.REMOTE_IDLE_MAX) return;  // 越界中间态
+                if (v != CardPrefs.getRemoteIdleTimeout(SettingsActivity.this)) {
+                    CardPrefs.setRemoteIdleTimeout(SettingsActivity.this, v);
+                }
+            }
+        });
+        etRemoteIdle.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+            @Override
+            public void onFocusChange(View v, boolean hasFocus) {
+                if (!hasFocus) {                          // 失焦回填成合法值
+                    etRemoteIdle.setText(
+                            String.valueOf(CardPrefs.getRemoteIdleTimeout(SettingsActivity.this)));
+                }
+            }
+        });
+
+        // 去系统无障碍设置（角色切换后需重开对应服务 —— A8 文案硬约束）
+        ((Button) findViewById(R.id.btn_lab_a11y)).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                try {
+                    startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+                } catch (Throwable t) {
+                    toast("打不开无障碍设置：" + t);
+                }
+            }
+        });
+
+        // 首次进页即按角色定一次显隐（phone 角色要立刻隐藏「桌面卡片」分区）
+        refreshRoleUi();
     }
 
     @Override
@@ -563,6 +672,7 @@ public class SettingsActivity extends Activity {
         super.onResume();
         // 和主页一样：告诉服务"用户在自家界面"，桌面卡片要让位
         CardA11yService.noteOwnUiForeground(true);
+        refreshRoleUi();          // 按角色重算显隐（phone 角色隐藏「桌面卡片」分区）
         refreshStatus();
         refreshChannelTip();       // TASK-020：说明行按当前通道刷新（无弹窗）
         refreshUpdateUi();
@@ -572,6 +682,8 @@ public class SettingsActivity extends Activity {
     protected void onPause() {
         super.onPause();
         CardA11yService.noteOwnUiForeground(false);
+        // 页面不在前台就不再收会话状态（避免持引用）；回来时 onResume 会重新注册
+        RemoteLinkManager.get().setStateListener(null);
     }
 
     /**
@@ -649,72 +761,77 @@ public class SettingsActivity extends Activity {
         }
     }
 
-    // ────────────────────── v0.7（TASK-000）：实验室 · 设备能力自检 ──────────────────────
+    // ────────────────────── V1.0 Beta（TASK-018）：实验室 · 遥控翻页 ──────────────────────
 
     /**
-     * 常显行：当前**系统默认桌面**（TASK-000 并入项 B3）。
+     * 按当前角色刷新本页显隐与文案（onCreate / onResume / 角色切换后调用）。
      *
-     * 只在实验室页可见时算一次 —— 不轮询、不常驻、不加权限。
+     * 三类联动：
+     *   ① 角色说明文本（off / eink / phone 各一句，只写已验证事实）；
+     *   ② 会话控件（role != off 才显示：开始·结束 / 状态 / 空闲超时 / 互斥提示）；
+     *   ③ 🔴 phone 角色整块隐藏两处「桌面卡片」分区（A7；卡片在该机没有使用场景）。
      *
-     * 🔴 刻意只说「系统默认桌面」，**不说「当前前台是谁」**：窗口内容能力只有
-     *   a11y 的设置页探测（TASK-009）在用，实验室页刻意不读前台，写出来只会误导。
+     * 顺带注册会话状态监听 —— 主线程直推，页面不需要轮询。
      */
-    private void refreshLabHome() {
-        try {
-            tvLabHome.setText(DefaultHomeProbe.toDisplay(DefaultHomeProbe.probe(this)));
-        } catch (Throwable t) {
-            tvLabHome.setText("当前系统默认桌面：读取失败\n" + t);
+    private void refreshRoleUi() {
+        RemoteRole role = RemoteRole.from(this);
+        remotePhone = (role == RemoteRole.PHONE);
+
+        if (tvRoleHint != null) {
+            tvRoleHint.setText(role == RemoteRole.EINK ? getString(R.string.lab_role_hint_eink)
+                    : role == RemoteRole.PHONE ? getString(R.string.lab_role_hint_phone)
+                    : getString(R.string.lab_role_hint_off));
         }
+        if (llRemoteSession != null) {
+            llRemoteSession.setVisibility(role == RemoteRole.OFF ? View.GONE : View.VISIBLE);
+        }
+        // 🔴 phone 角色隐藏「桌面卡片」分区（A7）
+        int cardVis = (role == RemoteRole.PHONE) ? View.GONE : View.VISIBLE;
+        if (sectionCardInit != null) sectionCardInit.setVisibility(cardVis);
+        if (sectionCardCustom != null) sectionCardCustom.setVisibility(cardVis);
+
+        // 会话状态：注册监听会立刻回推一次当前状态（页面无需手动刷新）
+        RemoteLinkManager.get().setStateListener(mStateListener);
     }
 
-    /** 跑一轮设备能力自检（下后台线程，见 {@link LabRunner}）；期间按钮禁用，避免连点。 */
-    private void runLab() {
-        if (labRunning) return;
-        labRunning = true;
-        btnLabRun.setEnabled(false);
-        btnLabRun.setText(getString(R.string.lab_running));
-        tvLabResult.setText("");
-        final long t0 = System.currentTimeMillis();
-        try {
-            LabRunner.run(this, new LabRunner.Callback() {
-                @Override
-                public void onDone(String text, List<ProbeResult> results,
-                                   DefaultHomeProbe.Result home) {
-                    labRunning = false;
-                    labText = text;
-                    btnLabRun.setEnabled(true);
-                    btnLabRun.setText(getString(R.string.btn_lab_run));
-                    // 顺手把常显行也刷一遍 —— 用的就是这一轮的探测结果，不额外算
-                    tvLabHome.setText(DefaultHomeProbe.toDisplay(home));
-                    tvLabResult.setText(text);
-                    toast("自检完成（" + (System.currentTimeMillis() - t0) + "ms），可点「复制结果」");
-                }
-            });
-        } catch (Throwable t) {
-            labRunning = false;
-            btnLabRun.setEnabled(true);
-            btnLabRun.setText(getString(R.string.btn_lab_run));
-            toast("自检启动失败：" + t);
+    /** 会话状态回调（主线程）—— 只更新状态行与两个按钮的可用性。 */
+    private final RemoteLinkManager.StateListener mStateListener = new RemoteLinkManager.StateListener() {
+        @Override
+        public void onStateChanged(int state, String peerIp, String detail) {
+            showSessionState(state, peerIp, detail);
         }
+    };
+
+    /** 把会话状态写进状态行，并设置开始/结束两个按钮的可用性。 */
+    private void showSessionState(int state, String peerIp, String detail) {
+        if (tvRemoteStatus == null) return;
+        String text;
+        switch (state) {
+            case RemoteLinkManager.STATE_CONNECTING:
+                text = (detail != null && detail.length() > 0) ? detail : "连接中…";
+                break;
+            case RemoteLinkManager.STATE_CONNECTED:
+                text = (peerIp != null && peerIp.length() > 0)
+                        ? getString(R.string.lab_status_connected, peerIp) : "已连接";
+                break;
+            case RemoteLinkManager.STATE_CLOSED:
+                text = (detail != null && detail.length() > 0) ? detail : "已断开";
+                break;
+            case RemoteLinkManager.STATE_IDLE:
+            default:
+                text = getString(R.string.lab_status_idle);
+                break;
+        }
+        tvRemoteStatus.setText(getString(R.string.lab_status_prefix) + text);
+        refreshSessionButtons(state);
     }
 
-    /** 把最近一次自检结果整段复制到剪贴板（用户要贴给对话用）。 */
-    private void copyLabResult() {
-        if (labText == null || labText.length() == 0) {
-            toast("先点「开始设备能力自检」");
-            return;
-        }
-        try {
-            ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-            if (cm == null) {
-                toast("拿不到剪贴板服务");
-                return;
-            }
-            cm.setPrimaryClip(ClipData.newPlainText("微读墨记 · 设备能力自检", labText));
-            toast("已复制到剪贴板");
-        } catch (Throwable t) {
-            toast("复制失败：" + t);
-        }
+    /** 会话进行中（CONNECTING / CONNECTED）禁用「开始」—— 避免重复起会话。 */
+    private void refreshSessionButtons(int state) {
+        boolean active = (state == RemoteLinkManager.STATE_CONNECTING
+                || state == RemoteLinkManager.STATE_CONNECTED);
+        if (btnRemoteStart != null) btnRemoteStart.setEnabled(!active);
+        if (btnRemoteStop != null) btnRemoteStop.setEnabled(active);
     }
 
     // ────────────────────── v0.5.0：版本与更新 ──────────────────────

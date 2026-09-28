@@ -155,4 +155,48 @@ public final class CardPrefs {
                 .putString("update_channel", CHANNEL_BETA.equals(v) ? CHANNEL_BETA : CHANNEL_STABLE)
                 .commit();
     }
+
+    // ── TASK-018：遥控翻页（V1.0 Beta）──
+    //
+    // 同一 APK 装两端，remote_role 决定启用哪几个环节（docs/FEATURES/remote.md）：
+    //   off（默认）= 与现状零差异；eink = 收指令注入翻页手势；phone = 捕获音量键发指令。
+
+    /** 遥控角色：关闭（默认 —— 不开 socket、不建连，设置页只多一个角色开关） */
+    public static final int REMOTE_ROLE_OFF = 0;
+    /** 遥控角色：墨水屏端（Client：连手机热点网关，收指令 → 注入左右滑） */
+    public static final int REMOTE_ROLE_EINK = 1;
+    /** 遥控角色：手机端（Server：listen 等墨水屏连入，捕获音量键 → 发指令） */
+    public static final int REMOTE_ROLE_PHONE = 2;
+
+    public static final int DEFAULT_REMOTE_ROLE = REMOTE_ROLE_OFF;
+
+    /** 空闲自动断开的默认秒数（显式会话 + 用完即断，按需连接策略） */
+    public static final int REMOTE_IDLE_DEFAULT = 300;
+    public static final int REMOTE_IDLE_MIN = 30;
+    public static final int REMOTE_IDLE_MAX = 3600;
+
+    public static int getRemoteRole(Context c) {
+        int v = sp(c).getInt("remote_role", DEFAULT_REMOTE_ROLE);
+        if (v < REMOTE_ROLE_OFF || v > REMOTE_ROLE_PHONE) return DEFAULT_REMOTE_ROLE;
+        return v;
+    }
+
+    public static void setRemoteRole(Context c, int v) {
+        if (v < REMOTE_ROLE_OFF || v > REMOTE_ROLE_PHONE) v = DEFAULT_REMOTE_ROLE;
+        sp(c).edit().putInt("remote_role", v).commit();
+    }
+
+    /** 空闲超时（秒）。越界值钳回 [MIN, MAX]，与 note_card_size 同一套安全读出纪律。 */
+    public static int getRemoteIdleTimeout(Context c) {
+        int v = sp(c).getInt("remote_idle_timeout", REMOTE_IDLE_DEFAULT);
+        if (v < REMOTE_IDLE_MIN) return REMOTE_IDLE_MIN;
+        if (v > REMOTE_IDLE_MAX) return REMOTE_IDLE_MAX;
+        return v;
+    }
+
+    public static void setRemoteIdleTimeout(Context c, int v) {
+        if (v < REMOTE_IDLE_MIN) v = REMOTE_IDLE_MIN;
+        if (v > REMOTE_IDLE_MAX) v = REMOTE_IDLE_MAX;
+        sp(c).edit().putInt("remote_idle_timeout", v).commit();
+    }
 }

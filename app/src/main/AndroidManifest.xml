@@ -77,5 +77,25 @@
                 android:resource="@xml/a11y_card_service" />
         </service>
 
+        <!-- 遥控翻页（TASK-018，V1.0 Beta）：独立的第二个无障碍服务 —— 🔴 与上面的卡片服务
+             **分离**是硬约束（ADR-010 决定 5）：按键过滤/手势执行等新能力全部落在这里，
+             a11y_card_service.xml 一字不改 ⇒ 现有纯墨水屏用户的无障碍声明不受影响、
+             且不撞「全局同时只有一个服务能过滤按键」的互斥（不用遥控的老用户两者天然隔离）。
+             权限说明：本服务 = 观察输入（仅按键过滤）+ 执行手势 + INTERNET（已有权限）；
+             不读窗口内容（canRetrieveWindowContent=false）。配置见 res/xml/a11y_remote_service.xml。
+             默认 remote_role=off：不启用 ⇒ 对现状零差异（验收 A5）。 -->
+        <service
+            android:name=".remote.RemoteKeyService"
+            android:exported="true"
+            android:label="@string/remote_svc_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/a11y_remote_service" />
+        </service>
+
     </application>
 </manifest>

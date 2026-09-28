@@ -5,6 +5,10 @@
 
 🔴 **这是本工程唯一的"呈现方式"** —— 标准 AppWidget / 壁纸模式 / ADB 悬浮窗都**已定论不可行**（见 `MEMORY.md`）。
 
+> 🔗 **另有第二个无障碍服务**：`remote/RemoteKeyService`（遥控翻页，TASK-018）—— 与本包的卡片服务
+> **完全独立**（配置 `res/xml/a11y_remote_service.xml`，`a11y_card_service.xml` 一字不改）。
+> 它不读窗口内容、不碰任何卡片逻辑；本包**不依赖** `remote`，卡片判据一行未动。
+
 > ✅ **2026-09-25 · TASK-006 已拆**：原 `CardA11yService` **2,228 行**巨类 → 7 个类，
 > 薄壳降到 **259 行**。**判据一行未改**（双向归一化逐行比对，差异 0 条）。
 > ✅ **2026-09-26 · TASK-009 增第 8 类**：`SettingsPageProbe`（ELauncher 设置页内容探测，
