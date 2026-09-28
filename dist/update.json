@@ -1,13 +1,13 @@
 {
-  "versionCode": 33,
-  "versionName": "0.9.1",
-  "tag": "v0.9.1",
-  "notes": "新增「更新通道」选择器（设置页「版本与更新」区）：可在正式版与 Beta 之间一键切换更新来源。覆盖升级无需重开无障碍。",
-  "apk": "dist/weread-stats-0.9.1.apk",
-  "size": 292656,
-  "sha256": "95757e120175e361968af9e157736c183452e186062da7243637c8380bf327ea",
+  "versionCode": 34,
+  "versionName": "1.0.0-beta.1",
+  "tag": "v1.0.0-beta.1",
+  "notes": "遥控翻页（Beta · 实验）：手机当遥控器，按音量键给墨水屏上的微信读书翻页。需手机屏幕保持点亮（锁屏/息屏后系统不派发音量键）。",
+  "apk": "dist/weread-stats-1.0.0-beta.1.apk",
+  "size": 296829,
+  "sha256": "1129e8928f608d64d9d3653205b01860a9d10d497b28d0748eeaee173d83476b",
   "urls": [
-    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v0.9.1/dist/weread-stats-0.9.1.apk",
-    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v0.9.1/dist/weread-stats-0.9.1.apk"
+    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v1.0.0-beta.1/dist/weread-stats-1.0.0-beta.1.apk",
+    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v1.0.0-beta.1/dist/weread-stats-1.0.0-beta.1.apk"
   ]
 }
