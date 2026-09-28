@@ -16,7 +16,21 @@ public interface RemoteLink {
         /** 收到一条可识别指令（已由 {@link RemoteProtocol#parse} 解析）。 */
         void onCommand(int cmd, String rawLine);
 
-        /** 链路终结（重试耗尽 / 读失败 / 对端消失）。用户主动 stop() **不会**触发本回调。 */
+        /**
+         * 一条**已建立的连接**断开（对端正常 close / 读 IOException），但**链路本身未终结**：
+         * Server 退回 accept 等重连、Client 进入重连重试。
+         *
+         * 🔴 与 {@link #onDisconnected} 区分：本回调是"当前这一条连接没了"，会话层据此把 UI
+         *   从「已连接」退出（退回「等待重连」），**不**结束会话；只有重试耗尽 / 用户 stop /
+         *   空闲超时才走 {@link #onDisconnected} 真正终结（规格 `docs/FEATURES/remote.md`
+         *   「对端消失（自动重连，重连失败 N 次则退出会话）」，TASK-018 观察项 O1 修复）。
+         */
+        void onConnectionLost(String reason);
+
+        /**
+         * 链路**终结**（Server 停止 / Client 重试耗尽）。
+         * 用户主动 stop() **不会**触发本回调（重连 / 收尾策略归 RemoteLinkManager）。
+         */
         void onDisconnected(String reason);
     }
 

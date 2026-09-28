@@ -18,6 +18,8 @@ import java.net.NetworkInterface;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Enumeration;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 /**
  * TCP 传输实现（ADR-010 D1：手机 = Server listen，墨水屏 = Client 连默认网关）。
@@ -29,7 +31,8 @@ import java.util.Enumeration;
  *  - Server：一直 listen；客户端断开后回到 accept 等墨水屏重连；
  *  - Client：connect 失败重试 {@link #RETRY_MAX} 次；连上又断 = 链路丢失，重新进入重试循环；
  *  - 不做应用层心跳（SO_KEEPALIVE 足够，按需连接策略）；
- *  - 用户 stop() 幂等，且**不会**触发 onDisconnected（重连策略归 RemoteLinkManager）。
+ *  - 断掉的**每一条连接**都回调 {@link Listener#onConnectionLost}（会话层据此退出「已连接」，O1）；
+ *  - 用户 stop() 幂等，且**不会**触发 onConnectionLost / onDisconnected（重连策略归 RemoteLinkManager）。
  */
 public class WifiTcpLink implements RemoteLink {
 
@@ -46,6 +49,9 @@ public class WifiTcpLink implements RemoteLink {
     private volatile boolean mStopped;        // 用户主动 stop ⇒ 不回调 onDisconnected
     private volatile Socket mSocket;
     private ServerSocket mServerSocket;
+
+    /** 待发指令队列（只在 {@link #runWriter()} 线程消费）。send() 只入队，绝不在此做 IO。 */
+    private final LinkedBlockingQueue<Integer> mSendQueue = new LinkedBlockingQueue<Integer>();
 
     /** @param server true = 手机端（listen）；false = 墨水屏端（connect 网关）。 */
     public WifiTcpLink(boolean server, String gateway) {
@@ -65,6 +71,16 @@ public class WifiTcpLink implements RemoteLink {
         }, "WifiTcpLink");
         t.setDaemon(true);
         t.start();
+        // 🔴 专用写线程：见 runWriter() 的注释 —— 发送指令的调用点都在**主线程**，
+        //    在主线程 write socket 会抛 NetworkOnMainThreadException（上机实测）。
+        Thread w = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                runWriter();
+            }
+        }, "WifiTcpLink-writer");
+        w.setDaemon(true);
+        w.start();
     }
 
     private void runLink() {
@@ -127,6 +143,8 @@ public class WifiTcpLink implements RemoteLink {
 
     /** 单条连接的读写循环，阻塞到连接断开。Client 建链后先发 HELLO（对端本版忽略）。 */
     private void serve(Socket s) {
+        boolean established = false;      // 是否已回调 onConnected（收尾时判断要不要报「连接丢失」）
+        String lose = "对端断开";          // 默认：对端正常 close（readLine() 返回 null）
         try {
             mSocket = s;
             s.setKeepAlive(true);
@@ -143,6 +161,7 @@ public class WifiTcpLink implements RemoteLink {
             if (l != null) {
                 l.onConnected(s.getInetAddress().getHostAddress());
             }
+            established = true;
             String line;
             while (mRunning && (line = r.readLine()) != null) {
                 Listener ll = mListener;
@@ -154,6 +173,7 @@ public class WifiTcpLink implements RemoteLink {
             }
         } catch (IOException e) {
             Log.w(TAG, "session io " + e);
+            lose = "链路异常";
         } finally {
             try {
                 s.close();
@@ -163,30 +183,85 @@ public class WifiTcpLink implements RemoteLink {
                 mSocket = null;
             }
             mOutCache = null;
+            // 🔴 单条连接断开 ⇒ 通知会话层把 UI 从「已连接」退出（O1 修复）：
+            //    此前只在 runLink() 收尾回调 onDisconnected，而 Server 端对端断开后
+            //    serve() 会**正常返回**、回到 accept 继续等重连，**全程不回调** ⇒ 状态行滞留
+            //    「已连接」直到空闲超时（默认 300s），期间按键静默失败（用户侧："假装连着"）。
+            //    用户主动 stop() 不触发（mStopped 已置位）。
+            if (established && !mStopped) {
+                Listener l = mListener;
+                if (l != null) {
+                    l.onConnectionLost(lose);
+                }
+            }
         }
     }
 
+    /**
+     * 只**入队**，不做任何 IO。
+     *
+     * 🔴 调用方都在**主线程**（`RemoteKeyService.onKeyEvent` 是系统主线程回调；
+     *   设置页「结束遥控」按钮也是主线程）。若在本方法里直接 write socket，Android 会抛
+     *   {@code NetworkOnMainThreadException} ⇒ **杀进程** ⇒ 本 App 两个无障碍服务被一起停用
+     *   （TASK-018 墨水屏真机实测：按一次音量键即复现）。真正的 write 由
+     *   {@link #runWriter()} 在专用线程串行执行。
+     *
+     * @return true = 已接受（入队）；false = 指令非法或当前未连接（fail-closed，不排队）。
+     */
     @Override
     public boolean send(int cmd) {
-        String text;
-        switch (cmd) {
-            case RemoteProtocol.CMD_PAGE_NEXT: text = RemoteProtocol.PAGE_NEXT; break;
-            case RemoteProtocol.CMD_PAGE_PREV: text = RemoteProtocol.PAGE_PREV; break;
-            case RemoteProtocol.CMD_BYE:       text = RemoteProtocol.BYE; break;
-            default: return false;
+        if (cmdText(cmd) == null) return false;
+        if (!isConnected()) return false;
+        mSendQueue.offer(cmd);
+        return true;
+    }
+
+    /**
+     * 专用写线程：串行消费发送队列，**socket write 只在这里发生**。
+     *
+     * 与读线程（{@link #serve} 所在的 "WifiTcpLink" 线程）分离，天然串行，无需额外锁语义。
+     * 未连接时取出的指令直接丢弃（fail-closed），不会积压。
+     */
+    private void runWriter() {
+        while (mRunning) {
+            Integer cmd;
+            try {
+                cmd = mSendQueue.poll(500, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException ie) {
+                return;
+            }
+            if (cmd == null) continue;
+            doSend(cmd);
         }
+    }
+
+    /** 在写线程里真正落一行指令；未连接则丢弃。 */
+    private void doSend(int cmd) {
+        String text = cmdText(cmd);
+        if (text == null) return;
         OutputStream w = mOutCache;
-        if (w == null || !isConnected()) return false;
+        if (w == null || !isConnected()) {
+            Log.w(TAG, "send skipped (not connected) " + text);
+            return;
+        }
         try {
             synchronized (this) {
                 w.write((text + "\n").getBytes("UTF-8"));
                 w.flush();
             }
             Log.i(TAG, "send " + text);
-            return true;
         } catch (IOException e) {
             Log.w(TAG, "send failed " + e);
-            return false;
+        }
+    }
+
+    /** 指令字元映射；非法指令返回 null。 */
+    private static String cmdText(int cmd) {
+        switch (cmd) {
+            case RemoteProtocol.CMD_PAGE_NEXT: return RemoteProtocol.PAGE_NEXT;
+            case RemoteProtocol.CMD_PAGE_PREV: return RemoteProtocol.PAGE_PREV;
+            case RemoteProtocol.CMD_BYE:       return RemoteProtocol.BYE;
+            default: return null;
         }
     }
 

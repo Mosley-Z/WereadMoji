@@ -68,12 +68,21 @@ public class RemoteKeyService extends AccessibilityService {
                 return false;
         }
         // ②③ 只认 keyCode；仅 repeat==0 产生翻页（A12 长按不连翻），重复 DOWN 也消费掉
-        if (event.getRepeatCount() == 0) {
-            boolean sent = RemoteLinkManager.get().sendCommand(cmd);
-            Log.i(TAG, "onKeyEvent keyCode=" + event.getKeyCode()
-                    + " repeat=0 → " + RemoteProtocol.name(cmd) + " sent=" + sent);
-        } else {
-            Log.i(TAG, "onKeyEvent repeat=" + event.getRepeatCount() + " ignored（P8=A 长按不连翻）");
+        //
+        // 🔴 try/catch 兜底：本方法是**系统在主线程的回调**，任何未捕获异常都会**杀掉整个进程**，
+        //    进而把本 App 的两个无障碍服务一起停用（上机实测：曾因 sendCommand 在主线程
+        //    write socket 抛 NetworkOnMainThreadException 而整进程崩溃）。异常只落到日志，
+        //    绝不逃逸出本方法。
+        try {
+            if (event.getRepeatCount() == 0) {
+                boolean sent = RemoteLinkManager.get().sendCommand(cmd);
+                Log.i(TAG, "onKeyEvent keyCode=" + event.getKeyCode()
+                        + " repeat=0 → " + RemoteProtocol.name(cmd) + " sent=" + sent);
+            } else {
+                Log.i(TAG, "onKeyEvent repeat=" + event.getRepeatCount() + " ignored（P8=A 长按不连翻）");
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "onKeyEvent failed(swallowed): " + t);
         }
         return true;   // 消费：音量条不出现
     }

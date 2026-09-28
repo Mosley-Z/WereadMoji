@@ -12,13 +12,15 @@ import com.inkread.weekread.core.CardPrefs;
  *
  * <pre>
  * off（默认）──点「开始遥控」──▶ CONNECTING ──链路通──▶ CONNECTED
- *   ▲                            │                        │ 每条指令刷新 lastActiveAt
- *   │                            │         ┌──────────────┤
- *   └── CLOSED ◀──任一条件成立：点「结束」/ 空闲超时 / 链路丢失 / 服务被回收
+ *   ▲                            ▲   │                    │ 每条指令刷新 lastActiveAt
+ *   │                            └───┼──对端断开（O1 回落）──┘
+ *   │                                │
+ *   └── CLOSED ◀──任一条件成立：点「结束」/ 空闲超时 / 重试耗尽（链路丢失）/ 服务被回收
  * </pre>
  *
  * 不做心跳（SO_KEEPALIVE 足够）；Client 重连由 {@link WifiTcpLink} 内建（RETRY_MAX 次），
  * 重试耗尽即链路丢失 → 会话结束，**不自动重启会话**（「开始遥控」永远由用户显式发起）。
+ * 🔴 收到对端 `BYE` ⇒ 立即结束会话（O3）；单条连接断开 ⇒ 退回 CONNECTING 等重连（O1，不结束会话）。
  *
  * 线程模型：状态只在主线程变化（网络回调全部 post 回主线程），无需加锁。
  * 空闲超时兜底：连接中（CONNECTING）也计时 —— 一直连不上时超时自动退会话。
@@ -62,6 +64,7 @@ public final class RemoteLinkManager {
     private StateListener mListener;
     private CommandSink mCommandSink;
     private Context mAppContext;
+    private boolean mServer;                  // 本端是否 Server（连接断开文案区分「等待重连」/「正在重连」）
 
     private final Runnable mIdleCheck = new Runnable() {
         @Override
@@ -132,6 +135,7 @@ public final class RemoteLinkManager {
         mAppContext = c.getApplicationContext();
         mIdleTimeoutMs = CardPrefs.getRemoteIdleTimeout(c) * 1000;
         boolean server = (role == RemoteRole.PHONE);
+        mServer = server;
         String gateway = server ? null : WifiTcpLink.gatewayIp(mAppContext);
         if (!server && (gateway == null || gateway.length() == 0)) {
             Log.w(TAG, "session: no gateway —— 墨水屏还没连上热点？");
@@ -167,12 +171,40 @@ public final class RemoteLinkManager {
                             return;
                         }
                         Log.i(TAG, "recv " + rawLine);
+                        // 🔴 O3 修复：对端主动结束会话 ⇒ 本端立即结束。
+                        //    此前 BYE 被送进 CommandSink（注入层只认翻页指令）后**静默丢弃**，
+                        //    对端点「结束遥控」本端毫无感知，状态行一直显示「已连接」，
+                        //    直到空闲超时（默认 300s）才跳出「已断开（空闲超时）」。
+                        if (cmd == RemoteProtocol.CMD_BYE) {
+                            Log.i(TAG, "session: recv BYE → peer ended，本端结束会话");
+                            endSessionInternal("对端已结束");
+                            return;
+                        }
                         mLastActiveAt = System.currentTimeMillis();
                         scheduleIdleCheck();
                         CommandSink sink = mCommandSink;
                         if (sink != null) {
                             sink.inject(cmd);
                         }
+                    }
+                });
+            }
+
+            @Override
+            public void onConnectionLost(final String reason) {
+                mHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        // 🔴 O1 修复：单条连接断了（对端消失 / 链路异常）⇒ 从「已连接」退回「等待重连」。
+                        //    会话**不**结束：Server 仍在 listen、Client 仍在重试，重连上会再回调
+                        //    onConnected 回到「已连接」；真正的终结交给重试耗尽（onDisconnected）
+                        //    或空闲超时兜底（规格 remote.md「重连失败 N 次则退出会话」）。
+                        if (mState != STATE_CONNECTED) {
+                            return;   // 会话已结束 / 尚未建立 ⇒ 忽略
+                        }
+                        Log.w(TAG, "session: connection lost (" + reason + ")，等待重连");
+                        setState(STATE_CONNECTING, null,
+                                mServer ? "对端断开，等待重连…" : "连接中断，正在重连…");
                     }
                 });
             }
