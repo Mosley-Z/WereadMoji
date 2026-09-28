@@ -1,8 +1,10 @@
 package com.inkread.weekread.remote;
 
 import android.content.Context;
-import android.net.DhcpInfo;
-import android.net.wifi.WifiManager;
+import android.net.ConnectivityManager;
+import android.net.LinkProperties;
+import android.net.Network;
+import android.net.RouteInfo;
 import android.util.Log;
 
 import java.io.BufferedReader;
@@ -218,15 +220,57 @@ public class WifiTcpLink implements RemoteLink {
 
     // ── 工具 ──
 
-    /** 默认网关（DhcpInfo.gateway，热点下 = 手机地址）。返回点分十进制，取不到返回 null。 */
+    /**
+     * 默认网关（热点下 = 手机地址）。返回**点分十进制 IPv4**，取不到返回 null。
+     *
+     * 🔴 为什么**不用** {@code WifiManager.getDhcpInfo()}（TASK-018 上机实测踩坑记录）：
+     *   该 API 受 {@code android.permission.ACCESS_WIFI_STATE} 保护，而本包**未声明**它
+     *   ⇒ 真机直接抛
+     *   {@code SecurityException: WifiService: Neither user … nor current process has
+     *   android.permission.ACCESS_WIFI_STATE}。
+     *   调用点在主线程（设置页「开始遥控」按钮）⇒ 未捕获异常**直接杀掉进程**；进程一死，
+     *   本 App 的两个无障碍服务被系统一起解绑/停用，用户侧观感就是
+     *   「手机 + 墨水屏两边无障碍一起崩溃关闭 + App 崩溃」。
+     *   改用 ConnectivityManager 的**默认路由**取网关：只需已声明的
+     *   {@code ACCESS_NETWORK_STATE}，**不新增任何权限**（权限说明保持干净）。
+     *
+     * 🔴🔴 必须**只认 IPv4 默认路由**（TASK-018 上机实测，墨水屏 S4 二次踩坑）：
+     *   同一个 Wi-Fi 网络的 {@link LinkProperties#getRoutes()} 里**同时有两条 default**，
+     *   且 **IPv6 那条排在前面**（实测 `dumpsys connectivity`）：
+     *   <pre>
+     *   Routes: [ fe80::/64 -> ::                       ← IPv6 前缀路由
+     *             ::/0 -> fe80::f0df:66ff:fe3c:3db      ← IPv6 默认路由（RA，链路本地）★排第一
+     *             10.116.3.0/24 -> 0.0.0.0
+     *             0.0.0.0/0 -> 10.116.3.131 ]           ← IPv4 默认路由（真正的热点网关）
+     *   </pre>
+     *   如果像前一版那样「取第一条 default 路由」，拿到的会是 IPv6 **链路本地**地址
+     *   （由手机 MAC 推的 EUI-64），而链路本地地址**不带 scope id 无法 connect**
+     *   ⇒ 12 次重试全部 {@code ConnectException: EINVAL}，客户端永远连不上。
+     *   故此处跳过非 {@link Inet4Address} 的网关；若整个网络没有 IPv4 默认路由则返回 null，
+     *   由调用方 fail-closed 提示用户（本版拓扑是 IPv4 热点，够用）。
+     */
     static String gatewayIp(Context c) {
-        WifiManager wm = (WifiManager) c.getApplicationContext()
-                .getSystemService(Context.WIFI_SERVICE);
-        if (wm == null) return null;
-        DhcpInfo d = wm.getDhcpInfo();
-        if (d == null || d.gateway == 0) return null;
-        int g = d.gateway;
-        return (g & 0xff) + "." + ((g >> 8) & 0xff) + "." + ((g >> 16) & 0xff) + "." + ((g >> 24) & 0xff);
+        try {
+            ConnectivityManager cm = (ConnectivityManager) c.getApplicationContext()
+                    .getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) return null;
+            Network net = cm.getActiveNetwork();
+            LinkProperties lp = (net == null) ? null : cm.getLinkProperties(net);
+            if (lp == null) return null;
+            for (RouteInfo r : lp.getRoutes()) {
+                if (!r.isDefaultRoute()) continue;
+                InetAddress gw = r.getGateway();
+                // 只认 IPv4：IPv6 默认路由在热点下是链路本地地址，connect 必然 EINVAL
+                if (!(gw instanceof Inet4Address)) continue;
+                String ip = gw.getHostAddress();
+                if (ip != null && ip.length() > 0) return ip;
+            }
+        } catch (Throwable t) {
+            // fail-closed：取不到网关一律返回 null，交给调用方给用户提示，
+            // 绝不把异常抛回主线程（抛回 = 炸进程 = 连带停用无障碍）
+            Log.w(TAG, "gatewayIp failed: " + t);
+        }
+        return null;
     }
 
     /** 本机 IPv4（HELLO 用，非环回）。取不到返回 null。 */

@@ -559,7 +559,18 @@ public class SettingsActivity extends Activity {
                 if (!RemoteKeyService.isAlive()) {
                     toast("先到系统无障碍里打开「微读墨记 · 遥控」，再点「开始遥控」");
                 }
-                RemoteLinkManager.get().startSession(SettingsActivity.this);
+                // 🔴 兜底（TASK-018 上机实测教训）：这里是主线程按钮入口，任何未捕获异常都会
+                //    **直接杀掉进程** —— 进程一死，本 App 的两个无障碍服务被系统一起解绑/停用，
+                //    用户侧观感就是「两边无障碍一起崩溃关闭 + App 崩溃」，且要手动重开无障碍。
+                //    故 fail-closed：把失败只写进状态行，不炸进程。
+                try {
+                    RemoteLinkManager.get().startSession(SettingsActivity.this);
+                } catch (Throwable t) {
+                    if (tvRemoteStatus != null) {
+                        tvRemoteStatus.setText(getString(R.string.lab_status_prefix) + "启动失败：" + t);
+                    }
+                    return;
+                }
                 refreshSessionButtons(RemoteLinkManager.get().getState());
             }
         });

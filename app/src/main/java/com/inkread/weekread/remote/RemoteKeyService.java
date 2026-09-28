@@ -89,6 +89,10 @@ public class RemoteKeyService extends AccessibilityService {
 
     @Override
     public void onDestroy() {
+        // 必须留痕：服务被系统回收会连带结束会话（RemoteLinkManager.onServiceDestroyed），
+        // 是「点开始遥控后立刻变成『无障碍服务已回收』」这类现象的唯一线索
+        // （TASK-018 上机排查：曾因本方法零日志而只能靠推断）
+        Log.i(TAG, "SERVICE_DESTROYED isSelf=" + (sInstance == this));
         sInstance = null;
         RemoteLinkManager.get().onServiceDestroyed();
         super.onDestroy();
