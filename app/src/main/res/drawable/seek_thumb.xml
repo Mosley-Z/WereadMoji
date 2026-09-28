@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  TASK-016：设置页「本记字号（卡片）」滑杆的滑块 —— 一个实心黑方块。
+
+  尺寸 18×26 dp：比系统默认滑块大一圈，理由是手指 + 墨水屏没有 hover/高亮反馈，
+  小方块一旦按偏就完全看不出自己按在哪儿。方角（不加 corners）也是为了在黑白屏上边界清晰。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <size android:width="18dp" android:height="26dp" />
+    <solid android:color="#FF000000" />
+</shape>

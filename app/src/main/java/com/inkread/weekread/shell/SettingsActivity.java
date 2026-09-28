@@ -30,12 +30,14 @@ import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.RadioButton;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
 
 import java.io.File;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * 设置页：API Key + 桌面卡片开关 + **卡片显示周期（本周 / 本月）**。
@@ -90,6 +92,10 @@ public class SettingsActivity extends Activity {
     // ── v0.8.1（TASK-014）本月呈现方式（自定义页 · 桌面卡片分区）──
     private RadioButton rbMonthStyleCheckin;   // 打卡网格
     private RadioButton rbMonthStyleHeatmap;   // 阅读热力图（默认）
+
+    // ── v0.9（TASK-016）本记字号（卡片）（自定义页 · 桌面卡片分区）──
+    private SeekBar seekNoteCardSize;          // 12–24 号连续调节
+    private TextView tvNoteCardSize;           // 当前值，如「17 号 · 20.4px」
 
     private TextView tvStatus;
     private TextView tvVersion;
@@ -368,6 +374,40 @@ public class SettingsActivity extends Activity {
         rbMonthStyleCheckin.setOnCheckedChangeListener(monthStyleL);
         rbMonthStyleHeatmap.setOnCheckedChangeListener(monthStyleL);
 
+        // ── TASK-016 本记字号（卡片）：SeekBar 连续调节（12–24 号，默认 17）──
+        //
+        // 🔴 **墨水屏取舍：拖动中只更新数字，松手才落盘 + 让卡片重绘一次。**
+        // 卡片每重绘一次就是一次肉眼可见的全屏闪；拖一次滑杆要闪十几下，那不是"体验略差"，
+        // 是根本没法用。所以：onProgressChanged 只改这一行文字，真正的
+        // setNoteCardSize + sync() 放在 onStopTrackingTouch（松手那一瞬间只闪一次）。
+        // sync() 是既有路径（成就/本月呈现都走它）⇒ 服务 refresh 时由
+        // CardContentController#applyNoteFont 按新偏好重塞字号，零新增请求。
+        seekNoteCardSize = (SeekBar) findViewById(R.id.sb_note_card_size);
+        tvNoteCardSize = (TextView) findViewById(R.id.tv_note_card_size);
+        seekNoteCardSize.setMax(CardPrefs.NOTE_CARD_SIZE_MAX - CardPrefs.NOTE_CARD_SIZE_MIN);
+        int noteCardSize = CardPrefs.getNoteCardSize(this);
+        seekNoteCardSize.setProgress(noteCardSize - CardPrefs.NOTE_CARD_SIZE_MIN);
+        tvNoteCardSize.setText(noteCardSizeLabel(noteCardSize));
+        seekNoteCardSize.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar sb, int progress, boolean fromUser) {
+                // 拖动中只动这一行字 —— 不落盘、不 sync（理由见上）
+                tvNoteCardSize.setText(noteCardSizeLabel(progress + CardPrefs.NOTE_CARD_SIZE_MIN));
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar sb) {
+                // 不需要额外处理
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar sb) {
+                CardPrefs.setNoteCardSize(SettingsActivity.this,
+                        sb.getProgress() + CardPrefs.NOTE_CARD_SIZE_MIN);
+                CardA11yService.sync();          // 桌面卡片立刻按新字号重绘（只此一次）
+            }
+        });
+
         CompoundButton.OnCheckedChangeListener periodListener =
                 new CompoundButton.OnCheckedChangeListener() {
                     @Override
@@ -494,6 +534,19 @@ public class SettingsActivity extends Activity {
     protected void onPause() {
         super.onPause();
         CardA11yService.noteOwnUiForeground(false);
+    }
+
+    /**
+     * 「17 号 · 20.4px」—— 本记字号（卡片）滑杆当前值的显示文案（v0.9，TASK-016）。
+     *
+     * 为什么要把 px 也写出来：「号」是本项目的内部单位，用户没有这个概念；
+     * 只写"17 号"他无从判断大小。px 用 {@link com.inkread.weekread.feature.WeekCardView#UNIT_RATIO}
+     * 换算（"号 → px"的唯一真源，别在这里另抄一份 0.0015）。
+     */
+    private String noteCardSizeLabel(int num) {
+        float px = num * getResources().getDisplayMetrics().heightPixels
+                * com.inkread.weekread.feature.WeekCardView.UNIT_RATIO;
+        return num + " 号 · " + String.format(Locale.CHINA, "%.1f", px) + "px";
     }
 
     /**

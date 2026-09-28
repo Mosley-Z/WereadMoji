@@ -45,8 +45,13 @@ import android.view.View;
  */
 public class WeekCardView extends View {
 
-    /** 1 号 = 屏高 * 该系数 */
-    private static final float UNIT_RATIO = 0.0015f;
+    /**
+     * 1 号 = 屏高 × 该系数（480×800 屏上 = 1.2px）。
+     *
+     * ⚠️ 本常量是"号 → px"的**唯一真源**：设置页要按它把"17 号"显示成"20.4px"，
+     * 所以改成 public —— 别在别处再抄一份 0.0015（TASK-016）。
+     */
+    public static final float UNIT_RATIO = 0.0015f;
 
     /** 导出长图的宽度（与屏幕同宽，等比；高度按内容算）—— {@link NoteExport} 用 */
     public static final int EXPORT_W = 480;
@@ -101,6 +106,27 @@ public class WeekCardView extends View {
      * App 内（MainActivity）不塞此字段，App 版面不变（拍板：成就行只上桌面卡片）。
      */
     String achievementText = null;
+
+    /**
+     * 本记正文的字号（**号**，不是 px）—— **卡片档 / 桌面悬浮卡**（v0.9，TASK-016）。
+     *
+     * 以前是"按字数动态分档"（≤70 字用 18 号、否则 14 号）：字数一多字就变小，观感跳。
+     * 现在改成**固定 + 可调**，默认 17 号 = 桌面应用名称的字号（`验证记录/59` 项①实测
+     * 字形 20px ≈ 16.7 号）。超出的部分：卡片档靠限行 + 省略号（TASK-017 起有「展开▽」）。
+     *
+     * 值由 {@code CardContentController#applyNoteFont} 按 {@code CardPrefs} 算好塞进来 ——
+     * 🔴 渲染函数不读 prefs、不读文件（docs/03 §3），与 {@link #monthHeatmap} 同款口径。
+     */
+    float noteCardSize = com.inkread.weekread.core.CardPrefs.NOTE_CARD_SIZE_DEFAULT;
+
+    /**
+     * 本记正文的字号（号）—— **App 全屏档**（v0.9，TASK-016）。
+     *
+     * 由 `NoteExport.sizeTier`（小/中/大 = 15/17/19 号）决定，与导出图**同一个档位选择**。
+     * 长文靠已有的正文滚动消化，不再缩字号。
+     * 值由 {@code MainActivity#showNoteItem} 塞进来（同上的"渲染不读 prefs"口径）。
+     */
+    float noteFullSize = NoteExport.TIER_NUMS[NoteExport.SIZE_TIER_DEFAULT];
 
     /**
      * 本月呈现方式：**true = 热力图**（5 档黑度网点）/ **false = 打卡网格**（现状）。
@@ -341,6 +367,29 @@ public class WeekCardView extends View {
     public void setMonthHeatmap(boolean v) {
         if (monthHeatmap == v) return;
         monthHeatmap = v;
+        invalidate();
+    }
+
+    /**
+     * 设桌面卡片本记正文的字号（号，TASK-016）。
+     *
+     * same-check + invalidate 与 {@link #setMonthHeatmap} 同款 —— 值没变就不重绘
+     *（墨水屏每次全屏刷新肉眼可见，能省则省）。
+     */
+    public void setNoteCardSize(float v) {
+        if (Math.abs(v - noteCardSize) < 0.01f) return;
+        noteCardSize = v;
+        invalidate();
+    }
+
+    /**
+     * 设 App 全屏档本记正文的字号（号，TASK-016）。同 {@link #setNoteCardSize} 的 same-check。
+     *
+     * ⚠️ 桌面卡片**不要**调这个 —— 它只影响 App 内本记页；桌面走 {@link #setNoteCardSize}。
+     */
+    public void setNoteFullSize(float v) {
+        if (Math.abs(v - noteFullSize) < 0.01f) return;
+        noteFullSize = v;
         invalidate();
     }
 

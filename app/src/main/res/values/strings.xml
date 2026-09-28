@@ -52,12 +52,19 @@
     <string name="btn_open_a11y">打开系统无障碍设置</string>
     <string name="btn_reset_card">重新同步卡片显示（卡片该出现却没出现时点这里）</string>
 
+    <!-- TASK-016：本记字号（卡片）—— 桌面卡片专用，与「导出字号」是两套，别混 -->
+    <string name="label_note_card_size">本记字号（卡片）</string>
+    <string name="label_note_card_size_tip">只影响桌面卡片上「本记」正文的大小。默认 17 号 = 桌面应用名称的字号；字越大，卡片能显示的行数越少。</string>
+
     <!-- v0.4.3：设置页拆「初始化 / 自定义」两页 -->
     <string name="label_a11y_group">桌面卡片无障碍</string>
+    <!-- TASK-016：自定义页第二个分区标题（第一个是「桌面卡片」label_card） -->
+    <string name="label_export_group">本记导出图</string>
     <string name="label_export_tpl">本记导出模板</string>
     <string name="label_export_tpl_tip">只影响「本记」页导出图片的样式，改完即时生效。</string>
     <string name="label_paper">纸张底纹</string>
-    <string name="label_nsize">字号</string>
+    <!-- 🔴 命名铁律：任何叫「字号」的项都必须带括号说明作用域，杜绝与「本记字号（卡片）」混淆 -->
+    <string name="label_nsize">字号（本记页与导出图）</string>
     <string name="label_show_sign">导出图显示署名（书名 · 作者）</string>
     <string name="label_show_date">导出图显示章节与划线日期</string>
 

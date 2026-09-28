@@ -38,6 +38,30 @@ public final class CardPrefs {
      */
     public static final int DEFAULT_MONTH_STYLE = MONTH_STYLE_HEATMAP;
 
+    // ── TASK-016：本记正文字号（**仅桌面卡片**）──
+    //
+    // 单位统一为「号」（1 号 = 屏高 × 0.0015 = 本设备 1.2px，口径唯一来源
+    // {@code WeekCardView#UNIT_RATIO}），与 App 内本记页 / 导出图的 `sizeTier` 三档
+    // **分开存** —— 用户 2026-09-26 拍板：卡片字号与导出字号是两个东西，不许混。
+
+    /**
+     * 默认字号（号）= 桌面应用名称的字号 —— `验证记录/59` 项① 上机实测
+     * **字形高 20px ≈ 16.7 号** ⇒ 取 17（= 20.4px）。
+     */
+    public static final int NOTE_CARD_SIZE_DEFAULT = 17;
+
+    /** 下限（号）。再小在 219dpi 的墨水屏上就糊了 */
+    public static final int NOTE_CARD_SIZE_MIN = 12;
+
+    /**
+     * 上限（号）。🔴 **24 是硬边界，不是拍脑袋**：卡片档正文区
+     * `bodyH = 207.31 − tSize×1.4`、`lineH = tSize×1.55`（推导见
+     * `.workbuddy/artifacts/2026-09-27_TASK016-017_实现方案与待拍板.md` §1.1），
+     * 24 号（28.8px）算出来**正好 3 行** = `NOTE_LINES_MIN` 的下限；
+     * 再往上就会开始吃行，有压到署名行的风险。
+     */
+    public static final int NOTE_CARD_SIZE_MAX = 24;
+
     private CardPrefs() {
     }
 
@@ -84,5 +108,22 @@ public final class CardPrefs {
 
     public static void setMonthStyle(Context c, int v) {
         sp(c).edit().putInt("month_style", v).commit();
+    }
+
+    /**
+     * 桌面卡片本记正文的字号（号）。**越界值一律钳回** `[MIN, MAX]` ——
+     * 手改的 prefs / 老版本残留的值也能安全读出，不让渲染端拿到离谱的字号。
+     */
+    public static int getNoteCardSize(Context c) {
+        int v = sp(c).getInt("note_card_size", NOTE_CARD_SIZE_DEFAULT);
+        if (v < NOTE_CARD_SIZE_MIN) return NOTE_CARD_SIZE_MIN;
+        if (v > NOTE_CARD_SIZE_MAX) return NOTE_CARD_SIZE_MAX;
+        return v;
+    }
+
+    public static void setNoteCardSize(Context c, int v) {
+        if (v < NOTE_CARD_SIZE_MIN) v = NOTE_CARD_SIZE_MIN;
+        if (v > NOTE_CARD_SIZE_MAX) v = NOTE_CARD_SIZE_MAX;
+        sp(c).edit().putInt("note_card_size", v).commit();
     }
 }
