@@ -109,10 +109,10 @@
     <!-- V1.0 Beta（TASK-018）：设置页第三段「实验室」· 遥控翻页 -->
     <!-- ⚠ 文案三条硬约束（docs/FEATURES/lab.md §提示文案）：只写已验证事实 / 必须写明按键过滤互斥 /
          角色切换后需重开无障碍。禁「读取屏幕内容」「断开即省电」等超出已验证能力的措辞。 -->
-    <string name="label_lab">实验室</string>
-    <!-- 🆕 TASK-021 实验室子标签（当前 2 段「遥控翻页 | 锁屏密码」；后续卡在此扩展）
+    <!-- 🆕 TASK-021 实验室子标签（TASK-023 起 3 段「遥控翻页 | 锁屏密码 | 续航优化」；后续卡在此扩展）
          🔴 TASK-022-R1：子标签栏已显示页名 ⇒ 删掉页内重复小标题（lab_remote_title / lock_title）
-         与页顶简介（lab_page_tip）。 -->
+         与页顶简介（lab_page_tip）。
+         🔴 TASK-023 微调：页顶「实验室」标题（原 label_lab）已删 —— 页名由外层顶部标签栏承担。 -->
     <string name="lab_tab_remote">遥控翻页</string>
     <string name="lab_tab_lockscreen">锁屏密码</string>
     <string name="lab_remote_intro">手机当遥控器：在手机上按音量键，墨水屏上的微信读书翻页（音量上 = 上一页，音量下 = 下一页）。默认关闭，与现在完全一样。</string>
@@ -169,8 +169,8 @@
     <!-- 🆕 TASK-023（V1.0.2-beta）：实验室 · 续航（省电指令 · pm grant 通道 · ADB 自助档 1）。
          🔴 文案硬约束：只写已验证事实；每条标注真实收益/风险（禁夸大、禁「断开即省电」）。
          写入需一次性 pm grant WRITE_SECURE_SETTINGS —— App 内给命令 + 一键复制（档 1）。 -->
-    <string name="lab_tab_power">续航</string>
-    <string name="power_intro">用系统开关省一点电。每项都要先做一次「授权」（见下方）；授权后勾选即时生效，取消勾选会写回原来的值。</string>
+    <string name="lab_tab_power">续航优化</string>
+    <string name="power_intro">用系统开关省一点电。需要先做一次「授权」（见下方），一次授权永久有效；授权后勾选即时生效，取消勾选回到原状态。</string>
 
     <!-- 授权引导（档 1） -->
     <string name="power_perm_ok">已授权 ✓ 下面的开关可以直接用。</string>
@@ -181,9 +181,9 @@
     <string name="power_perm_steps">怎么做：① 用数据线把本机连到电脑；② 电脑上装好 adb（安卓调试工具）；③ 打开电脑命令行，粘贴上面这行并回车；④ 看到 Success 就成功了，回到这里即可。</string>
 
     <!-- 四个勾选项 -->
-    <string name="power_item_wifi_notif">省一点：关掉「开放网络可用」提示</string>
-    <string name="power_item_anim">省一点：关掉界面动画</string>
-    <string name="power_item_wifi_sleep">慎用：息屏就断网</string>
+    <string name="power_item_wifi_notif">关掉「开放网络可用」提示</string>
+    <string name="power_item_anim">关掉界面动画</string>
+    <string name="power_item_wifi_sleep">息屏就断网</string>
     <string name="power_item_low_power">开启系统省电模式</string>
 
     <!-- 各项如实说明（收益 / 风险） -->

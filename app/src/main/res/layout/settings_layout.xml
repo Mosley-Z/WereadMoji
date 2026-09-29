@@ -892,14 +892,9 @@
                 android:orientation="vertical"
                 android:visibility="gone">
 
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/label_lab"
-                    android:textColor="#FF000000"
-                    android:textSize="17sp" />
+                <!-- ── 页顶不再重复「实验室」标题：页名已由外层顶部标签栏承担 ── -->
 
-                <!-- 🆕 TASK-021 实验室子标签栏（当前 2 段「遥控翻页 | 锁屏密码」；后续卡在此扩段） -->
+                <!-- 🆕 TASK-021 实验室子标签栏（TASK-023 起扩到 3 段「遥控翻页 | 锁屏密码 | 续航优化」） -->
                 <com.inkread.weekread.ui.SegTabView
                     android:id="@+id/seg_lab"
                     android:layout_width="match_parent"

@@ -242,7 +242,7 @@ public class SettingsActivity extends Activity {
             }
         });
 
-        // ── 🆕 TASK-021 / 022 / 023 实验室子标签（遥控翻页 | 锁屏密码 | 续航；后续卡在此扩段）──
+        // ── 🆕 TASK-021 / 022 / 023 实验室子标签（遥控翻页 | 锁屏密码 | 续航优化；后续卡在此扩段）──
         // 作用与顶部 seg 相同：同一个 ScrollView 内，切换子页容器的 visibility。
         final View pageLabRemote = findViewById(R.id.page_lab_remote);
         final View pageLabLock = findViewById(R.id.page_lab_lockscreen);
