@@ -899,16 +899,7 @@
                     android:textColor="#FF000000"
                     android:textSize="17sp" />
 
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:lineSpacingExtra="3dp"
-                    android:text="@string/lab_page_tip"
-                    android:textColor="#FF3C3C3C"
-                    android:textSize="13sp" />
-
-                <!-- 🆕 TASK-021 实验室子标签栏（当前仅 1 段「遥控翻页」；后续卡在此扩段） -->
+                <!-- 🆕 TASK-021 实验室子标签栏（当前 2 段「遥控翻页 | 锁屏密码」；后续卡在此扩段） -->
                 <com.inkread.weekread.ui.SegTabView
                     android:id="@+id/seg_lab"
                     android:layout_width="match_parent"
@@ -922,15 +913,7 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
 
-                <!-- ── 遥控翻页（Beta）── -->
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:text="@string/lab_remote_title"
-                    android:textColor="#FF000000"
-                    android:textSize="17sp" />
-
+                <!-- ── 遥控翻页（子标签栏已显示页名，此处不再重复小标题）── -->
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -1126,14 +1109,7 @@
                     android:orientation="vertical"
                     android:visibility="gone">
 
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        android:text="@string/lock_title"
-                        android:textColor="#FF000000"
-                        android:textSize="17sp" />
-
+                    <!-- 子标签栏已显示页名，此处不再重复小标题 -->
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -1210,6 +1186,20 @@
                         android:textColor="#FF000000"
                         android:textSize="15sp" />
 
+                    <!-- 🆕 TASK-022-R1：可编辑路径输入框（默认填 Pictures/背景.jpg）。
+                         取消 SAF「选择图片」按钮 —— S4 ROM 无 DocumentsUI，真机必然弹不出。 -->
+                    <EditText
+                        android:id="@+id/et_lock_bg_path"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:hint="@string/lock_bg_path_hint"
+                        android:inputType="text"
+                        android:maxLines="1"
+                        android:textColor="#FF000000"
+                        android:textColorHint="#FF9A9A9A"
+                        android:textSize="15sp" />
+
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -1217,7 +1207,7 @@
                         android:orientation="horizontal">
 
                         <Button
-                            android:id="@+id/btn_lock_bg_pick"
+                            android:id="@+id/btn_lock_bg_load"
                             android:layout_width="0dp"
                             android:layout_height="44dp"
                             android:layout_weight="1"
@@ -1225,7 +1215,7 @@
                             android:minWidth="0dp"
                             android:minHeight="0dp"
                             android:stateListAnimator="@null"
-                            android:text="@string/lock_btn_bg_pick"
+                            android:text="@string/lock_btn_bg_load"
                             android:textColor="@color/btn_ink_text"
                             android:textSize="15sp" />
 
@@ -1251,6 +1241,15 @@
                         android:layout_marginTop="6dp"
                         android:textColor="#FF000000"
                         android:textSize="14sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/lock_bg_hint"
+                        android:textColor="#FF6A6A6A"
+                        android:textSize="12sp" />
 
                     <TextView
                         android:layout_width="match_parent"

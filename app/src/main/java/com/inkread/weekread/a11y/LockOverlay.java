@@ -18,6 +18,8 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.InputStream;
 
 /**
@@ -137,7 +139,7 @@ final class LockOverlay {
         /** 抖动帧计数：0 = 不抖；>0 = 正在抖，抖完清空输入 */
         private int shake = 0;
 
-        /** 自选背景位图缓存（随 {@code lock_bg_uri} 变化重载） */
+        /** 背景位图缓存（随背景路径设置变化 / 每次弹出时重载，见 {@link #reset()}） */
         private Bitmap bg;
         private String bgKey = null;
 
@@ -155,6 +157,8 @@ final class LockOverlay {
             error = null;
             shake = 0;
             removeCallbacks(shakeTick);
+            bg = null;          // 每次弹出重新读背景图（用户可能换了同名文件，缓存不能赖着）
+            bgKey = null;
             invalidate();
         }
 
@@ -201,10 +205,10 @@ final class LockOverlay {
         }
 
         private void drawBackground(Canvas c, float w, float h) {
-            String uri = LockPrefs.getBgUri(getContext());
-            if (bgKey == null || !bgKey.equals(uri)) {
-                bgKey = uri;
-                bg = (uri.length() == 0) ? null : decode(uri, (int) w, (int) h);
+            String key = LockPrefs.getBgPath(getContext());
+            if (bgKey == null || !bgKey.equals(key)) {
+                bgKey = key;
+                bg = loadBg((int) w, (int) h);
             }
             if (bg == null) {
                 // 默认：浅色底 + 细网点（墨水屏上最干净、层次清楚）
@@ -229,9 +233,50 @@ final class LockOverlay {
             c.drawRect(0, 0, w, h, p);
         }
 
-        private Bitmap decode(String uriStr, int w, int h) {
+        /**
+         * 载入背景图（TASK-022-R1：改为「固定路径」）。
+         *
+         * <p>优先按文件路径读（{@link LockPrefs#resolveBgFile}，含多目录与私有目录兜底）；
+         * 历史 {@code content://} URI 仍兼容。任何失败一律返回 {@code null} ⇒ 回退浅色网点。
+         */
+        private Bitmap loadBg(int w, int h) {
             try {
-                Uri u = Uri.parse(uriStr);
+                File f = LockPrefs.resolveBgFile(getContext());
+                if (f != null) {
+                    Bitmap bm = decodeFile(f, w, h);
+                    if (bm != null) return bm;
+                }
+                String s = LockPrefs.getBgPath(getContext());
+                if (s.startsWith("content://")) {
+                    return decodeUri(Uri.parse(s), w, h);
+                }
+            } catch (Throwable t) {
+                // 读不出来就退回默认底，绝不因此弹不出锁屏
+            }
+            return null;
+        }
+
+        private Bitmap decodeFile(File f, int w, int h) {
+            try {
+                BitmapFactory.Options bounds = new BitmapFactory.Options();
+                bounds.inJustDecodeBounds = true;
+                InputStream in = new FileInputStream(f);
+                BitmapFactory.decodeStream(in, null, bounds);
+                in.close();
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null;
+                BitmapFactory.Options opt = new BitmapFactory.Options();
+                opt.inSampleSize = sampleFor(bounds.outWidth, bounds.outHeight, w, h);
+                InputStream in2 = new FileInputStream(f);
+                Bitmap bm = BitmapFactory.decodeStream(in2, null, opt);
+                in2.close();
+                return bm;
+            } catch (Throwable t) {
+                return null;
+            }
+        }
+
+        private Bitmap decodeUri(Uri u, int w, int h) {
+            try {
                 BitmapFactory.Options bounds = new BitmapFactory.Options();
                 bounds.inJustDecodeBounds = true;
                 InputStream in = getContext().getContentResolver().openInputStream(u);
@@ -239,20 +284,25 @@ final class LockOverlay {
                 BitmapFactory.decodeStream(in, null, bounds);
                 in.close();
                 if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null;
-                int sample = 1;
-                while (bounds.outWidth / (sample * 2) >= w && bounds.outHeight / (sample * 2) >= h) {
-                    sample *= 2;
-                }
                 BitmapFactory.Options opt = new BitmapFactory.Options();
-                opt.inSampleSize = sample;
+                opt.inSampleSize = sampleFor(bounds.outWidth, bounds.outHeight, w, h);
                 InputStream in2 = getContext().getContentResolver().openInputStream(u);
                 if (in2 == null) return null;
                 Bitmap bm = BitmapFactory.decodeStream(in2, null, opt);
                 in2.close();
                 return bm;
             } catch (Throwable t) {
-                return null;                  // 图片读不出来就退回默认底，绝不因此弹不出锁屏
+                return null;
             }
+        }
+
+        /** 两遍解码的公共一步：按目标尺寸算 2 的幂采样率，避免整张大图进内存。 */
+        private int sampleFor(int ow, int oh, int w, int h) {
+            int sample = 1;
+            while (ow / (sample * 2) >= w && oh / (sample * 2) >= h) {
+                sample *= 2;
+            }
+            return sample;
         }
 
         private void drawTitle(Canvas c, float w, float h) {

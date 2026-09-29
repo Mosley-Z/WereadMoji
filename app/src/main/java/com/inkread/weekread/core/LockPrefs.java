@@ -2,7 +2,9 @@ package com.inkread.weekread.core;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.os.Environment;
 
+import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -23,7 +25,7 @@ import java.security.SecureRandom;
  *   <li>{@code lock_enabled}  —— 是否启用锁屏（默认 {@code false}，验收 A6：老用户升级后零差异）</li>
  *   <li>{@code lock_pin_salt} —— 随机盐（8 字节，hex）</li>
  *   <li>{@code lock_pin_hash} —— {@code SHA-256(salt ‖ pin)}（hex），<b>不存明文</b>（验收 A3）</li>
- *   <li>{@code lock_bg_uri}   —— 自选背景图 URI（SAF 授权；空 = 用默认浅色网点，验收 A2）</li>
+ *   <li>{@code lock_bg_path}  —— 背景图文件路径（TASK-022-R1 起；空 = 浅色网点，验收 A2）</li>
  * </ul>
  */
 public final class LockPrefs {
@@ -37,7 +39,8 @@ public final class LockPrefs {
     private static final String K_ENABLED = "lock_enabled";
     private static final String K_SALT = "lock_pin_salt";
     private static final String K_HASH = "lock_pin_hash";
-    private static final String K_BG = "lock_bg_uri";
+    /** TASK-022-R1 由 {@code lock_bg_uri}(SAF) 改名为 {@code lock_bg_path}(文件路径)；旧键不再读。 */
+    private static final String K_BG = "lock_bg_path";
 
     private LockPrefs() {
     }
@@ -128,20 +131,79 @@ public final class LockPrefs {
         return MessageDigest.isEqual(got, fromHexOrEmpty(hashHex));
     }
 
-    // ── 背景图（SAF，零权限）──
+    // ── 背景图（TASK-022-R1：固定路径载入）──
+    //
+    // 为什么从 SAF 改成"固定路径"：S4 ROM 里没有系统文件选择器（缺 com.android.documentsui），
+    // ACTION_OPEN_DOCUMENT / GET_CONTENT / PICK 在真机上全部 No activities found ⇒ SAF 必然失败。
+    // 现在 = 用户在可编辑输入框里填路径（默认 Pictures/背景.jpg），App 直接按路径读文件。
+    // 🔴 代价如实：读共享存储的图片需要 READ_EXTERNAL_STORAGE（targetSdk=30 分区存储）。
 
-    /** 自选背景图 URI（可能为空串 = 用默认浅色网点）。 */
-    public static String getBgUri(Context c) {
+    /** 输入框默认值，也是候选兜底里的首选相对路径（相对共享存储根 /sdcard）。 */
+    public static final String DEFAULT_BG_REL = "Pictures/背景.jpg";
+
+    /** 兜底候选目录（按序找同名文件）—— 图放哪儿都尽量能认出来。 */
+    private static final String[] BG_FALLBACK_DIRS = {
+            "Pictures", "Picture", "DCIM", "Download", "Documents" };
+
+    /** 已设置的背景图路径（空 = 未设置 ⇒ 浅色网点；验收 A6「默认零差异」）。 */
+    public static String getBgPath(Context c) {
         String v = sp(c).getString(K_BG, "");
         return v == null ? "" : v;
     }
 
-    public static void setBgUri(Context c, String uri) {
-        sp(c).edit().putString(K_BG, uri == null ? "" : uri).commit();
+    public static void setBgPath(Context c, String path) {
+        sp(c).edit().putString(K_BG, path == null ? "" : path).commit();
     }
 
+    /** 恢复默认：清掉设置 ⇒ 回到浅色网点。 */
     public static void clearBg(Context c) {
         sp(c).edit().remove(K_BG).commit();
+    }
+
+    /**
+     * 解析出<b>实际可读</b>的背景图文件；没有则返回 {@code null}（调用方回退浅色网点）。
+     *
+     * <p>顺序：① 用户设置的原路径（绝对路径直接用；相对路径拼共享存储根）
+     * → ② 同名文件在常见图片目录（Pictures / Picture / DCIM / Download / Documents）
+     * → ③ App 私有外部目录（<b>零权限</b>，可用 {@code adb push} 放图 ⇒ 作为"不给权限"时的兜底）。
+     *
+     * <p>⚠ 无 {@code READ_EXTERNAL_STORAGE} 时 ①/② 会静默判"不存在"（分区存储行为）——
+     * 这正是我们要的：拿不到就老老实实回退默认底，绝不因此弹不出锁屏。
+     */
+    public static File resolveBgFile(Context c) {
+        String p = getBgPath(c);
+        if (p.length() == 0) return null;                 // 未设置 ⇒ 浅色网点
+        if (p.startsWith("content://")) return null;      // 历史 SAF URI：交给 ContentResolver
+
+        File f = toAbsolute(p);
+        if (isReadableFile(f)) return f;
+
+        String name = new File(p).getName();
+        if (name.length() > 0) {
+            for (String dir : BG_FALLBACK_DIRS) {
+                File g = new File(new File(Environment.getExternalStorageDirectory(), dir), name);
+                if (isReadableFile(g)) return g;
+            }
+            File priv = c.getExternalFilesDir(null);       // 私有目录兜底（零权限）
+            if (priv != null && isReadableFile(new File(priv, name))) {
+                return new File(priv, name);
+            }
+        }
+        return null;
+    }
+
+    /** 相对路径 → 拼共享存储根；绝对路径原样返回（也供"触发媒体扫描"用）。 */
+    public static File toAbsolute(String path) {
+        File f = new File(path);
+        return f.isAbsolute() ? f : new File(Environment.getExternalStorageDirectory(), path);
+    }
+
+    private static boolean isReadableFile(File f) {
+        try {
+            return f != null && f.isFile() && f.canRead();
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
     // ── 内部：哈希 / hex ──

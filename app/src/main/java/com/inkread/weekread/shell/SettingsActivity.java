@@ -16,8 +16,11 @@ import com.inkread.weekread.remote.RemoteRole;
 import com.inkread.weekread.ui.SegTabView;
 import com.inkread.weekread.update.ApkInstaller;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -133,6 +136,8 @@ public class SettingsActivity extends Activity {
     private CheckBox cbLockEnabled;
     private TextView tvLockStatus;
     private TextView tvLockBgStatus;
+    /** TASK-022-R1：锁屏背景图路径输入框（默认 Pictures/背景.jpg） */
+    private EditText etLockBgPath;
     /** 回滚「未设密码就勾启用」时抑制监听递归 */
     private boolean lockUiSyncing;
 
@@ -245,6 +250,10 @@ public class SettingsActivity extends Activity {
         cbLockEnabled = (CheckBox) findViewById(R.id.cb_lock_enabled);
         tvLockStatus = (TextView) findViewById(R.id.tv_lock_status);
         tvLockBgStatus = (TextView) findViewById(R.id.tv_lock_bg_status);
+        etLockBgPath = (EditText) findViewById(R.id.et_lock_bg_path);
+        // 输入框只在这里初始化一次（不在 refreshLockUi 里回填，免得把用户正在输的内容冲掉）
+        String bgCur = LockPrefs.getBgPath(this);
+        etLockBgPath.setText(bgCur.length() == 0 ? LockPrefs.DEFAULT_BG_REL : bgCur);
         final EditText etLockPin = (EditText) findViewById(R.id.et_lock_pin);
 
         cbLockEnabled.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
@@ -279,10 +288,10 @@ public class SettingsActivity extends Activity {
             }
         });
 
-        ((Button) findViewById(R.id.btn_lock_bg_pick)).setOnClickListener(new View.OnClickListener() {
+        ((Button) findViewById(R.id.btn_lock_bg_load)).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                pickLockBg();
+                loadLockBg();
             }
         });
 
@@ -290,6 +299,7 @@ public class SettingsActivity extends Activity {
             @Override
             public void onClick(View v) {
                 LockPrefs.clearBg(SettingsActivity.this);
+                etLockBgPath.setText(LockPrefs.DEFAULT_BG_REL);
                 refreshLockUi();
             }
         });
@@ -772,42 +782,98 @@ public class SettingsActivity extends Activity {
 
     // ══════════════════════ 🆕 TASK-022 锁屏密码（应用级软锁） ══════════════════════
 
-    /** SAF 选锁屏背景图的请求码（P3：零权限，走系统选择器，不碰 READ_MEDIA_IMAGES）。 */
-    private static final int REQ_LOCK_BG = 3301;
+    /** 申请「读取存储」权限的请求码（TASK-022-R1：载入背景图用）。 */
+    private static final int REQ_PERM_BG = 3302;
 
     /**
-     * 打开系统文件选择器选锁屏背景图。
+     * 按输入框里的路径载入锁屏背景图（TASK-022-R1）。
      *
-     * <p>用 {@code ACTION_OPEN_DOCUMENT}（而不是 {@code GET_CONTENT}）是为了拿
-     * <b>可持久化的读取授权</b>：选完一次，之后每次亮屏都能读这张图，不用重复授权，
-     * 也不会因此申请任何存储权限（验收 A2 的"零权限"前提）。
+     * <p>🔴 为什么<b>不再用</b> SAF：S4 ROM 里没有系统文件选择器（缺 {@code com.android.documentsui}），
+     * {@code ACTION_OPEN_DOCUMENT / GET_CONTENT / PICK} 在真机上全部 {@code No activities found}
+     * ⇒ 原来的「选择图片」按钮点了只会弹一句「本机没有可用的文件选择器」。
+     *
+     * <p>改为：用户填路径（默认 {@link LockPrefs#DEFAULT_BG_REL}）→ 先拿存储读权限 → 按路径读文件。
+     * 拿不到权限也<b>不拦</b>用户：提示里直接给出 {@code adb pm grant} 一行命令，并仍试一次
+     * （App 私有目录兜底不需要权限）。
      */
-    private void pickLockBg() {
+    private void loadLockBg() {
+        String p = etLockBgPath.getText().toString().trim();
+        if (p.length() == 0) p = LockPrefs.DEFAULT_BG_REL;   // 空 = 用默认路径
+        if (hasStorageReadPermission()) {
+            applyLockBg(p);
+            return;
+        }
         try {
-            Intent it = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-            it.addCategory(Intent.CATEGORY_OPENABLE);
-            it.setType("image/*");
-            it.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-            startActivityForResult(it, REQ_LOCK_BG);
+            requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, REQ_PERM_BG);
         } catch (Throwable t) {
-            Toast.makeText(this, "本机没有可用的文件选择器", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.lock_bg_perm_needed, Toast.LENGTH_LONG).show();
+            applyLockBg(p);          // 授权流程起不来也先试一次（私有目录兜底不依赖权限）
+        }
+    }
+
+    private boolean hasStorageReadPermission() {
+        try {
+            return checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE)
+                    == PackageManager.PERMISSION_GRANTED;
+        } catch (Throwable t) {
+            return false;
         }
     }
 
     @Override
-    protected void onActivityResult(int req, int res, Intent data) {
-        super.onActivityResult(req, res, data);
-        if (req != REQ_LOCK_BG) return;
-        if (res != RESULT_OK || data == null || data.getData() == null) return;
-        Uri uri = data.getData();
-        try {
-            // 持久授权：否则重启后 URI 失效 ⇒ 锁屏退回默认底（不致命，但用户会以为"图没选上"）
-            getContentResolver().takePersistableUriPermission(uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        } catch (Throwable ignored) {
+    public void onRequestPermissionsResult(int req, String[] perms, int[] results) {
+        super.onRequestPermissionsResult(req, perms, results);
+        if (req != REQ_PERM_BG) return;
+        boolean ok = results != null && results.length > 0
+                && results[0] == PackageManager.PERMISSION_GRANTED;
+        if (!ok) {
+            Toast.makeText(this, R.string.lock_bg_perm_needed, Toast.LENGTH_LONG).show();
         }
-        LockPrefs.setBgUri(this, uri.toString());
+        String p = etLockBgPath.getText().toString().trim();
+        if (p.length() == 0) p = LockPrefs.DEFAULT_BG_REL;
+        applyLockBg(p);              // 无论给不给权限都试一次：私有目录兜底不依赖权限
+    }
+
+    /**
+     * 真正落盘：写路径 → 解析文件 → 如实反馈（找到 / 没找到）。
+     *
+     * <p>🔴 <b>「未入库文件」的真实边界（2026-09-29 S4 实测，如实登记）</b>：
+     * 路径没命中时先别急着报错 —— 根因是 Android 11 的 FUSE 对<b>还没被媒体库索引</b>的文件
+     * 一律判"不存在"（日志原话 {@code MediaProvider: Couldn't find file: …/背景.jpg}）。
+     * 正常途径放进来的图（{@code adb push} / 复制）本机会自动入库，属个别情况。
+     * 这里仍尝试一次 {@link MediaScannerConnection#scanFile}（<b>对其他 ROM 有意义</b>），
+     * 但 <b>S4 上实测无效</b>：MediaProvider 的 ModernMediaScanner 自己也 stat 不到该文件
+     * （{@code NoSuchFileException}）。S4 上可用的替代是 shell 侧那条
+     * {@code am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file://…}。
+     */
+    private void applyLockBg(String path) {
+        LockPrefs.setBgPath(this, path);
+        if (LockPrefs.resolveBgFile(this) != null) {
+            Toast.makeText(this, R.string.lock_bg_loaded, Toast.LENGTH_SHORT).show();
+            refreshLockUi();
+            return;
+        }
+        final String abs = LockPrefs.toAbsolute(path).getAbsolutePath();
+        try {
+            MediaScannerConnection.scanFile(this, new String[]{abs}, null,
+                    new MediaScannerConnection.OnScanCompletedListener() {
+                        @Override
+                        public void onScanCompleted(String p, Uri u) {
+                            runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    File f = LockPrefs.resolveBgFile(SettingsActivity.this);
+                                    Toast.makeText(SettingsActivity.this, getString(f == null
+                                            ? R.string.lock_bg_not_found : R.string.lock_bg_loaded),
+                                            Toast.LENGTH_SHORT).show();
+                                    refreshLockUi();
+                                }
+                            });
+                        }
+                    });
+        } catch (Throwable t) {
+            Toast.makeText(this, R.string.lock_bg_not_found, Toast.LENGTH_SHORT).show();
+        }
         refreshLockUi();
     }
 
@@ -823,9 +889,11 @@ public class SettingsActivity extends Activity {
                     ? R.string.lock_status_set : R.string.lock_status_unset));
         }
         if (tvLockBgStatus != null) {
-            String bg = LockPrefs.getBgUri(this);
-            tvLockBgStatus.setText(getString(
-                    bg.length() == 0 ? R.string.lock_bg_default : R.string.lock_bg_custom));
+            // 如实显示"当前实际生效"的那张图（含兜底命中）；没有则显示默认底
+            File f = LockPrefs.resolveBgFile(this);
+            tvLockBgStatus.setText(f == null
+                    ? getString(R.string.lock_bg_default)
+                    : getString(R.string.lock_bg_custom_fmt, f.getAbsolutePath()));
         }
     }
 

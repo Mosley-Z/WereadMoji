@@ -4,12 +4,19 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 🆕 TASK-022-R1（V1.0.2-beta）：锁屏背景图需读共享存储里的图片。
+         S4 ROM 没有系统文件选择器（DocumentsUI）⇒ SAF 在真机上必然弹不出；而 targetSdk=30
+         分区存储下，读公共目录（Pictures 等）的图片必须有本权限（只读媒体文件，非全盘访问）。
+         ⚠ 这是本 App 唯一一条"非零权限"，也是唯一一次打破「清单零改动」——覆盖升级后
+         需重新授权（系统会弹一次「允许」）。API 33+ 由 READ_MEDIA_IMAGES 接管，故限 32。 -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
     <!-- 在线更新：下载完新版本后要拉起系统安装器。Android 8.0 起还需用户在
          系统设置里为本应用单独打开「允许安装未知应用」，App 会引导过去。 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <!-- 注意：不再需要 SET_WALLPAPER / SYSTEM_ALERT_WINDOW / READ_EXTERNAL_STORAGE。
+    <!-- 注意：桌面卡片不再需要 SET_WALLPAPER / SYSTEM_ALERT_WINDOW。
          桌面卡片走 TYPE_ACCESSIBILITY_OVERLAY（由 CardA11yService 自己持有窗口），
-         不需要悬浮窗权限，也不读外部存储。 -->
+         不需要悬浮窗权限。唯一的存储读权限 = 上面的 READ_EXTERNAL_STORAGE（仅锁屏背景图用）。 -->
 
     <!-- Android 11 起 queryIntentActivities 受「包可见性」过滤：不声明这里，
          连 CATEGORY_HOME 的桌面都查不到（实测返回空表，卡片会被判定成"不在桌面"而永不显示）。 -->

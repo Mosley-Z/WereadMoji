@@ -110,11 +110,11 @@
     <!-- ⚠ 文案三条硬约束（docs/FEATURES/lab.md §提示文案）：只写已验证事实 / 必须写明按键过滤互斥 /
          角色切换后需重开无障碍。禁「读取屏幕内容」「断开即省电」等超出已验证能力的措辞。 -->
     <string name="label_lab">实验室</string>
-    <string name="lab_page_tip">这里放尚未定型的实验性功能，可能随版本变化或整块撤下。</string>
-    <!-- 🆕 TASK-021 实验室子标签（当前仅 1 段「遥控翻页」；后续卡在此扩展） -->
+    <!-- 🆕 TASK-021 实验室子标签（当前 2 段「遥控翻页 | 锁屏密码」；后续卡在此扩展）
+         🔴 TASK-022-R1：子标签栏已显示页名 ⇒ 删掉页内重复小标题（lab_remote_title / lock_title）
+         与页顶简介（lab_page_tip）。 -->
     <string name="lab_tab_remote">遥控翻页</string>
     <string name="lab_tab_lockscreen">锁屏密码</string>
-    <string name="lab_remote_title">遥控翻页（Beta）</string>
     <string name="lab_remote_intro">手机当遥控器：在手机上按音量键，墨水屏上的微信读书翻页（音量上 = 上一页，音量下 = 下一页）。默认关闭，与现在完全一样。</string>
     <string name="lab_role_label">角色</string>
     <string name="lab_role_off">关闭（默认）</string>
@@ -138,7 +138,6 @@
          🔴 文案硬约束（docs/FEATURES/lab.md）：只写已验证事实 —— 必须写明
             「可绕过（Home/返回）」「重启失效」「依赖卡片无障碍服务」，
             禁「保护设备安全 / 防破解」等超出软锁能力的措辞。 -->
-    <string name="lock_title">锁屏密码（Beta）</string>
     <string name="lock_intro">唤醒屏幕后显示全屏密码锁，输对 4 位数字才能继续。这是「应用级软锁」：只防误触与好奇，按 Home / 返回键即可绕过，重启后也会失效 —— 它不是设备安全保护。</string>
     <string name="lock_enable">启用锁屏（默认关）</string>
     <string name="lock_pin_label">4 位数字密码</string>
@@ -147,10 +146,19 @@
     <string name="lock_status_unset">密码：未设置</string>
     <string name="lock_status_set">密码：已设置（仅保存哈希，不是明文）</string>
     <string name="lock_bg_label">锁屏背景</string>
-    <string name="lock_btn_bg_pick">选择图片</string>
+    <!-- 🆕 TASK-022-R1：S4 ROM 无文件选择器（缺 com.android.documentsui）⇒ 原 SAF「选择图片」
+         在真机上必然弹不出。改为「固定路径载入」+ 可编辑路径输入框。
+         🔴 代价如实：读共享存储的图片必须有 READ_EXTERNAL_STORAGE（targetSdk=30 分区存储），
+         这是本 App 唯一打破「清单零改动」的点。 -->
+    <string name="lock_bg_path_hint">图片路径（如 Pictures/背景.jpg）</string>
+    <string name="lock_btn_bg_load">载入背景图</string>
     <string name="lock_btn_bg_clear">恢复默认</string>
     <string name="lock_bg_default">背景：默认（浅色网点）</string>
-    <string name="lock_bg_custom">背景：已选自定义图片</string>
+    <string name="lock_bg_custom_fmt">背景：%1$s</string>
+    <string name="lock_bg_loaded">背景已载入</string>
+    <string name="lock_bg_not_found">没找到这张图片：请确认图片已放进 /sdcard/Pictures/，文件名与上面一致</string>
+    <string name="lock_bg_hint">图片请放到 /sdcard/Pictures/ 下（文件名要和上面填的一致），再点「载入背景图」。⚠ 刚复制进去的图片，若提示找不到，重启一次设备再试（本机需要系统完成一次媒体扫描）。</string>
+    <string name="lock_bg_perm_needed">需要「读取存储」权限才能载入背景图。若本机不弹授权框，可在电脑上执行：adb shell pm grant com.inkread.weekread android.permission.READ_EXTERNAL_STORAGE</string>
     <string name="lock_need_pin">请先设置 4 位数字密码，再启用锁屏。</string>
     <string name="lock_pin_invalid">请输入 4 位数字</string>
     <string name="lock_saved">密码已保存</string>
