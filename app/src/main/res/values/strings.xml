@@ -165,4 +165,42 @@
     <string name="lock_tip_a11y">⚠ 锁屏依赖系统无障碍里已打开的「微读墨记」卡片服务；该服务关掉时锁屏不会出现。锁屏期间「遥控翻页」不可用（翻页手势会落在锁屏层上）。忘记密码只能清除 App 数据（会一并清掉 API Key）。</string>
     <string name="lock_screen_prompt">输入密码解锁</string>
     <string name="lock_screen_wrong">密码错误，请重试</string>
+
+    <!-- 🆕 TASK-023（V1.0.2-beta）：实验室 · 续航（省电指令 · pm grant 通道 · ADB 自助档 1）。
+         🔴 文案硬约束：只写已验证事实；每条标注真实收益/风险（禁夸大、禁「断开即省电」）。
+         写入需一次性 pm grant WRITE_SECURE_SETTINGS —— App 内给命令 + 一键复制（档 1）。 -->
+    <string name="lab_tab_power">续航</string>
+    <string name="power_intro">用系统开关省一点电。每项都要先做一次「授权」（见下方）；授权后勾选即时生效，取消勾选会写回原来的值。</string>
+
+    <!-- 授权引导（档 1） -->
+    <string name="power_perm_ok">已授权 ✓ 下面的开关可以直接用。</string>
+    <string name="power_perm_deny">还没授权：请把下面这行命令复制到电脑上执行一次（只需一次，之后永久有效）。</string>
+    <string name="power_perm_cmd_label">在电脑上执行这一行：</string>
+    <string name="power_btn_copy">复制命令</string>
+    <string name="power_copied">已复制，去电脑上粘贴执行</string>
+    <string name="power_perm_steps">怎么做：① 用数据线把本机连到电脑；② 电脑上装好 adb（安卓调试工具）；③ 打开电脑命令行，粘贴上面这行并回车；④ 看到 Success 就成功了，回到这里即可。</string>
+
+    <!-- 四个勾选项 -->
+    <string name="power_item_wifi_notif">省一点：关掉「开放网络可用」提示</string>
+    <string name="power_item_anim">省一点：关掉界面动画</string>
+    <string name="power_item_wifi_sleep">慎用：息屏就断网</string>
+    <string name="power_item_low_power">开启系统省电模式</string>
+
+    <!-- 各项如实说明（收益 / 风险） -->
+    <string name="power_tip_wifi_notif">关掉后系统不再为「附近有开放 WiFi」做后台扫描。不会断网，只是不再提示。</string>
+    <string name="power_tip_anim">关掉窗口 / 过渡 / 动画三档，减少系统唤醒。屏幕观感几乎无变化。</string>
+    <string name="power_tip_wifi_sleep">⚠ 与「遥控翻页」冲突：息屏后 WiFi 会断开，手机→墨水屏的遥控链路会一起掉。平时要用遥控就别开这一项。</string>
+    <string name="power_tip_low_power">⚠ 系统省电模式会限制后台活动，可能影响本应用的卡片刷新与遥控。开启后建议点最下面的按钮，把本应用加入「电池优化白名单」。</string>
+
+    <!-- B1 二次确认 -->
+    <string name="power_sleep_confirm_title">确定要息屏断网吗？</string>
+    <string name="power_sleep_confirm_msg">开启后，息屏时 WiFi 会断开 —— 手机上的「遥控翻页」会一起失效（墨水屏收不到指令）。\n\n如果你平时用遥控翻页，请不要开这一项。</string>
+    <string name="power_sleep_confirm_ok">仍要开启</string>
+    <string name="power_sleep_confirm_cancel">取消</string>
+
+    <!-- C1 · 电池优化白名单 -->
+    <string name="power_btn_battery_opt">打开系统「电池优化」页（把本应用加入白名单）</string>
+    <string name="power_battery_opt_tip">省电模式可能限制后台，导致卡片 / 遥控被系统掐断。到这个页面把「微读墨记」设为「不优化」，能保住它。</string>
+    <string name="power_battery_opt_failed">本机打不开这个系统页面</string>
+    <string name="power_write_failed">写入失败：可能还没授权，或本机系统不允许改这一项。</string>
 </resources>

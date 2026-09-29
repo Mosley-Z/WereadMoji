@@ -11,6 +11,13 @@
          需重新授权（系统会弹一次「允许」）。API 33+ 由 READ_MEDIA_IMAGES 接管，故限 32。 -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <!-- 🆕 TASK-023（V1.0.2-beta）：续航省电开关要写 global 命名空间的设置
+         （wifi_networks_available_notification_on / *_animation_scale / wifi_sleep_policy / low_power）。
+         🔴 这是本项目**第二个**打破「清单零改动」的权限（第一个 = 上面的 READ_EXTERNAL_STORAGE）。
+         保护级 = signature|privileged|**development** ⇒ 普通 App 拿不到「自动授予」，但可由用户
+         做**一次性** `pm grant`（App 内「续航」子页给了命令 + 一键复制）；grant 后**永久保留**、免 root。
+         ⚠️ 未 grant 时功能**降级**为只读 + 引导，不崩溃。 -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
     <!-- 在线更新：下载完新版本后要拉起系统安装器。Android 8.0 起还需用户在
          系统设置里为本应用单独打开「允许安装未知应用」，App 会引导过去。 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />

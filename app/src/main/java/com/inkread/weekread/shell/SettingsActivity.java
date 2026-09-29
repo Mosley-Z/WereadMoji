@@ -6,6 +6,7 @@ import com.inkread.weekread.core.AchievementPrefs;
 import com.inkread.weekread.core.CardPrefs;
 import com.inkread.weekread.core.LockPrefs;
 import com.inkread.weekread.core.PeriodRange;
+import com.inkread.weekread.core.PowerSettingsManager;
 import com.inkread.weekread.core.StatsStore;
 import com.inkread.weekread.feature.NoteExport;
 import com.inkread.weekread.net.UpdateChecker;
@@ -18,6 +19,10 @@ import com.inkread.weekread.update.ApkInstaller;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.media.MediaScannerConnection;
@@ -141,6 +146,16 @@ public class SettingsActivity extends Activity {
     /** 回滚「未设密码就勾启用」时抑制监听递归 */
     private boolean lockUiSyncing;
 
+    /** TASK-023：续航子页的控件（refreshPowerUi 要用，故存字段） */
+    private CheckBox cbPowerWifiNotif;
+    private CheckBox cbPowerAnim;
+    private CheckBox cbPowerWifiSleep;
+    private CheckBox cbPowerLowPower;
+    private TextView tvPowerPerm;
+    private TextView tvPowerCmd;
+    /** 同步续航勾选态时抑制监听递归 */
+    private boolean powerUiSyncing;
+
     // ── v0.5.0 更新区状态机 ──
     // 一个按钮走完全程（检查 → 下载并安装 → 下载中 xx%），按钮文字始终说明「下一步会发生什么」。
     // 墨水屏上弹确认对话框又笨又慢，用按钮文字表达意图更合适。
@@ -227,21 +242,26 @@ public class SettingsActivity extends Activity {
             }
         });
 
-        // ── 🆕 TASK-021 / TASK-022 实验室子标签（遥控翻页 | 锁屏密码；后续卡在此扩段）──
+        // ── 🆕 TASK-021 / 022 / 023 实验室子标签（遥控翻页 | 锁屏密码 | 续航；后续卡在此扩段）──
         // 作用与顶部 seg 相同：同一个 ScrollView 内，切换子页容器的 visibility。
         final View pageLabRemote = findViewById(R.id.page_lab_remote);
         final View pageLabLock = findViewById(R.id.page_lab_lockscreen);
+        final View pageLabPower = findViewById(R.id.page_lab_power);
         SegTabView segLab = (SegTabView) findViewById(R.id.seg_lab);
         segLab.setLabels(new String[]{
-                getString(R.string.lab_tab_remote), getString(R.string.lab_tab_lockscreen) });
+                getString(R.string.lab_tab_remote), getString(R.string.lab_tab_lockscreen),
+                getString(R.string.lab_tab_power) });
         segLab.setListener(new SegTabView.Listener() {
             @Override
             public void onSegSelected(int index) {
-                // 后续子页（续航 / 待办卡片…）在此按 index 继续追加
+                // 后续子页（待办卡片…）在此按 index 继续追加
                 pageLabRemote.setVisibility(index == 0 ? View.VISIBLE : View.GONE);
                 pageLabLock.setVisibility(index == 1 ? View.VISIBLE : View.GONE);
+                pageLabPower.setVisibility(index == 2 ? View.VISIBLE : View.GONE);
                 svSettings.scrollTo(0, 0);
                 if (index == 1) refreshLockUi();
+                // TASK-023：进续航页复核一次 —— low_power 是易失项，必须读设备真值（Q3 拍板）
+                if (index == 2) refreshPowerUi();
             }
         });
 
@@ -306,7 +326,31 @@ public class SettingsActivity extends Activity {
 
         refreshLockUi();
 
-        etKey.setText(StatsStore.getKey(this));
+        // ── 🆕 TASK-023 续航子页接线（省电指令）──
+        // 写入需 WRITE_SECURE_SETTINGS（一次性 pm grant）。未授权 ⇒ 点击拦截 + 提示，不静默失败。
+        tvPowerPerm = (TextView) findViewById(R.id.tv_power_perm);
+        tvPowerCmd = (TextView) findViewById(R.id.tv_power_cmd);
+        cbPowerWifiNotif = (CheckBox) findViewById(R.id.cb_power_wifi_notif);
+        cbPowerAnim = (CheckBox) findViewById(R.id.cb_power_anim);
+        cbPowerWifiSleep = (CheckBox) findViewById(R.id.cb_power_wifi_sleep);
+        cbPowerLowPower = (CheckBox) findViewById(R.id.cb_power_low_power);
+        wirePowerItem(cbPowerWifiNotif, PowerSettingsManager.ITEM_WIFI_NET_NOTIF);
+        wirePowerItem(cbPowerAnim, PowerSettingsManager.ITEM_ANIM);
+        wirePowerItem(cbPowerWifiSleep, PowerSettingsManager.ITEM_WIFI_SLEEP);
+        wirePowerItem(cbPowerLowPower, PowerSettingsManager.ITEM_LOW_POWER);
+        ((Button) findViewById(R.id.btn_power_copy)).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                copyGrantCmd();
+            }
+        });
+        ((Button) findViewById(R.id.btn_power_battery_opt)).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openBatteryOpt();
+            }
+        });
+        refreshPowerUi();
         cbCard.setChecked(CardPrefs.isEnabled(this));
         String cp = StatsStore.getCardPeriod(this);
         rbWeek.setChecked(PeriodRange.WEEKLY.equals(cp));
@@ -770,6 +814,7 @@ public class SettingsActivity extends Activity {
         refreshChannelTip();       // TASK-020：说明行按当前通道刷新（无弹窗）
         refreshUpdateUi();
         refreshLockUi();           // TASK-022：锁屏子页状态（可能在别处改过偏好）
+        refreshPowerUi();          // TASK-023：续航子页（易失项以设备真值为准复核）
     }
 
     @Override
@@ -894,6 +939,113 @@ public class SettingsActivity extends Activity {
             tvLockBgStatus.setText(f == null
                     ? getString(R.string.lock_bg_default)
                     : getString(R.string.lock_bg_custom_fmt, f.getAbsolutePath()));
+        }
+    }
+
+    // ══════════════════════ 🆕 TASK-023 续航（省电指令 · ADB 自助档 1） ══════════════════════
+
+    /**
+     * 把一个勾选项接到一条省电条目上。
+     * <p>🔴 B1（息屏断网）勾选前要弹<b>二次确认</b>（与遥控翻页冲突）；取消勾选则直接还原。
+     */
+    private void wirePowerItem(final CheckBox cb, final PowerSettingsManager.Item item) {
+        cb.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                if (powerUiSyncing) return;                        // 同步态不触发
+                if (checked && item == PowerSettingsManager.ITEM_WIFI_SLEEP) {
+                    confirmWifiSleep(cb);
+                    return;
+                }
+                applyPowerItem(item, checked);
+            }
+        });
+    }
+
+    /** 真正执行一条条目的勾选 / 取消（未授权则提示并回滚显示，不静默失败）。 */
+    private void applyPowerItem(PowerSettingsManager.Item item, boolean on) {
+        if (!PowerSettingsManager.hasPermission(this)) {
+            toast(getString(R.string.power_perm_deny));
+            refreshPowerUi();                                      // 回滚勾选显示
+            return;
+        }
+        boolean ok = PowerSettingsManager.setOn(this, item, on);
+        if (!ok) toast(getString(R.string.power_write_failed));
+        refreshPowerUi();
+    }
+
+    /** B1（息屏断网）二次确认 —— 与遥控翻页冲突，默认不勾。 */
+    private void confirmWifiSleep(final CheckBox cb) {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.power_sleep_confirm_title)
+                .setMessage(R.string.power_sleep_confirm_msg)
+                .setPositiveButton(R.string.power_sleep_confirm_ok,
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface d, int w) {
+                                applyPowerItem(PowerSettingsManager.ITEM_WIFI_SLEEP, true);
+                            }
+                        })
+                .setNegativeButton(R.string.power_sleep_confirm_cancel,
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface d, int w) {
+                                refreshPowerUi();                  // 取消 ⇒ 回滚勾选显示
+                            }
+                        })
+                .setOnCancelListener(new DialogInterface.OnCancelListener() {
+                    @Override
+                    public void onCancel(DialogInterface d) {
+                        refreshPowerUi();
+                    }
+                })
+                .show();
+    }
+
+    /**
+     * 刷新续航子页：授权状态行 + 命令文本 + 4 个勾选项。
+     * 🔴 勾选态一律取 {@link PowerSettingsManager#isOn}（设备真值），不读偏好记录 ——
+     * {@code low_power} 会被系统状态机改回，只有读真值才不会「显示已开、实际已关」。
+     */
+    private void refreshPowerUi() {
+        boolean perm = PowerSettingsManager.hasPermission(this);
+        if (tvPowerPerm != null) {
+            tvPowerPerm.setText(perm ? R.string.power_perm_ok : R.string.power_perm_deny);
+        }
+        if (tvPowerCmd != null) {
+            tvPowerCmd.setText(PowerSettingsManager.grantCommand(this));
+        }
+        syncPowerCb(cbPowerWifiNotif, PowerSettingsManager.ITEM_WIFI_NET_NOTIF);
+        syncPowerCb(cbPowerAnim, PowerSettingsManager.ITEM_ANIM);
+        syncPowerCb(cbPowerWifiSleep, PowerSettingsManager.ITEM_WIFI_SLEEP);
+        syncPowerCb(cbPowerLowPower, PowerSettingsManager.ITEM_LOW_POWER);
+    }
+
+    private void syncPowerCb(CheckBox cb, PowerSettingsManager.Item item) {
+        if (cb == null) return;
+        powerUiSyncing = true;
+        cb.setChecked(PowerSettingsManager.isOn(this, item));
+        powerUiSyncing = false;
+    }
+
+    /** 把一次性授权命令复制到剪贴板（ADB 自助 · 档 1）。 */
+    private void copyGrantCmd() {
+        try {
+            ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            if (cm == null) return;
+            cm.setPrimaryClip(ClipData.newPlainText("adb", PowerSettingsManager.grantCommand(this)));
+            toast(getString(R.string.power_copied));
+        } catch (Throwable t) {
+            toast("复制失败：" + t);
+        }
+    }
+
+    /** C1：跳到系统「电池优化」页（把本应用加入白名单，抵消省电模式的后台限制）。 */
+    private void openBatteryOpt() {
+        try {
+            startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+        } catch (Throwable t) {
+            toast(getString(R.string.power_battery_opt_failed));
         }
     }
 
