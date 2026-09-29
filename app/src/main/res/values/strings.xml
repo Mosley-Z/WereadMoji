@@ -113,6 +113,7 @@
     <string name="lab_page_tip">这里放尚未定型的实验性功能，可能随版本变化或整块撤下。</string>
     <!-- 🆕 TASK-021 实验室子标签（当前仅 1 段「遥控翻页」；后续卡在此扩展） -->
     <string name="lab_tab_remote">遥控翻页</string>
+    <string name="lab_tab_lockscreen">锁屏密码</string>
     <string name="lab_remote_title">遥控翻页（Beta）</string>
     <string name="lab_remote_intro">手机当遥控器：在手机上按音量键，墨水屏上的微信读书翻页（音量上 = 上一页，音量下 = 下一页）。默认关闭，与现在完全一样。</string>
     <string name="lab_role_label">角色</string>
@@ -132,4 +133,28 @@
     <string name="lab_idle_tip">超过这个时间没有任何翻页指令就自动断开连接（默认 300 秒）。调短会更容易断，需要重新点「开始遥控」。</string>
     <string name="lab_mutex_tip">⚠ 同一台设备上，同一时间只能有一个无障碍服务能接管音量键。若本机装有「开关控制 / Switch Access」等同类服务，需先把它关掉，否则本服务收不到按键（按了没反应）。</string>
     <string name="main_remote_notice">本机已设为「手机端遥控器」，桌面卡片功能已隐藏。\n要查看阅读数据或改回设置，请点下面的「设置」，到「实验室」里调整角色。</string>
+
+    <!-- 🆕 TASK-022（V1.0.1-beta）：实验室 · 锁屏密码（应用级软锁）。
+         🔴 文案硬约束（docs/FEATURES/lab.md）：只写已验证事实 —— 必须写明
+            「可绕过（Home/返回）」「重启失效」「依赖卡片无障碍服务」，
+            禁「保护设备安全 / 防破解」等超出软锁能力的措辞。 -->
+    <string name="lock_title">锁屏密码（Beta）</string>
+    <string name="lock_intro">唤醒屏幕后显示全屏密码锁，输对 4 位数字才能继续。这是「应用级软锁」：只防误触与好奇，按 Home / 返回键即可绕过，重启后也会失效 —— 它不是设备安全保护。</string>
+    <string name="lock_enable">启用锁屏（默认关）</string>
+    <string name="lock_pin_label">4 位数字密码</string>
+    <string name="lock_pin_hint">例如 1234</string>
+    <string name="lock_btn_save">保存密码</string>
+    <string name="lock_status_unset">密码：未设置</string>
+    <string name="lock_status_set">密码：已设置（仅保存哈希，不是明文）</string>
+    <string name="lock_bg_label">锁屏背景</string>
+    <string name="lock_btn_bg_pick">选择图片</string>
+    <string name="lock_btn_bg_clear">恢复默认</string>
+    <string name="lock_bg_default">背景：默认（浅色网点）</string>
+    <string name="lock_bg_custom">背景：已选自定义图片</string>
+    <string name="lock_need_pin">请先设置 4 位数字密码，再启用锁屏。</string>
+    <string name="lock_pin_invalid">请输入 4 位数字</string>
+    <string name="lock_saved">密码已保存</string>
+    <string name="lock_tip_a11y">⚠ 锁屏依赖系统无障碍里已打开的「微读墨记」卡片服务；该服务关掉时锁屏不会出现。锁屏期间「遥控翻页」不可用（翻页手势会落在锁屏层上）。忘记密码只能清除 App 数据（会一并清掉 API Key）。</string>
+    <string name="lock_screen_prompt">输入密码解锁</string>
+    <string name="lock_screen_wrong">密码错误，请重试</string>
 </resources>

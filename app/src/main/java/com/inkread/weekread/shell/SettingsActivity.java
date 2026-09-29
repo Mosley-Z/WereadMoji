@@ -4,6 +4,7 @@ import com.inkread.weekread.R;
 import com.inkread.weekread.a11y.CardA11yService;
 import com.inkread.weekread.core.AchievementPrefs;
 import com.inkread.weekread.core.CardPrefs;
+import com.inkread.weekread.core.LockPrefs;
 import com.inkread.weekread.core.PeriodRange;
 import com.inkread.weekread.core.StatsStore;
 import com.inkread.weekread.feature.NoteExport;
@@ -17,6 +18,7 @@ import com.inkread.weekread.update.ApkInstaller;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.text.Editable;
@@ -127,6 +129,13 @@ public class SettingsActivity extends Activity {
     /** 本会话是否处于 phone 角色（onCreate 时定一次；角色改变只在实验室页内发生）。 */
     private boolean remotePhone;
 
+    /** TASK-022：锁屏密码子页的控件（refreshLockUi 要用，故存字段） */
+    private CheckBox cbLockEnabled;
+    private TextView tvLockStatus;
+    private TextView tvLockBgStatus;
+    /** 回滚「未设密码就勾启用」时抑制监听递归 */
+    private boolean lockUiSyncing;
+
     // ── v0.5.0 更新区状态机 ──
     // 一个按钮走完全程（检查 → 下载并安装 → 下载中 xx%），按钮文字始终说明「下一步会发生什么」。
     // 墨水屏上弹确认对话框又笨又慢，用按钮文字表达意图更合适。
@@ -213,18 +222,79 @@ public class SettingsActivity extends Activity {
             }
         });
 
-        // ── 🆕 TASK-021 实验室子标签（当前仅 1 个子页「遥控翻页」；后续卡在此扩段）──
+        // ── 🆕 TASK-021 / TASK-022 实验室子标签（遥控翻页 | 锁屏密码；后续卡在此扩段）──
         // 作用与顶部 seg 相同：同一个 ScrollView 内，切换子页容器的 visibility。
         final View pageLabRemote = findViewById(R.id.page_lab_remote);
+        final View pageLabLock = findViewById(R.id.page_lab_lockscreen);
         SegTabView segLab = (SegTabView) findViewById(R.id.seg_lab);
-        segLab.setLabels(new String[]{ getString(R.string.lab_tab_remote) });
+        segLab.setLabels(new String[]{
+                getString(R.string.lab_tab_remote), getString(R.string.lab_tab_lockscreen) });
         segLab.setListener(new SegTabView.Listener() {
             @Override
             public void onSegSelected(int index) {
-                // 当前仅 1 段；后续子页（锁屏密码 / 续航 / 待办卡片…）在此按 index 追加
+                // 后续子页（续航 / 待办卡片…）在此按 index 继续追加
                 pageLabRemote.setVisibility(index == 0 ? View.VISIBLE : View.GONE);
+                pageLabLock.setVisibility(index == 1 ? View.VISIBLE : View.GONE);
+                svSettings.scrollTo(0, 0);
+                if (index == 1) refreshLockUi();
             }
         });
+
+        // ── 🆕 TASK-022 锁屏密码子页（应用级软锁）──
+        // 落盘在 LockPrefs（盐 + SHA-256，非明文）；开关默认关 ⇒ 老用户升级后零差异（验收 A6）。
+        cbLockEnabled = (CheckBox) findViewById(R.id.cb_lock_enabled);
+        tvLockStatus = (TextView) findViewById(R.id.tv_lock_status);
+        tvLockBgStatus = (TextView) findViewById(R.id.tv_lock_bg_status);
+        final EditText etLockPin = (EditText) findViewById(R.id.et_lock_pin);
+
+        cbLockEnabled.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                if (lockUiSyncing) return;
+                if (checked && !LockPrefs.hasPin(SettingsActivity.this)) {
+                    // 没设密码就启用 = 一开屏就锁死且无密码可解 ⇒ 拒绝并回滚勾选
+                    lockUiSyncing = true;
+                    b.setChecked(false);
+                    lockUiSyncing = false;
+                    Toast.makeText(SettingsActivity.this, R.string.lock_need_pin, Toast.LENGTH_LONG).show();
+                    return;
+                }
+                LockPrefs.setEnabled(SettingsActivity.this, checked);
+                refreshLockUi();
+            }
+        });
+
+        ((Button) findViewById(R.id.btn_lock_save)).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String pin = etLockPin.getText().toString().trim();
+                if (!LockPrefs.isValidPin(pin)) {
+                    Toast.makeText(SettingsActivity.this, R.string.lock_pin_invalid, Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                LockPrefs.setPin(SettingsActivity.this, pin);
+                etLockPin.setText("");
+                refreshLockUi();
+                Toast.makeText(SettingsActivity.this, R.string.lock_saved, Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        ((Button) findViewById(R.id.btn_lock_bg_pick)).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                pickLockBg();
+            }
+        });
+
+        ((Button) findViewById(R.id.btn_lock_bg_clear)).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                LockPrefs.clearBg(SettingsActivity.this);
+                refreshLockUi();
+            }
+        });
+
+        refreshLockUi();
 
         etKey.setText(StatsStore.getKey(this));
         cbCard.setChecked(CardPrefs.isEnabled(this));
@@ -689,6 +759,7 @@ public class SettingsActivity extends Activity {
         refreshStatus();
         refreshChannelTip();       // TASK-020：说明行按当前通道刷新（无弹窗）
         refreshUpdateUi();
+        refreshLockUi();           // TASK-022：锁屏子页状态（可能在别处改过偏好）
     }
 
     @Override
@@ -697,6 +768,65 @@ public class SettingsActivity extends Activity {
         CardA11yService.noteOwnUiForeground(false);
         // 页面不在前台就不再收会话状态（避免持引用）；回来时 onResume 会重新注册
         RemoteLinkManager.get().setStateListener(null);
+    }
+
+    // ══════════════════════ 🆕 TASK-022 锁屏密码（应用级软锁） ══════════════════════
+
+    /** SAF 选锁屏背景图的请求码（P3：零权限，走系统选择器，不碰 READ_MEDIA_IMAGES）。 */
+    private static final int REQ_LOCK_BG = 3301;
+
+    /**
+     * 打开系统文件选择器选锁屏背景图。
+     *
+     * <p>用 {@code ACTION_OPEN_DOCUMENT}（而不是 {@code GET_CONTENT}）是为了拿
+     * <b>可持久化的读取授权</b>：选完一次，之后每次亮屏都能读这张图，不用重复授权，
+     * 也不会因此申请任何存储权限（验收 A2 的"零权限"前提）。
+     */
+    private void pickLockBg() {
+        try {
+            Intent it = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            it.addCategory(Intent.CATEGORY_OPENABLE);
+            it.setType("image/*");
+            it.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+            startActivityForResult(it, REQ_LOCK_BG);
+        } catch (Throwable t) {
+            Toast.makeText(this, "本机没有可用的文件选择器", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int req, int res, Intent data) {
+        super.onActivityResult(req, res, data);
+        if (req != REQ_LOCK_BG) return;
+        if (res != RESULT_OK || data == null || data.getData() == null) return;
+        Uri uri = data.getData();
+        try {
+            // 持久授权：否则重启后 URI 失效 ⇒ 锁屏退回默认底（不致命，但用户会以为"图没选上"）
+            getContentResolver().takePersistableUriPermission(uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch (Throwable ignored) {
+        }
+        LockPrefs.setBgUri(this, uri.toString());
+        refreshLockUi();
+    }
+
+    /** 刷新锁屏子页的三处状态文案（进页 / 改密 / 选图 / 开关后调用）。 */
+    private void refreshLockUi() {
+        if (cbLockEnabled != null) {
+            lockUiSyncing = true;                       // 同步勾选态时不触发监听
+            cbLockEnabled.setChecked(LockPrefs.isEnabled(this));
+            lockUiSyncing = false;
+        }
+        if (tvLockStatus != null) {
+            tvLockStatus.setText(getString(LockPrefs.hasPin(this)
+                    ? R.string.lock_status_set : R.string.lock_status_unset));
+        }
+        if (tvLockBgStatus != null) {
+            String bg = LockPrefs.getBgUri(this);
+            tvLockBgStatus.setText(getString(
+                    bg.length() == 0 ? R.string.lock_bg_default : R.string.lock_bg_custom));
+        }
     }
 
     /**

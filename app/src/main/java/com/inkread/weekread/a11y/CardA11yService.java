@@ -2,6 +2,7 @@ package com.inkread.weekread.a11y;
 
 import com.inkread.weekread.core.CardDebug;
 import com.inkread.weekread.core.CardPrefs;
+import com.inkread.weekread.core.LockPrefs;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
@@ -107,6 +108,8 @@ public class CardA11yService extends AccessibilityService {
     private ElauncherPageGate ela;
     private SettingsPageProbe probe;
     private ElaHomeProbe homeProbe;
+    /** TASK-022 应用级软锁的全屏覆盖窗（与卡片窗口相互独立，见 {@link LockOverlay}） */
+    private LockOverlay lock;
 
     // ── 供同进程其它组件调用 ──
 
@@ -218,6 +221,8 @@ public class CardA11yService extends AccessibilityService {
             homeProbe.attach(ov);
             router.attach(ov, tomo, ela, probe);
         }
+        // TASK-022：软锁覆盖窗（只建一次；不参与卡片的显隐让位链，自己管自己）
+        if (lock == null) lock = new LockOverlay(this, ui);
         st.resetAll();
         sForceRecomputeOnLeave = false;             // v0.8.1：重连时旧的一次性意图作废
         registerScreenOn();
@@ -284,6 +289,7 @@ public class CardA11yService extends AccessibilityService {
         unregisterScreenOn();
         cancelPending();
         ov.removeWindow();
+        if (lock != null) lock.remove();
         sInstance = null;
         return super.onUnbind(intent);
     }
@@ -293,6 +299,7 @@ public class CardA11yService extends AccessibilityService {
         unregisterScreenOn();
         cancelPending();
         ov.removeWindow();
+        if (lock != null) lock.remove();
         sInstance = null;
         super.onDestroy();
     }
@@ -334,6 +341,7 @@ public class CardA11yService extends AccessibilityService {
                 tomo.cancelSwipeWindow();          // 亮屏附带的那半截窗口直接作废
                 CardDebug.note(CardA11yService.this, "SCREEN_ON 收到 → 忽略其后 "
                         + SCREEN_ON_IGNORE_MS + "ms 内的翻页指纹");
+                maybeLockOnScreenOn();             // TASK-022：亮屏即弹软锁（若已启用并设了密码）
             }
         };
         try {
@@ -341,6 +349,26 @@ public class CardA11yService extends AccessibilityService {
         } catch (Throwable t) {
             screenOnRx = null;
             CardDebug.note(this, "SCREEN_ON 注册失败：" + t);
+        }
+    }
+
+    /**
+     * 亮屏 → 应用级软锁（TASK-022，方案乙：无障碍全屏覆盖窗）。
+     *
+     * <p>只认 {@code ACTION_SCREEN_ON}：这是"屏幕从灭到亮"的唯一时机，也是用户预期
+     * "该验密码了"的时机。
+     *
+     * <p>🔴 只在 {@link LockPrefs#isActive}（已启用 <b>且</b> 已设密码）时弹 ——
+     * 两个条件缺一都不锁，绝不把用户关在门外。默认两者都不成立 ⇒ 与现状零差异（验收 A6）。
+     *
+     * <p>与卡片的关系：本方法<b>不碰</b>任何卡片显隐状态（不调 applyVisibility、不改 st），
+     * 只往 WindowManager 加一个独立的全屏窗口。卡片窗口带 FLAG_NOT_TOUCHABLE、
+     * 锁屏窗口不透明且后加 ⇒ 天然盖在卡片之上。
+     */
+    private void maybeLockOnScreenOn() {
+        if (lock == null) return;
+        if (LockPrefs.isActive(this)) {
+            lock.show();
         }
     }
 
