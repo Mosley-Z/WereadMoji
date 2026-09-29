@@ -16,11 +16,12 @@
     android:background="#FFFFFFFF"
     android:orientation="vertical">
 
-    <!-- 顶部页签：初始化 | 自定义 -->
+    <!-- 顶部页签：初始化 | 自定义
+         🆕 2026-09-30 微调：44dp → 40dp（压掉竖直空白，字号不变） -->
     <com.inkread.weekread.ui.SegTabView
         android:id="@+id/seg"
         android:layout_width="match_parent"
-        android:layout_height="44dp" />
+        android:layout_height="40dp" />
 
     <ScrollView
         android:id="@+id/sv_settings"
@@ -34,7 +35,6 @@
             android:orientation="vertical"
             android:paddingLeft="16dp"
             android:paddingRight="16dp"
-            android:paddingTop="12dp"
             android:paddingBottom="14dp">
 
             <!-- ============================================================
@@ -44,7 +44,8 @@
                 android:id="@+id/page_init"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
+                android:orientation="vertical"
+                android:paddingTop="12dp">
 
                 <!-- ================= ① 微信读书 API Key ================= -->
 
@@ -408,6 +409,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
+                android:paddingTop="12dp"
                 android:visibility="gone">
 
                 <!-- ── 桌面卡片（TASK-011 起：仅一页模式；后续 012/013/014/016 同区追加）── -->
@@ -895,11 +897,13 @@
                 <!-- ── 页顶不再重复「实验室」标题：页名已由外层顶部标签栏承担 ── -->
 
                 <!-- 🆕 TASK-021 实验室子标签栏（TASK-023 起扩到 3 段「遥控翻页 | 锁屏密码 | 续航优化」） -->
+                <!-- 🆕 2026-09-30 微调：40dp → 36dp，且 marginTop 12dp → 0 —— 与外层大标签栏**紧贴**
+                     （外层 ScrollView 的顶部留白已挪到 page_init / page_custom 各自身上 ⇒ 这两页
+                      的**顶部留白不变**；它们只因大标签栏变矮 5px 而整体上移 5px） -->
                 <com.inkread.weekread.ui.SegTabView
                     android:id="@+id/seg_lab"
                     android:layout_width="match_parent"
-                    android:layout_height="40dp"
-                    android:layout_marginTop="12dp" />
+                    android:layout_height="36dp" />
 
                 <!-- 🆕 子页 A：遥控翻页（现有内容原样搬入，功能零改动） -->
                 <LinearLayout

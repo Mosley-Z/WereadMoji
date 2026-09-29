@@ -133,6 +133,15 @@ final class LockOverlay {
                 "", "0", "del"
         };
 
+        // ── 锁屏输入面板（2026-09-30 用户指定：左右各 42px / 上下各 70px / 白 50%）──
+        // 面板的作用**只是**给输入区垫一层半透明白，让壁纸在四周保持清晰；
+        // 标题 / 4 个点 / 键盘的位置与尺寸**一概不变**（"输入区域不变"）。
+        // 数值为设备像素（S4 = 480×800）；面板矩形 (42,70)-(438,730) 刚好把现有内容全包住。
+        private static final float PANEL_MARGIN_H = 42f;
+        private static final float PANEL_MARGIN_V = 70f;
+        /** 白 · 50% 不透明度（原全屏遮罩为 0xB3 ≈ 70%） */
+        private static final int PANEL_VEIL = 0x80FFFFFF;
+
         private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final StringBuilder input = new StringBuilder();
         private String error = null;
@@ -223,14 +232,16 @@ final class LockOverlay {
                 }
                 return;
             }
-            // 自选图片：centerCrop 铺满 + 半透明遮罩（保证 4 个点与键盘清晰可读）
+            // 自选图片：centerCrop 铺满全屏，半透明白层**只盖输入面板那一块**
+            // （面板外不再压白纱 ⇒ 壁纸保持原样清晰；4 个点与键盘都落在面板内，可读性不受影响）
             float sc = Math.max(w / bg.getWidth(), h / bg.getHeight());
             float dw = bg.getWidth() * sc, dh = bg.getHeight() * sc;
             float left = (w - dw) / 2f, top = (h - dh) / 2f;
             c.drawBitmap(bg, null, new RectF(left, top, left + dw, top + dh), p);
             p.setStyle(Paint.Style.FILL);
-            p.setColor(0xB3FFFFFF);
-            c.drawRect(0, 0, w, h, p);
+            p.setColor(PANEL_VEIL);
+            c.drawRect(PANEL_MARGIN_H, PANEL_MARGIN_V,
+                    w - PANEL_MARGIN_H, h - PANEL_MARGIN_V, p);
         }
 
         /**
