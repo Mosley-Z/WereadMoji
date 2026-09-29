@@ -1,13 +1,13 @@
 {
-  "versionCode": 34,
-  "versionName": "1.0.0-beta.1",
-  "tag": "v1.0.0-beta.1",
-  "notes": "遥控翻页（Beta · 实验）：手机当遥控器，按音量键给墨水屏上的微信读书翻页。需手机屏幕保持点亮（锁屏/息屏后系统不派发音量键）。",
-  "apk": "dist/weread-stats-1.0.0-beta.1.apk",
-  "size": 296829,
-  "sha256": "1129e8928f608d64d9d3653205b01860a9d10d497b28d0748eeaee173d83476b",
+  "versionCode": 35,
+  "versionName": "1.0.1-beta",
+  "tag": "v1.0.1-beta",
+  "notes": "实验室新增子标签页；新增「锁屏密码」（Beta·实验）：唤醒屏幕后弹全屏密码窗，输对 4 位数字继续。这是应用级软锁 —— 按 Home/返回即可绕过、重启失效，不是设备安全保护。",
+  "apk": "dist/weread-stats-1.0.1-beta.apk",
+  "size": 305021,
+  "sha256": "02da23834e0f8bd76050549b9a22c368eb66476b891b6aa723501c49417590ba",
   "urls": [
-    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v1.0.0-beta.1/dist/weread-stats-1.0.0-beta.1.apk",
-    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v1.0.0-beta.1/dist/weread-stats-1.0.0-beta.1.apk"
+    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v1.0.1-beta/dist/weread-stats-1.0.1-beta.apk",
+    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v1.0.1-beta/dist/weread-stats-1.0.1-beta.apk"
   ]
 }
