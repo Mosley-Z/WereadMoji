@@ -213,6 +213,19 @@ public class SettingsActivity extends Activity {
             }
         });
 
+        // ── 🆕 TASK-021 实验室子标签（当前仅 1 个子页「遥控翻页」；后续卡在此扩段）──
+        // 作用与顶部 seg 相同：同一个 ScrollView 内，切换子页容器的 visibility。
+        final View pageLabRemote = findViewById(R.id.page_lab_remote);
+        SegTabView segLab = (SegTabView) findViewById(R.id.seg_lab);
+        segLab.setLabels(new String[]{ getString(R.string.lab_tab_remote) });
+        segLab.setListener(new SegTabView.Listener() {
+            @Override
+            public void onSegSelected(int index) {
+                // 当前仅 1 段；后续子页（锁屏密码 / 续航 / 待办卡片…）在此按 index 追加
+                pageLabRemote.setVisibility(index == 0 ? View.VISIBLE : View.GONE);
+            }
+        });
+
         etKey.setText(StatsStore.getKey(this));
         cbCard.setChecked(CardPrefs.isEnabled(this));
         String cp = StatsStore.getCardPeriod(this);

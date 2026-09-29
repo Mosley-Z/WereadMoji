@@ -908,11 +908,19 @@
                     android:textColor="#FF3C3C3C"
                     android:textSize="13sp" />
 
-                <View
+                <!-- 🆕 TASK-021 实验室子标签栏（当前仅 1 段「遥控翻页」；后续卡在此扩段） -->
+                <com.inkread.weekread.ui.SegTabView
+                    android:id="@+id/seg_lab"
                     android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginTop="12dp"
-                    android:background="#FFD8D8D8" />
+                    android:layout_height="40dp"
+                    android:layout_marginTop="12dp" />
+
+                <!-- 🆕 子页 A：遥控翻页（现有内容原样搬入，功能零改动） -->
+                <LinearLayout
+                    android:id="@+id/page_lab_remote"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
 
                 <!-- ── 遥控翻页（Beta）── -->
                 <TextView
@@ -1104,6 +1112,7 @@
                         android:textColor="@color/btn_ink_text"
                         android:textSize="15sp" />
                 </LinearLayout>
+                </LinearLayout><!-- /page_lab_remote -->
             </LinearLayout>
         </LinearLayout>
     </ScrollView>
