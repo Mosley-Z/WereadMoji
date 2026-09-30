@@ -262,9 +262,16 @@ final class CardContentController {
      * （拍板：本记形态只走 noteSync(true)，不补发）。
      */
     void refreshBoth() {
+        final String mode = StatsStore.getCardPeriod(ctx);
+        // 🔴 TASK-024-R2：待办是本地清单（TodoStore）—— 刷新 = 重读 + 重绘，零网络、零请求，
+        // 也**不需要 API Key**。必须排在下面 Key 判空**之前**，否则没填 Key 时刷新键形同虚设。
+        if (PeriodRange.TODO.equals(mode)) {
+            CardDebug.note(ctx, "refresh: todo → local re-read only");
+            refresh();                          // 内部会重读 TodoStore.pending() 并重绘
+            return;
+        }
         final String key = StatsStore.getKey(ctx);
         if (key.length() == 0) return;
-        final String mode = StatsStore.getCardPeriod(ctx);
         if (PeriodRange.NOTE.equals(mode)) {
             CardDebug.note(ctx, "refresh: note → noteSync(true) only");
             noteSync(true);

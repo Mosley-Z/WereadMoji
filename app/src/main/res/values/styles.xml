@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  本工程此前没有独立样式文件（主题一律直接用框架样式）。此文件为 V1.0.3-beta 新增。
+-->
+<resources>
+
+    <!--
+      设置页专用主题：把顶部大标题（ActionBar）压矮 15px，**字号保持不变**。
+      用户要求：「最顶端大标题『微读墨记 · 设置』高度减少 15px，字号保持不变，
+      且下方两级标签页随之上移」。
+
+      取值依据（真机像素实测，非估算）：
+        · 本机 density = 219dpi ⇒ 1dp = 219/160 = 1.369px
+        · 框架 Material ActionBar 默认高 = 56dp = 76.65px
+        · 目标「矮 15px」⇒ 76.65 − 15 = 61.65px = 45.04dp ⇒ 取 **45dp**（=61.6px，差 15.05px ✓）
+        · 真机基线（_shots/timepicker/11_raw.raw）：状态栏 ≈51px + 标题条 ≈76.6px
+          ⇒ 内容区顶边 y≈128px；改后应上移到 y≈113px。
+
+      只覆盖 `actionBarSize`，标题文字的样式（actionBarTextStyle / 字号）不动 ⇒ 字号不变。
+    -->
+    <style name="Theme.WereadMoji.Settings" parent="@android:style/Theme.Material.Light">
+        <item name="android:actionBarSize">45dp</item>
+    </style>
+
+</resources>

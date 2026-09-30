@@ -115,10 +115,10 @@ final class CardRenderer {
 
     // ── V1.0.3-beta（TASK-024）「待办」版式 ──
     // 每行 = 勾选框（最左）| 内容（超出省略号）| 日期时间（最右，无则不画该列）。
-    /** 内容字号（号） */
-    private static final float SZ_TODO = 16f;
-    /** 日期时间字号（号）—— 小一号的灰字，不与内容抢视线 */
-    private static final float SZ_TODO_WHEN = 12f;
+    /** 内容字号（号）—— 🔴 R2：16 → 17.6（用户拍板整体 ×1.1；勾选框 boxS 由本值派生，随之 ×1.1） */
+    private static final float SZ_TODO = 17.6f;
+    /** 日期时间字号（号）—— 小一号的灰字，不与内容抢视线；🔴 R2：12 → 13.2（用户拍板 ×1.1） */
+    private static final float SZ_TODO_WHEN = 13.2f;
     /** 空态文案 */
     private static final String TODO_EMPTY = "暂无待办";
 

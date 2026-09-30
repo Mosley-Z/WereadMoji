@@ -138,13 +138,13 @@
          🔴 文案硬约束（docs/FEATURES/lab.md）：只写已验证事实 —— 必须写明
             「可绕过（Home/返回）」「重启失效」「依赖卡片无障碍服务」，
             禁「保护设备安全 / 防破解」等超出软锁能力的措辞。 -->
-    <string name="lock_intro">唤醒屏幕后显示全屏密码锁，输对 4 位数字才能继续。这是「应用级软锁」：只防误触与好奇，按 Home / 返回键即可绕过，重启后也会失效 —— 它不是设备安全保护。</string>
+    <string name="lock_intro">唤醒屏幕后显示全屏密码锁，输对 4 位数字才能继续。这是「应用级软锁」，防君子不防小人，重启后失效直到应用启动，忘记密码时可直接重启。</string>
     <string name="lock_enable">启用锁屏（默认关）</string>
     <string name="lock_pin_label">4 位数字密码</string>
     <string name="lock_pin_hint">例如 1234</string>
     <string name="lock_btn_save">保存密码</string>
     <string name="lock_status_unset">密码：未设置</string>
-    <string name="lock_status_set">密码：已设置（仅保存哈希，不是明文）</string>
+    <string name="lock_status_set">密码：已设置</string>
     <string name="lock_bg_label">锁屏背景</string>
     <!-- 🆕 TASK-022-R1：S4 ROM 无文件选择器（缺 com.android.documentsui）⇒ 原 SAF「选择图片」
          在真机上必然弹不出。改为「固定路径载入」+ 可编辑路径输入框。
@@ -157,12 +157,12 @@
     <string name="lock_bg_custom_fmt">背景：%1$s</string>
     <string name="lock_bg_loaded">背景已载入</string>
     <string name="lock_bg_not_found">没找到这张图片：请确认图片已放进 /sdcard/Pictures/，文件名与上面一致</string>
-    <string name="lock_bg_hint">图片请放到 /sdcard/Pictures/ 下（文件名要和上面填的一致），再点「载入背景图」。⚠ 刚复制进去的图片，若提示找不到，重启一次设备再试（本机需要系统完成一次媒体扫描）。</string>
+    <string name="lock_bg_hint">图片请放到 /sdcard/Pictures/ 下（文件名要和上面填的一致），再点「载入背景图」。</string>
     <string name="lock_bg_perm_needed">需要「读取存储」权限才能载入背景图。若本机不弹授权框，可在电脑上执行：adb shell pm grant com.inkread.weekread android.permission.READ_EXTERNAL_STORAGE</string>
     <string name="lock_need_pin">请先设置 4 位数字密码，再启用锁屏。</string>
     <string name="lock_pin_invalid">请输入 4 位数字</string>
     <string name="lock_saved">密码已保存</string>
-    <string name="lock_tip_a11y">⚠ 锁屏依赖系统无障碍里已打开的「微读墨记」卡片服务；该服务关掉时锁屏不会出现。锁屏期间「遥控翻页」不可用（翻页手势会落在锁屏层上）。忘记密码只能清除 App 数据（会一并清掉 API Key）。</string>
+    <string name="lock_tip_a11y">⚠ 锁屏依赖系统无障碍里已打开的「微读墨记」卡片服务；该服务关掉时锁屏不会出现。锁屏期间「遥控翻页」不可用（翻页手势会落在锁屏层上）。</string>
     <string name="lock_screen_prompt">输入密码解锁</string>
     <string name="lock_screen_wrong">密码错误，请重试</string>
 
@@ -228,6 +228,14 @@
     <string name="todo_card_title">待办事项</string>
     <string name="todo_card_empty">暂无待办</string>
     <string name="todo_card_full">展开看全部</string>
+    <!-- 自绘「纯黑白」时间选择弹窗（替代系统时钟轮盘 —— 钟面 accent 近黑、墨水屏不可读） -->
+    <string name="todo_time_title">选择时间</string>
+    <string name="todo_time_hour">时</string>
+    <string name="todo_time_min">分</string>
+    <string name="todo_time_minus">－</string>
+    <string name="todo_time_plus">＋</string>
+    <string name="todo_time_input_tip">点「－ / ＋」加减，或直接点数字输入（时 0–23，分 0–59）。</string>
+    <string name="todo_time_ok">确定</string>
 
     <!-- ══════════ TASK-025：卡片切换模式 + 可选卡片 V1.0.3-beta ══════════ -->
     <string name="custom_switch_mode_title">卡片切换方式</string>
