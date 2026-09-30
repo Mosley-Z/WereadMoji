@@ -173,6 +173,13 @@ public class MainActivity extends Activity {
         tabbar.setListener(new TabBarView.Listener() {
             @Override
             public void onTabSelected(int index) {
+                // 🆕 TASK-024：第 5 段「待办」= 独立管理页（增删改/勾选/排序都在那一页做），
+                // 点了直接跳转；本页 tabMode 不动 ⇒ 选中态自然停在原页签（TabBarView 的
+                // setSelected 由 show() 按 tabMode 调，这里直接 return 就不会切走）。
+                if (index == 4) {
+                    startActivity(new Intent(MainActivity.this, TodoActivity.class));
+                    return;
+                }
                 tabMode = modeOf(index);
                 show();
                 // 该形态本地还没有缓存（第一次点开本月 / 第一次点开本书 / 翻到没看过的历史周期）→ 顺手拉一次

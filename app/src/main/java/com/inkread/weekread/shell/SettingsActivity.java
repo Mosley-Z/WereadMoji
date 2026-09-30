@@ -109,6 +109,15 @@ public class SettingsActivity extends Activity {
     private SeekBar seekNoteCardSize;          // 12–24 号连续调节
     private TextView tvNoteCardSize;           // 当前值，如「17 号 · 20.4px」
 
+    // ── V1.0.3-beta（TASK-025）卡片切换方式 + 桌面显示的卡片（自定义页 · 桌面卡片分区）──
+    private RadioButton rbSwitchLoop;          // 循环模式（默认）
+    private RadioButton rbSwitchList;          // 列表模式
+    private CheckBox cbPoolWeek;               // 卡片池：本周
+    private CheckBox cbPoolMonth;              // 卡片池：本月
+    private CheckBox cbPoolBook;               // 卡片池：本书
+    private CheckBox cbPoolNote;               // 卡片池：本记
+    private CheckBox cbPoolTodo;               // 卡片池：待办
+
     private TextView tvStatus;
     private TextView tvVersion;
     private TextView tvUpdateStatus;
@@ -194,6 +203,15 @@ public class SettingsActivity extends Activity {
         // v0.8.1（TASK-014）本月呈现方式
         rbMonthStyleCheckin = (RadioButton) findViewById(R.id.rb_month_style_checkin);
         rbMonthStyleHeatmap = (RadioButton) findViewById(R.id.rb_month_style_heatmap);
+
+        // V1.0.3-beta（TASK-025）卡片切换方式 + 桌面显示的卡片
+        rbSwitchLoop = (RadioButton) findViewById(R.id.rb_switch_loop);
+        rbSwitchList = (RadioButton) findViewById(R.id.rb_switch_list);
+        cbPoolWeek = (CheckBox) findViewById(R.id.cb_pool_week);
+        cbPoolMonth = (CheckBox) findViewById(R.id.cb_pool_month);
+        cbPoolBook = (CheckBox) findViewById(R.id.cb_pool_book);
+        cbPoolNote = (CheckBox) findViewById(R.id.cb_pool_note);
+        cbPoolTodo = (CheckBox) findViewById(R.id.cb_pool_todo);
 
         rbWeek = (RadioButton) findViewById(R.id.rb_period_week);
         rbMonth = (RadioButton) findViewById(R.id.rb_period_month);
@@ -541,6 +559,63 @@ public class SettingsActivity extends Activity {
         };
         rbMonthStyleCheckin.setOnCheckedChangeListener(monthStyleL);
         rbMonthStyleHeatmap.setOnCheckedChangeListener(monthStyleL);
+
+        // ── V1.0.3-beta（TASK-025）卡片切换方式：循环 / 列表 ──
+        // 只影响"点抬头"的行为，不改卡片内容 ⇒ 只写偏好、不 sync（省一次墨水屏闪烁）。
+        int swm = CardPrefs.getSwitchMode(this);
+        rbSwitchLoop.setChecked(swm == CardPrefs.SWITCH_LOOP);
+        rbSwitchList.setChecked(swm == CardPrefs.SWITCH_LIST);
+        CompoundButton.OnCheckedChangeListener switchModeL = new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                if (!checked) return;               // 只管"被选中的那个"
+                int m = (b.getId() == R.id.rb_switch_list)
+                        ? CardPrefs.SWITCH_LIST : CardPrefs.SWITCH_LOOP;
+                CardPrefs.setSwitchMode(SettingsActivity.this, m);
+            }
+        };
+        rbSwitchLoop.setOnCheckedChangeListener(switchModeL);
+        rbSwitchList.setOnCheckedChangeListener(switchModeL);
+
+        // ── V1.0.3-beta（TASK-025）桌面显示的卡片（卡片池）：多选，至少留一张 ──
+        // 勾选变化 → 写掩码；若**当前卡被移出池** ⇒ 立刻落到池里第一张（与 toggleCardPeriod
+        // 的兜底同口径）——否则用户会停在"设置里明明没勾、桌面却还显示着"的矛盾状态。
+        int poolMask = CardPrefs.getCardPoolMask(this);
+        cbPoolWeek.setChecked((poolMask & CardPrefs.POOL_WEEK) != 0);
+        cbPoolMonth.setChecked((poolMask & CardPrefs.POOL_MONTH) != 0);
+        cbPoolBook.setChecked((poolMask & CardPrefs.POOL_BOOK) != 0);
+        cbPoolNote.setChecked((poolMask & CardPrefs.POOL_NOTE) != 0);
+        cbPoolTodo.setChecked((poolMask & CardPrefs.POOL_TODO) != 0);
+        CompoundButton.OnCheckedChangeListener poolL = new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                int mask = 0;
+                if (cbPoolWeek.isChecked()) mask |= CardPrefs.POOL_WEEK;
+                if (cbPoolMonth.isChecked()) mask |= CardPrefs.POOL_MONTH;
+                if (cbPoolBook.isChecked()) mask |= CardPrefs.POOL_BOOK;
+                if (cbPoolNote.isChecked()) mask |= CardPrefs.POOL_NOTE;
+                if (cbPoolTodo.isChecked()) mask |= CardPrefs.POOL_TODO;
+                if (mask == 0) {
+                    // 「至少保留一张」：把刚被取消的那张原样勾回去（会再次回调，那次 mask 已非 0）
+                    b.setChecked(true);
+                    Toast.makeText(SettingsActivity.this, R.string.card_pool_min_one,
+                            Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                CardPrefs.setCardPoolMask(SettingsActivity.this, mask);
+                String cur = StatsStore.getCardPeriod(SettingsActivity.this);
+                if ((mask & StatsStore.poolBitOf(cur)) == 0) {
+                    java.util.List<String> modes = StatsStore.poolModes(SettingsActivity.this);
+                    if (!modes.isEmpty()) StatsStore.setCardPeriod(SettingsActivity.this, modes.get(0));
+                }
+                CardA11yService.sync();          // 桌面卡片立刻按新池子重绘 / 切卡
+            }
+        };
+        cbPoolWeek.setOnCheckedChangeListener(poolL);
+        cbPoolMonth.setOnCheckedChangeListener(poolL);
+        cbPoolBook.setOnCheckedChangeListener(poolL);
+        cbPoolNote.setOnCheckedChangeListener(poolL);
+        cbPoolTodo.setOnCheckedChangeListener(poolL);
 
         // ── TASK-016 本记字号（卡片）：SeekBar 连续调节（12–24 号，默认 17）──
         //

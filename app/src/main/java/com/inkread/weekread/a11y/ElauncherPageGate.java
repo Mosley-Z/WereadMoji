@@ -114,16 +114,22 @@ final class ElauncherPageGate {
      * （真机 5 处复现）。**容差一定要小于两个实测值间距的一半。**
      */
     private static final int ELA_SX_SPLIT = (ELA_SX_TO_P1 + ELA_SX_TO_P2) / 2;
-    /** 认得出这两个实测值的范围；超出即"认不出"⇒ 不动作（宁可不改也不改错） */
-    // 🔴 2026-09-28：LO 从 TO_P1−10 放宽到 −12。实测（_verify060/t017/）右滑回 P1 的
-    // TextView 残值已从 524255 漂移到 **524244**（y=500 干净滑动 2/2 复现；左滑离开侧
-    // 524266 未漂）——旧 LO=524245 差 1 把它挡在"认不出"区间 ⇒ pageGate 卡 true、
-    // 卡片在 P1 上不显示（ela4 t2/t4/t5/t13/t15 挂的直接根因）。
-    // 安全性：「落到」方向自 TASK-010 起不直接显示，须经 ElaHomeProbe 内容探测
-    // 双命中（P1 时钟块可见）才显示 —— P2/P3 无时钟块 ⇒ 524254 等同族值进入本区间
-    // 也只会触发一次无害探测，绝不误显示。
-    private static final int ELA_SX_LO = ELA_SX_TO_P1 - 12;
+    /** 残值**上界**；超出即"认不出"⇒ 不动作（宁可不改也不改错） */
     private static final int ELA_SX_HI = ELA_SX_TO_P2 + 10;
+    // ── 🔴 2026-09-30：「落到」侧下界**去魔数化**（R2 回归发现，用户拍板方案 A） ──
+    // 历史：09-24 实测「落到」= 524255 ⇒ 区间 [524245, 524276]；09-28 漂到 **524244**
+    //（−11）⇒ 把 LO 放宽到 TO_P1−12 = 524243 才救回（验证记录/74）；09-30 又漂到
+    // **524233**（再 −11）⇒ 再次掉出区间 ⇒ `pageGate` 卡 true、卡片在 P1 上不显示
+    //（ela4 t2/t4/t15r1-3 等共 7 项挂；定向复现 2/2）。「离开」侧 524266 三次漂移**都没变**。
+    // ⇒ 结论：**绝对下界对「落到」侧毫无必要**，它只会随残值漂移反复失效、每次都得改常量。
+    //   既然「落到」方向自 TASK-010 起**不直接显示**、必须经 {@link ElaHomeProbe} 内容探测
+    //   双命中 P1 时钟块才显示（P2/P3 无时钟块 ⇒ 绝不误显示；探测失败也**只维持现状、
+    //   永不写 pageGate=true**），下界直接用事件层既有的 ELA_SX_MIN（本来用来挡时钟整分
+    //   那条 sx=0）兜底即可 ⇒ **以后再漂也不用改常量**。故 ELA_SX_LO 已被删除。
+    // ⚠️ 「离开」侧仍是 `sx > ELA_SX_SPLIT` 单值定向（保留 TASK-010 起快路径：不等探测、
+    //   立即隐藏）。已知残余风险：若 524266 将来也漂到 ≤ SPLIT，会被当成「落到」⇒ 探测
+    //   在 P2 上必然落空 ⇒ 维持现状（卡片滞留 P2）。故 SPLIT / HI 仍保留，并留诊断日志。
+
 
     /**
      * 🔴 书架页指纹：`ViewPager` 事件的负 `scrollX` 实测值（v0.8.1 新增）。
@@ -133,7 +139,7 @@ final class ElauncherPageGate {
      * 首页静置 / P1↔P2 / P2↔P3 翻页 / 边界回弹 / 进设置页**全部零负 sx**（逐一实测）。
      *
      * ★ 为什么必须精确匹配、不能写成 `sx < 0`：沿用本类「认不出的值一律不动」的纪律
-     *   （见 {@link #ELA_SX_LO} 注释）。精确值命中才置位，ROM 换残值 ⇒ 不动作，绝不改错。
+     *   （见 {@link #ELA_SX_MIN} 注释）。精确值命中才置位，ROM 换残值 ⇒ 不动作，绝不改错。
      *
      * ★ 为什么不是"点按闸门"：方案 A（`TYPE_VIEW_CLICKED` → iconGate）于 2026-09-22 实测有效
      *   （`K3_shelf_t9.png` 卡片 GONE），但那之后 ROM/ELauncher 行为漂移 ——
@@ -227,9 +233,10 @@ final class ElauncherPageGate {
      *   · 窗口里**没有** `ViewPager`            → 不动
      *     （Tomo 的 FrameLayout 翻页事件、ELauncher 的时钟整分都从这里被丢掉）
      *   · 有 `FrameLayout(sx=0)`               → **落到第 1 页**（桌面 resume，实测 5/5）
-     *   · 有 `TextView` 且 sx ∈ [524245, 524276] → 真翻页，按 {@link #ELA_SX_SPLIT} 定方向
+     *   · 有 `TextView` 且 sx ∈ [ELA_SX_MIN, ELA_SX_HI] → 真翻页，按 {@link #ELA_SX_SPLIT} 定方向
      *     （> 分界 = 离开第 1 页；≤ 分界 = 落到第 1 页 —— ⚠️ TASK-010 起落到侧须经
-     *     {@link ElaHomeProbe} 内容探测双命中才真正显示）
+     *     {@link ElaHomeProbe} 内容探测双命中才真正显示；🔴 2026-09-30 起下界不再是魔数，
+     *     就用 ELA_SX_MIN —— 残值漂移对落到侧从此免疫）
      *   · 其余 sx 认不出来                      → 不动（宁可不改，也不改错）
      */
     void settleElauncherWindow() {
@@ -268,8 +275,12 @@ final class ElauncherPageGate {
         boolean leave;
         if (frame) {
             leave = false;                          // ② 桌面 resume ⇒ 回到第 1 页
-        } else if (sx >= ELA_SX_LO && sx <= ELA_SX_HI) {
-            leave = sx > ELA_SX_SPLIT;              // ③/④ 真翻页，按 sx 落在分界的哪一侧定向
+        } else if (sx >= ELA_SX_MIN && sx <= ELA_SX_HI) {
+            // ③/④ 真翻页，按 sx 落在分界的哪一侧定向。
+            // 🔴 下界 = ELA_SX_MIN（去魔数化，见上方常量区注释）：落到侧由 ElaHomeProbe 把关。
+            // ⚠️ 下界不设更高是为了「落到」侧残值漂移免疫；sx==0（无 TextView 事件，
+            //    例如 t13/t14 的边界回弹）仍因 < ELA_SX_MIN 落进 else 的「不多动」。
+            leave = sx > ELA_SX_SPLIT;
         } else {
             // ⑤ 认不出的 sx（比如 ROM 换了残值）⇒ 不动作，只留痕，便于日后诊断
             CardDebug.note(ctx, "elaSwipe 不动 (frame=" + frame + " vp=" + vp

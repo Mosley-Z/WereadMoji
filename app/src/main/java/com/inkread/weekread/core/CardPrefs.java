@@ -199,4 +199,52 @@ public final class CardPrefs {
         if (v > REMOTE_IDLE_MAX) v = REMOTE_IDLE_MAX;
         sp(c).edit().putInt("remote_idle_timeout", v).commit();
     }
+
+    // ── TASK-025：卡片池（哪几张卡进桌面循环/列表）+ 切换模式（V1.0.3-beta）──
+    //
+    // 🔴 作用范围**只有桌面卡片** —— 未勾选的卡不参与桌面循环/列表，
+    //    但 **APP 内主页面（周/月/书/记/待办）的查看完全不受影响**（验收 A4）。
+    // 🔴 默认**全勾**（K7 拍板）：升级后行为与现状零差异（所有卡都在池里）。
+
+    public static final int POOL_WEEK = 1;
+    public static final int POOL_MONTH = 2;
+    public static final int POOL_BOOK = 4;
+    public static final int POOL_NOTE = 8;
+    public static final int POOL_TODO = 16;
+    /** 全部卡都在池里（5 张：周/月/书/记/待办） */
+    public static final int POOL_ALL = POOL_WEEK | POOL_MONTH | POOL_BOOK | POOL_NOTE | POOL_TODO;
+    public static final int DEFAULT_POOL_MASK = POOL_ALL;
+
+    /** 切换模式：循环（现状）/ 列表（点左上角弹列表选卡） */
+    public static final int SWITCH_LOOP = 0;
+    public static final int SWITCH_LIST = 1;
+    public static final int DEFAULT_SWITCH_MODE = SWITCH_LOOP;
+
+    /**
+     * 卡片池掩码（{@link #POOL_WEEK} 等的位或）。
+     *
+     * 🔴 **0 视为非法 ⇒ 回落全勾**（UI 侧也拦截"一张都不勾"，这里是防脏值的第二道保险）——
+     * 否则桌面会一张卡都不显示，用户会以为 App 坏了。
+     * 未知位（来自未来版本的脏值）一律丢弃，只保留本版认识的 5 位。
+     */
+    public static int getCardPoolMask(Context c) {
+        int v = sp(c).getInt("card_pool_mask", DEFAULT_POOL_MASK) & POOL_ALL;
+        return v == 0 ? DEFAULT_POOL_MASK : v;
+    }
+
+    public static void setCardPoolMask(Context c, int v) {
+        v &= POOL_ALL;
+        if (v == 0) v = DEFAULT_POOL_MASK;
+        sp(c).edit().putInt("card_pool_mask", v).commit();
+    }
+
+    /** 切换模式：{@link #SWITCH_LOOP} / {@link #SWITCH_LIST}。非法值一律按循环处理（不炸） */
+    public static int getSwitchMode(Context c) {
+        int v = sp(c).getInt("switch_mode", DEFAULT_SWITCH_MODE);
+        return (v == SWITCH_LIST) ? SWITCH_LIST : SWITCH_LOOP;
+    }
+
+    public static void setSwitchMode(Context c, int v) {
+        sp(c).edit().putInt("switch_mode", (v == SWITCH_LIST) ? SWITCH_LIST : SWITCH_LOOP).commit();
+    }
 }

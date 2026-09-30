@@ -11,6 +11,7 @@ import com.inkread.weekread.core.NoteStore;
 import com.inkread.weekread.core.PeriodRange;
 import com.inkread.weekread.core.PeriodStats;
 import com.inkread.weekread.core.StatsStore;
+import com.inkread.weekread.core.TodoStore;
 import com.inkread.weekread.feature.WeekCardView;
 import com.inkread.weekread.net.NoteSync;
 import com.inkread.weekread.net.WereadApi;
@@ -87,6 +88,9 @@ final class CardContentController {
                 loadCover(b);
             } else if (PeriodRange.NOTE.equals(mode)) {
                 if (!showNote(false)) noteSync(false);
+            } else if (PeriodRange.TODO.equals(mode)) {
+                // TASK-024：待办卡只显示**未完成**项；本地读取，零网络、零请求
+                cardView().setTodo(TodoStore.pending(ctx));
             } else {
                 PeriodStats s = StatsStore.loadCard(ctx);
                 cardView().setStats(s);
@@ -258,9 +262,16 @@ final class CardContentController {
      * （拍板：本记形态只走 noteSync(true)，不补发）。
      */
     void refreshBoth() {
+        final String mode = StatsStore.getCardPeriod(ctx);
+        // 🔴 TASK-024-R2：待办是本地清单（TodoStore）—— 刷新 = 重读 + 重绘，零网络、零请求，
+        // 也**不需要 API Key**。必须排在下面 Key 判空**之前**，否则没填 Key 时刷新键形同虚设。
+        if (PeriodRange.TODO.equals(mode)) {
+            CardDebug.note(ctx, "refresh: todo → local re-read only");
+            refresh();                          // 内部会重读 TodoStore.pending() 并重绘
+            return;
+        }
         final String key = StatsStore.getKey(ctx);
         if (key.length() == 0) return;
-        final String mode = StatsStore.getCardPeriod(ctx);
         if (PeriodRange.NOTE.equals(mode)) {
             CardDebug.note(ctx, "refresh: note → noteSync(true) only");
             noteSync(true);
@@ -300,21 +311,50 @@ final class CardContentController {
     }
 
     /**
-     * 用户**短按**了卡片左上角的抬头 → 三态循环（本周 → 本月 → 本书）。
+     * 用户**短按**了卡片左上角的抬头 → 按「切换模式」偏好分两路（TASK-025）：
+     *
+     * · **循环模式**（默认）：在已勾选的卡片池内顺序切下一张，见 {@link StatsStore#toggleCardPeriod}；
+     * · **列表模式**：不切，弹出一个下拉框让用户直接挑（见 {@link OverlayController#showPeriodMenu}）。
      *
      * 墨水屏没有涟漪动画，**换帧本身就是反馈**（抬头从「本周阅读时长」变成「9月阅读」、
      * 再变成「本书阅读进度」，图形也从柱状图变成日历、再变成进度条）——
-     * 所以这里立刻 refresh() 一帧，不等网络。
-     * 若目标形态本地没有缓存，再顺手拉一次；有缓存就先显示缓存（离线也能用）。
+     * 所以换完立刻 refresh() 一帧，不等网络。若目标形态本地没有缓存，再顺手拉一次。
      */
     void togglePeriod() {
+        if (CardPrefs.getSwitchMode(ctx) == CardPrefs.SWITCH_LIST) {
+            ov.showPeriodMenu();               // 列表模式：弹下拉，不循环
+            return;
+        }
         String mode = StatsStore.toggleCardPeriod(ctx);
         CardDebug.note(ctx, "tap title → mode=" + mode);
-        refresh();                                  // 立刻换成另一形态的那一帧
+        applyMode(mode);
+    }
+
+    /**
+     * 列表模式：用户从下拉框**直接挑了**某张卡（TASK-025）—— 落盘 + 换帧 + 按需补数据。
+     *
+     * 与循环模式共用 {@link #applyMode}，所以两条路的收尾完全一致（不给两种模式留两套逻辑）。
+     */
+    void selectPeriod(String mode) {
+        if (mode == null) return;
+        StatsStore.setCardPeriod(ctx, mode);
+        CardDebug.note(ctx, "pick card → mode=" + mode);
+        applyMode(mode);
+    }
+
+    /**
+     * 换形态后的**通用收尾**（循环模式与列表模式共用）：先换帧，再按需补数据。
+     *
+     * @param mode 已经落盘的目标形态
+     */
+    private void applyMode(String mode) {
+        refresh();                                  // 立刻换成目标形态的那一帧
         if (PeriodRange.BOOK.equals(mode)) {
             if (BookStore.load(ctx) == null) fetchBookData(StatsStore.getKey(ctx), false);
         } else if (PeriodRange.NOTE.equals(mode)) {
             if (!showNote(false)) noteSync(false);      // 池子空才起同步（去重 + 退避，见 noteSync）
+        } else if (PeriodRange.TODO.equals(mode)) {
+            // 待办是本地的（TodoStore）：refresh() 已经取到最新，零网络、零请求
         } else if (StatsStore.loadCard(ctx) == null) {
             fetchCardData(false);               // 非手动触发：吃 5s 节流（TASK-012）
         }

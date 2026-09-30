@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 待办列表的**一行**（TASK-024）：勾选框 | 内容 | 排序箭头（仅排序态可见）。
+     日期时间作为第二行小字挂在内容下方（无则不显示）。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp">
+
+    <CheckBox
+        android:id="@+id/cb_todo_item"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:focusable="false" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:layout_marginLeft="4dp">
+
+        <TextView
+            android:id="@+id/tv_todo_content"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#FF000000"
+            android:textSize="17sp" />
+
+        <TextView
+            android:id="@+id/tv_todo_when"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textColor="#FF888888"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+    <!-- 排序态的 ↑（默认隐藏） -->
+    <TextView
+        android:id="@+id/tv_todo_up"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:gravity="center"
+        android:text="↑"
+        android:textColor="#FF000000"
+        android:textSize="22sp"
+        android:visibility="gone" />
+
+    <!-- 排序态的 ↓（默认隐藏） -->
+    <TextView
+        android:id="@+id/tv_todo_down"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:gravity="center"
+        android:text="↓"
+        android:textColor="#FF000000"
+        android:textSize="22sp"
+        android:visibility="gone" />
+</LinearLayout>

@@ -113,6 +113,15 @@ final class CardRenderer {
     /** 本记形态「导出」按钮（v0.4.1：只画在 App 全屏档，桌面卡片放不下） */
     private static final String EXPORT_LABEL = "导出";
 
+    // ── V1.0.3-beta（TASK-024）「待办」版式 ──
+    // 每行 = 勾选框（最左）| 内容（超出省略号）| 日期时间（最右，无则不画该列）。
+    /** 内容字号（号）—— 🔴 R2：16 → 17.6（用户拍板整体 ×1.1；勾选框 boxS 由本值派生，随之 ×1.1） */
+    private static final float SZ_TODO = 17.6f;
+    /** 日期时间字号（号）—— 小一号的灰字，不与内容抢视线；🔴 R2：12 → 13.2（用户拍板 ×1.1） */
+    private static final float SZ_TODO_WHEN = 13.2f;
+    /** 空态文案 */
+    private static final String TODO_EMPTY = "暂无待办";
+
     // ── v0.4.0「本记」版式 ──
     // 引号 + 正文折行（衬线体）+ 署名行（书名粗/作者灰）+ 末行（章节·日期）。
     // 正文行数不写死：**按可用高度算**（长句多给几行，短句自然留白），杜绝压到署名。
@@ -207,6 +216,7 @@ final class CardRenderer {
         // 行末「展开/收起」按钮每帧重新判定：先清空，本记分支里若判定要画再回写。
         // 这样"上一帧有按钮、这一帧没了"（切形态 / 换一条 / 收起）也能正确撤掉触摸窗。
         host.expandBox.setEmpty();
+        host.todoBoxes.clear();        // 待办勾选框矩形每帧重建（非待办形态 ⇒ 保持空 ⇒ 桌面小窗收走）
         float w = host.getWidth(), h = host.getHeight();
         if (host.phMain != null) {
             drawCentered(c, w / 2f, h * 0.42f, host.phMain, SZ_EMPTY * host.unit, INK);
@@ -238,6 +248,12 @@ final class CardRenderer {
         // 「本记」形态（v0.4.0）：一条随机划线，数据走 NoteStore
         if (host.isNote()) {
             drawNoteBody(c, w, h, left, right, padY, ruleY);
+            return;
+        }
+
+        // 「待办」形态（V1.0.3-beta，TASK-024）：未完成清单，数据走 TodoStore
+        if (host.isTodo()) {
+            drawTodoBody(c, w, h, left, right, padY, ruleY);
             return;
         }
 
@@ -1234,6 +1250,106 @@ final class CardRenderer {
      * App 全屏档：不限行数，正文段**可纵向滚动**（自绘，触摸在 CardInteraction#noteTouch）；
      * 抬头、署名、末行、进度、按钮全部**固定**，滑到哪儿都点得到「换一条」。
      */
+    // ══════════════════════ 待办：未完成清单（V1.0.3-beta，TASK-024） ══════════════════════
+
+    /**
+     * 画待办清单：**只画未完成项**（列表已由 controller 过滤），每行三段 ——
+     * 勾选框（最左）｜内容（超出省略号）｜日期时间（最右，**无则不画该列**）。
+     *
+     * 展开/收起复用本记机制（TASK-017）：装不下时在末行下方画「展开▽」/「收起△」（右对齐），
+     * 桌面那个透明小窗由 {@link WeekCardView#expandBox} 的回写驱动 —— **不新增窗口**。
+     * 逐条勾选框矩形写进 {@link WeekCardView#todoBoxes}（桌面"直接勾选"用，见 OverlayController）。
+     */
+    private void drawTodoBody(Canvas c, float w, float h, float left, float right,
+                              float padY, float ruleY) {
+        float tSize = SZ_TODO * host.unit;
+        float whenSize = SZ_TODO_WHEN * host.unit;
+        float lineH = tSize * 1.95f;
+
+        host.p.setTypeface(android.graphics.Typeface.DEFAULT);
+        java.util.List<com.inkread.weekread.core.TodoItem> list = host.todo;
+        host.todoBoxes.clear();                       // 每帧重建（勾选框位置随条目增减而变）
+
+        if (list == null || list.isEmpty()) {
+            drawCentered(c, (left + right) / 2f, h * 0.44f, TODO_EMPTY, SZ_EMPTY * host.unit, INK);
+            drawCentered(c, (left + right) / 2f, h * 0.44f + SZ_EMPTY * host.unit * 1.8f,
+                    "在 APP「待办」页添加", SZ_SUB * host.unit, GRAY);
+            return;
+        }
+
+        // 上沿与 drawHeader 同源：展开态锚定收起态基准（上半部分不随高度下移，与本记一致）
+        float padTop = (host.isNoteExpanded() ? CardSpec.cardHeight() : h) * 0.055f;
+        float top = ruleY + padTop * 0.75f;
+        float bottom = h - padY * 0.9f;
+
+        // 底部留一行给「展开/收起」按钮
+        float btnH = tSize * 1.7f;
+        int canRows = (int) Math.floor((bottom - btnH - top) / lineH + 1e-3);
+        if (canRows < 1) canRows = 1;
+
+        int total = list.size();
+        int showRows = Math.min(total, canRows);
+
+        // 日期时间列宽（所有条目取最大，保证右对齐整齐；全空则整列为 0 ⇒ 不占位）
+        host.p.setTextSize(whenSize);
+        float whenW = 0f;
+        for (com.inkread.weekread.core.TodoItem it : list) {
+            String s = it.whenLabel();
+            if (s.length() > 0) whenW = Math.max(whenW, host.p.measureText(s));
+        }
+        float whenColW = (whenW > 0f) ? (whenW + tSize * 0.6f) : 0f;
+
+        float boxS = tSize * 1.0f;
+        float boxColW = boxS + tSize * 0.8f;
+        float textX = left + boxColW;
+        float textMaxW = right - whenColW - textX;
+        if (textMaxW < tSize * 2f) textMaxW = tSize * 2f;
+
+        for (int i = 0; i < showRows; i++) {
+            com.inkread.weekread.core.TodoItem it = list.get(i);
+            float rowCy = top + i * lineH + lineH / 2f;
+
+            // ① 勾选框（描边方块）
+            float bx = left, by = rowCy - boxS / 2f;
+            host.p.setStyle(Paint.Style.STROKE);
+            host.p.setStrokeWidth(Math.max(1.5f, tSize * 0.10f));
+            host.p.setColor(INK);
+            c.drawRect(bx, by, bx + boxS, by + boxS, host.p);
+            // 记下矩形（View 内坐标）—— 桌面"点它勾选"的透明小窗按它摆
+            host.todoBoxes.add(new RectF(bx, by, bx + boxS, by + boxS));
+
+            // ② 内容（单行，超出省略号）
+            host.p.setStyle(Paint.Style.FILL);
+            host.p.setColor(INK);
+            host.p.setTextAlign(Paint.Align.LEFT);
+            host.p.setTextSize(tSize);
+            host.p.setFakeBoldText(false);
+            c.drawText(host.layout.ellipsize(it.content, textMaxW), textX, rowCy + tSize * 0.35f, host.p);
+
+            // ③ 日期时间（右对齐；为空则整列不画 —— 上面 whenColW 已归零）
+            String when = it.whenLabel();
+            if (when.length() > 0) {
+                host.p.setColor(GRAY);
+                host.p.setTextSize(whenSize);
+                host.p.setTextAlign(Paint.Align.RIGHT);
+                c.drawText(when, right, rowCy + whenSize * 0.35f, host.p);
+                host.p.setTextAlign(Paint.Align.LEFT);
+                host.p.setColor(INK);
+            }
+        }
+
+        // 「展开▽ / 收起△」—— 收起态只在装不下时画；展开态总要画（否则收不回去）。
+        // 🔴 复用 drawExpandToggle ⇒ expandBox 回写 + OverlayController 那个透明小窗全部现成。
+        boolean drawBtn = host.isNoteExpanded() || (total > showRows);
+        if (drawBtn) {
+            float sz = SZ_EXPAND * host.unit;
+            host.p.setTextSize(sz);
+            String label = host.isNoteExpanded() ? EXPAND_LABEL_UP : EXPAND_LABEL_DOWN;
+            float btnW = host.p.measureText(label) + (EXPAND_TRI_W + EXPAND_TRI_GAP) * host.unit;
+            drawExpandToggle(c, label, right - btnW, top + showRows * lineH + btnH * 0.62f, btnW);
+        }
+    }
+
     private void drawNoteBody(Canvas c, float w, float h, float left, float right,
                               float padY, float ruleY) {
         float availW = right - left;

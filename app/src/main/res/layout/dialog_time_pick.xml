@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  TASK-024 衍生（V1.0.3-beta）：自绘「纯黑白」时间选择弹窗 —— 替代系统 TimePicker 时钟轮盘。
+
+  🔴 为什么不用系统 TimePickerDialog：
+     它的钟面**填充色**取自主题的「强调色（accent / colorControlActivated）」。
+     本机墨水屏 ROM 把强调色设成了近黑 ⇒ 钟面渲染成 **深灰底(#555555) + 黑字**，
+     墨水屏上完全看不清（真机像素取证见 _shots/timepicker/02_raw.raw）。
+     同一根因还让「选日期」的选中日变成纯黑圆点（数字被吞）——但日历其余部分可读，故本轮不动。
+
+  本弹窗全自绘：白底黑字，与「添加 / 编辑待办」弹窗同一套观感（复用 @drawable/btn_ink）。
+  交互：时 / 分各一行 = [－] [可编辑数字] [＋] —— **既能点加减，也能点数字直接输入**。
+  边界：时 0–23、分 0–59（保存时 clamp；加减循环回绕）。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:focusable="true"
+    android:focusableInTouchMode="true"
+    android:paddingLeft="20dp"
+    android:paddingRight="20dp"
+    android:paddingTop="6dp"
+    android:paddingBottom="2dp">
+
+    <!-- ══════════ 时 ══════════ -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="44dp"
+            android:layout_height="wrap_content"
+            android:text="@string/todo_time_hour"
+            android:textColor="#FF000000"
+            android:textSize="17sp" />
+
+        <Button
+            android:id="@+id/btn_time_hour_minus"
+            android:layout_width="60dp"
+            android:layout_height="50dp"
+            android:background="@drawable/btn_ink"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:stateListAnimator="@null"
+            android:text="@string/todo_time_minus"
+            android:textColor="@color/btn_ink_text"
+            android:textSize="22sp" />
+
+        <EditText
+            android:id="@+id/et_time_hour"
+            android:layout_width="0dp"
+            android:layout_height="50dp"
+            android:layout_marginLeft="8dp"
+            android:layout_marginRight="8dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:inputType="number"
+            android:maxLength="2"
+            android:selectAllOnFocus="true"
+            android:textColor="#FF000000"
+            android:textSize="26sp" />
+
+        <Button
+            android:id="@+id/btn_time_hour_plus"
+            android:layout_width="60dp"
+            android:layout_height="50dp"
+            android:background="@drawable/btn_ink"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:stateListAnimator="@null"
+            android:text="@string/todo_time_plus"
+            android:textColor="@color/btn_ink_text"
+            android:textSize="22sp" />
+    </LinearLayout>
+
+    <!-- ══════════ 分 ══════════ -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="44dp"
+            android:layout_height="wrap_content"
+            android:text="@string/todo_time_min"
+            android:textColor="#FF000000"
+            android:textSize="17sp" />
+
+        <Button
+            android:id="@+id/btn_time_min_minus"
+            android:layout_width="60dp"
+            android:layout_height="50dp"
+            android:background="@drawable/btn_ink"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:stateListAnimator="@null"
+            android:text="@string/todo_time_minus"
+            android:textColor="@color/btn_ink_text"
+            android:textSize="22sp" />
+
+        <EditText
+            android:id="@+id/et_time_min"
+            android:layout_width="0dp"
+            android:layout_height="50dp"
+            android:layout_marginLeft="8dp"
+            android:layout_marginRight="8dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:inputType="number"
+            android:maxLength="2"
+            android:selectAllOnFocus="true"
+            android:textColor="#FF000000"
+            android:textSize="26sp" />
+
+        <Button
+            android:id="@+id/btn_time_min_plus"
+            android:layout_width="60dp"
+            android:layout_height="50dp"
+            android:background="@drawable/btn_ink"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:stateListAnimator="@null"
+            android:text="@string/todo_time_plus"
+            android:textColor="@color/btn_ink_text"
+            android:textSize="22sp" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:text="@string/todo_time_input_tip"
+        android:textColor="#FF3C3C3C"
+        android:textSize="13sp" />
+</LinearLayout>

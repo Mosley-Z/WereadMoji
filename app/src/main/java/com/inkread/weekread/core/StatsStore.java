@@ -101,6 +101,7 @@ public class StatsStore {
         if (PeriodRange.MONTHLY.equals(v)) return PeriodRange.MONTHLY;
         if (PeriodRange.BOOK.equals(v)) return PeriodRange.BOOK;
         if (PeriodRange.NOTE.equals(v)) return PeriodRange.NOTE;
+        if (PeriodRange.TODO.equals(v)) return PeriodRange.TODO;
         return PeriodRange.WEEKLY;
     }
 
@@ -109,25 +110,69 @@ public class StatsStore {
         if (PeriodRange.MONTHLY.equals(mode)) v = PeriodRange.MONTHLY;
         else if (PeriodRange.BOOK.equals(mode)) v = PeriodRange.BOOK;
         else if (PeriodRange.NOTE.equals(mode)) v = PeriodRange.NOTE;
+        else if (PeriodRange.TODO.equals(mode)) v = PeriodRange.TODO;
         else v = PeriodRange.WEEKLY;
         sp(c).edit().putString(K_CARD_PERIOD, v).commit();
     }
 
+    /** 五张平级卡的**固有顺序**（卡片池过滤、列表模式下拉、设置页勾选都按它排）。 */
+    public static final String[] CARD_ORDER = {
+            PeriodRange.WEEKLY, PeriodRange.MONTHLY, PeriodRange.BOOK,
+            PeriodRange.NOTE, PeriodRange.TODO };
+
+    /** 形态 → 卡片池位（与 {@code CardPrefs.POOL_*} 一一对应）；未知形态按「本周」处理 */
+    public static int poolBitOf(String mode) {
+        if (PeriodRange.MONTHLY.equals(mode)) return CardPrefs.POOL_MONTH;
+        if (PeriodRange.BOOK.equals(mode)) return CardPrefs.POOL_BOOK;
+        if (PeriodRange.NOTE.equals(mode)) return CardPrefs.POOL_NOTE;
+        if (PeriodRange.TODO.equals(mode)) return CardPrefs.POOL_TODO;
+        return CardPrefs.POOL_WEEK;
+    }
+
     /**
-     * 切到下一个形态：**本周 → 本月 → 本书 → 本周**（卡片左上角点按）。
+     * 切到下一个形态 —— **在已勾选的卡片池内循环**（TASK-025）。
      *
-     * 三态循环而不是"两两互切"：三个形态地位对等，用户想看哪个都能一下点到，
-     * 且不用记住当前在哪一态。
+     * 固有顺序：本周 → 本月 → 本书 → 本记 → 待办 → 本周；**跳过未勾选的卡**。
+     * · 池里只有当前这一张 ⇒ 原地不动（返回 now），不产生多余重绘。
+     * · 🔴 当前卡**不在池里**时（用户刚把它取消勾选）⇒ 直接落到池里第一张，
+     *   不让用户停在"看不见的卡"上。池一张都没有理论上不可能（CardPrefs 兜底全勾）。
      */
     public static String toggleCardPeriod(Context c) {
+        int mask = CardPrefs.getCardPoolMask(c);
         String now = getCardPeriod(c);
-        String next;
-        if (PeriodRange.WEEKLY.equals(now)) next = PeriodRange.MONTHLY;
-        else if (PeriodRange.MONTHLY.equals(now)) next = PeriodRange.BOOK;
-        else if (PeriodRange.BOOK.equals(now)) next = PeriodRange.NOTE;
-        else next = PeriodRange.WEEKLY;
-        setCardPeriod(c, next);
-        return next;
+        if ((mask & poolBitOf(now)) == 0) {                 // 当前卡被移出池 ⇒ 落到池里第一张
+            for (String m : CARD_ORDER) {
+                if ((mask & poolBitOf(m)) != 0) { setCardPeriod(c, m); return m; }
+            }
+            return now;
+        }
+        int idx = 0;
+        for (int i = 0; i < CARD_ORDER.length; i++) if (CARD_ORDER[i].equals(now)) idx = i;
+        for (int k = 1; k <= CARD_ORDER.length; k++) {
+            String cand = CARD_ORDER[(idx + k) % CARD_ORDER.length];
+            if ((mask & poolBitOf(cand)) != 0) { setCardPeriod(c, cand); return cand; }
+        }
+        return now;
+    }
+
+    /** 池内已勾选的形态列表（按固有顺序）—— 列表模式下拉框与设置页共用。 */
+    public static List<String> poolModes(Context c) {
+        int mask = CardPrefs.getCardPoolMask(c);
+        List<String> out = new ArrayList<String>();
+        for (String m : CARD_ORDER) if ((mask & poolBitOf(m)) != 0) out.add(m);
+        return out;
+    }
+
+    /**
+     * 形态的**短名**（两个字）—— 卡片抬头下拉框 / 设置页多选框共用。
+     * 与「页签」的叫法一致（见 TabBarView），别在这里另起一套名字。
+     */
+    public static String modeShortLabel(String mode) {
+        if (PeriodRange.MONTHLY.equals(mode)) return "本月";
+        if (PeriodRange.BOOK.equals(mode)) return "本书";
+        if (PeriodRange.NOTE.equals(mode)) return "本记";
+        if (PeriodRange.TODO.equals(mode)) return "待办";
+        return "本周";
     }
 
     /**

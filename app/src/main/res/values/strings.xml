@@ -135,16 +135,18 @@
     <string name="main_remote_notice">本机已设为「手机端遥控器」，桌面卡片功能已隐藏。\n要查看阅读数据或改回设置，请点下面的「设置」，到「实验室」里调整角色。</string>
 
     <!-- 🆕 TASK-022（V1.0.1-beta）：实验室 · 锁屏密码（应用级软锁）。
-         🔴 文案硬约束（docs/FEATURES/lab.md）：只写已验证事实 —— 必须写明
-            「可绕过（Home/返回）」「重启失效」「依赖卡片无障碍服务」，
-            禁「保护设备安全 / 防破解」等超出软锁能力的措辞。 -->
-    <string name="lock_intro">唤醒屏幕后显示全屏密码锁，输对 4 位数字才能继续。这是「应用级软锁」：只防误触与好奇，按 Home / 返回键即可绕过，重启后也会失效 —— 它不是设备安全保护。</string>
+         🔴 文案硬约束（docs/FEATURES/lab.md，100 号审查对齐）：只写已验证事实 ——
+            「应用级软锁、防君子不防小人」「重启后失效（忘记密码可直接重启）」
+            「依赖卡片无障碍服务（见 lock_tip_a11y）」「锁屏期间遥控翻页不可用」，
+            禁「保护设备安全 / 防破解」等超出软锁能力的措辞。
+            原「可被 Home/返回绕过」经 77 号真机实测不成立（覆盖层仍蒙屏吃触摸），故不写入。 -->
+    <string name="lock_intro">唤醒屏幕后显示全屏密码锁，输对 4 位数字才能继续。这是「应用级软锁」，防君子不防小人，重启后失效直到应用启动，忘记密码时可直接重启。</string>
     <string name="lock_enable">启用锁屏（默认关）</string>
     <string name="lock_pin_label">4 位数字密码</string>
     <string name="lock_pin_hint">例如 1234</string>
     <string name="lock_btn_save">保存密码</string>
     <string name="lock_status_unset">密码：未设置</string>
-    <string name="lock_status_set">密码：已设置（仅保存哈希，不是明文）</string>
+    <string name="lock_status_set">密码：已设置</string>
     <string name="lock_bg_label">锁屏背景</string>
     <!-- 🆕 TASK-022-R1：S4 ROM 无文件选择器（缺 com.android.documentsui）⇒ 原 SAF「选择图片」
          在真机上必然弹不出。改为「固定路径载入」+ 可编辑路径输入框。
@@ -157,12 +159,12 @@
     <string name="lock_bg_custom_fmt">背景：%1$s</string>
     <string name="lock_bg_loaded">背景已载入</string>
     <string name="lock_bg_not_found">没找到这张图片：请确认图片已放进 /sdcard/Pictures/，文件名与上面一致</string>
-    <string name="lock_bg_hint">图片请放到 /sdcard/Pictures/ 下（文件名要和上面填的一致），再点「载入背景图」。⚠ 刚复制进去的图片，若提示找不到，重启一次设备再试（本机需要系统完成一次媒体扫描）。</string>
+    <string name="lock_bg_hint">图片请放到 /sdcard/Pictures/ 下（文件名要和上面填的一致），再点「载入背景图」。</string>
     <string name="lock_bg_perm_needed">需要「读取存储」权限才能载入背景图。若本机不弹授权框，可在电脑上执行：adb shell pm grant com.inkread.weekread android.permission.READ_EXTERNAL_STORAGE</string>
     <string name="lock_need_pin">请先设置 4 位数字密码，再启用锁屏。</string>
     <string name="lock_pin_invalid">请输入 4 位数字</string>
     <string name="lock_saved">密码已保存</string>
-    <string name="lock_tip_a11y">⚠ 锁屏依赖系统无障碍里已打开的「微读墨记」卡片服务；该服务关掉时锁屏不会出现。锁屏期间「遥控翻页」不可用（翻页手势会落在锁屏层上）。忘记密码只能清除 App 数据（会一并清掉 API Key）。</string>
+    <string name="lock_tip_a11y">⚠ 锁屏依赖系统无障碍里已打开的「微读墨记」卡片服务；该服务关掉时锁屏不会出现。锁屏期间「遥控翻页」不可用（翻页手势会落在锁屏层上）。</string>
     <string name="lock_screen_prompt">输入密码解锁</string>
     <string name="lock_screen_wrong">密码错误，请重试</string>
 
@@ -203,4 +205,51 @@
     <string name="power_battery_opt_tip">省电模式可能限制后台，导致卡片 / 遥控被系统掐断。到这个页面把「微读墨记」设为「不优化」，能保住它。</string>
     <string name="power_battery_opt_failed">本机打不开这个系统页面</string>
     <string name="power_write_failed">写入失败：可能还没授权，或本机系统不允许改这一项。</string>
+
+    <!-- ══════════ TASK-024：待办（APP 页 + 桌面卡片）V1.0.3-beta ══════════ -->
+    <string name="todo_tab_pending">待办列表</string>
+    <string name="todo_tab_done">已完成</string>
+    <string name="todo_add">＋ 添加待办</string>
+    <string name="todo_sort">排序</string>
+    <string name="todo_sort_exit">完成排序</string>
+    <string name="todo_content_hint">要做什么？</string>
+    <string name="todo_no_date">未设日期</string>
+    <string name="todo_no_time">未设时间</string>
+    <string name="todo_pick_date">选日期</string>
+    <string name="todo_pick_time">选时间</string>
+    <string name="todo_clear">清除</string>
+    <string name="todo_empty_pending">还没有待办，点下面「添加待办」记一条</string>
+    <string name="todo_empty_done">还没有已完成的事项</string>
+    <string name="todo_need_content">请先填写内容</string>
+    <string name="todo_title_add">添加待办</string>
+    <string name="todo_title_edit">编辑待办</string>
+    <string name="todo_save">保存</string>
+    <string name="todo_cancel">取消</string>
+    <string name="todo_delete">删除</string>
+    <!-- 卡片抬头与空态 -->
+    <string name="todo_card_title">待办事项</string>
+    <string name="todo_card_empty">暂无待办</string>
+    <string name="todo_card_full">展开看全部</string>
+    <!-- 自绘「纯黑白」时间选择弹窗（替代系统时钟轮盘 —— 钟面 accent 近黑、墨水屏不可读） -->
+    <string name="todo_time_title">选择时间</string>
+    <string name="todo_time_hour">时</string>
+    <string name="todo_time_min">分</string>
+    <string name="todo_time_minus">－</string>
+    <string name="todo_time_plus">＋</string>
+    <string name="todo_time_input_tip">点「－ / ＋」加减，或直接点数字输入（时 0–23，分 0–59）。</string>
+    <string name="todo_time_ok">确定</string>
+
+    <!-- ══════════ TASK-025：卡片切换模式 + 可选卡片 V1.0.3-beta ══════════ -->
+    <string name="custom_switch_mode_title">卡片切换方式</string>
+    <string name="switch_mode_loop">循环模式（默认）</string>
+    <string name="switch_mode_list">列表模式</string>
+    <string name="switch_mode_tip">循环模式：点卡片左上角，依次切换到下一张。列表模式：点卡片左上角弹出列表，直接选一张。</string>
+    <string name="custom_card_pool_title">桌面显示的卡片</string>
+    <string name="pool_week">本周</string>
+    <string name="pool_month">本月</string>
+    <string name="pool_book">本书</string>
+    <string name="pool_note">本记</string>
+    <string name="pool_todo">待办</string>
+    <string name="card_pool_tip">只影响桌面卡片；App 内各页面的查看不受影响。</string>
+    <string name="card_pool_min_one">至少要保留一张卡片</string>
 </resources>

@@ -51,10 +51,21 @@
             </intent-filter>
         </activity>
 
+        <!-- 🆕 V1.0.3-beta：设置页换用自定义主题 Theme.WereadMoji.Settings
+             （仅把 ActionBar 高度 56dp → 45dp，让顶部大标题矮 15px、下方标签栏随之上移；字号不变）。 -->
         <activity
             android:name=".shell.SettingsActivity"
             android:exported="false"
             android:label="@string/settings_name"
+            android:theme="@style/Theme.WereadMoji.Settings" />
+
+        <!-- 🆕 TASK-024（V1.0.3-beta）：待办管理页。
+             入口 = 主页第 5 段页签「待办」；exported=false（只由本应用内部拉起）。
+             无新增权限：数据只落本机 SharedPreferences（`cfg` / `todo_list`）。 -->
+        <activity
+            android:name=".shell.TodoActivity"
+            android:exported="false"
+            android:label="@string/todo_card_title"
             android:theme="@android:style/Theme.Material.Light" />
 
         <!-- 「怎么用」：把面向使用者的说明内置进来（v0.4.2），文案在 res/raw/help.txt -->
