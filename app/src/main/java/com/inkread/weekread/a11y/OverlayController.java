@@ -6,6 +6,8 @@ import com.inkread.weekread.core.CardDebug;
 import com.inkread.weekread.core.CardPrefs;
 import com.inkread.weekread.core.PeriodRange;
 import com.inkread.weekread.core.StatsStore;
+import com.inkread.weekread.core.TodoItem;
+import com.inkread.weekread.core.TodoStore;
 import com.inkread.weekread.core.CardSpec;
 import com.inkread.weekread.feature.OverlayWindow;
 import com.inkread.weekread.feature.WeekCardView;
@@ -44,8 +46,31 @@ final class OverlayController {
     private View prevView;
     /** 本记**行末**「展开▽ / 收起△」的透明触摸区（TASK-017，位置随绘制结果走） */
     private View expandView;
+    /**
+     * 待办**逐条勾选框**的透明触摸区（V1.0.3-beta，TASK-024）。
+     *
+     * 🔴 与 {@link #expandView} 同款但**是"一组"**：待办形态每一条左侧的 `☐` 各自一个窗，
+     * 一屏最多五六条。条目增减 / 展开收起会让整列位移 ⇒ 位置全部由绘制回写驱动
+     * （{@link #updateTodoTouches}），本类只负责把它们落到 WindowManager。
+     * 列表为空时整组让开（否则会在看不见的地方吃掉桌面点击）。
+     */
+    private final java.util.List<View> todoViews = new java.util.ArrayList<View>();
     /** 长按抬头弹出的菜单（铺满卡片的透明窗口，平时 GONE） */
     private CardMenuView menuView;
+    /**
+     * 「列表模式」的**选卡下拉框**（V1.0.3-beta，TASK-025）：铺满卡片、只画中间那个框，平时 GONE。
+     *
+     * 与 {@link #menuView}（长按隐藏菜单）同款不同用：那个选隐藏时长，这个选下一张卡。
+     * 两者互斥显示 —— 开一个先关另一个（否则两张菜单叠在同一个位置）。
+     */
+    private CardMenuView periodMenuView;
+    /**
+     * 下拉框当前这一屏的选项**对应的形态**（与 {@link CardMenuView} 的行一一对应）。
+     *
+     * ⚠️ 只在 {@link #showPeriodMenu} 里重建 —— 菜单开着时清单不会变（用户此刻看不到设置页），
+     * 所以点第 index 行就取这里第 index 个形态，安全。
+     */
+    private final java.util.List<String> periodMenuModes = new java.util.ArrayList<String>();
     private boolean windowAdded = false;
 
     // ══════════════════════ 本记「展开▽」（v0.9，TASK-017）══════════════════════
@@ -149,6 +174,14 @@ final class OverlayController {
         }
     };
 
+    /** 下拉框的超时收摊（与长按菜单同一条纪律：没人操作就别一直占着卡片区域的触摸） */
+    private final Runnable periodMenuTimeout = new Runnable() {
+        @Override
+        public void run() {
+            dismissPeriodMenu();
+        }
+    };
+
     void ensureWindow() {
         if (windowAdded && view != null) return;
         try {
@@ -171,6 +204,14 @@ final class OverlayController {
                     updateExpandTouch(box);
                 }
             });
+            // 待办逐条勾选框的宿主回调（TASK-024）：位置同样"只有绘制时才定得下来"，
+            // 由卡片回写到本类再落到 WindowManager —— 与「展开▽」完全同款。
+            view.setTodoBoxListener(new WeekCardView.TodoBoxListener() {
+                @Override
+                public void onTodoBoxes(java.util.List<RectF> boxes) {
+                    updateTodoTouches(boxes);
+                }
+            });
             String m0 = StatsStore.getCardPeriod(ctx);
             view.setMode(m0);
             if (PeriodRange.BOOK.equals(m0)) {
@@ -179,6 +220,8 @@ final class OverlayController {
                 content.loadCover(b0);
             } else if (PeriodRange.NOTE.equals(m0)) {
                 if (!content.showNote(false)) content.noteSync(false);
+            } else if (PeriodRange.TODO.equals(m0)) {
+                view.setTodo(TodoStore.pending(ctx));      // TASK-024：待办形态（只显未完成）
             } else view.setStats(StatsStore.loadCard(ctx));
             view.setOpenListener(new WeekCardView.OpenListener() {
                 @Override
@@ -281,6 +324,25 @@ final class OverlayController {
             });
             wm.addView(menuView, OverlayWindow.paramsMenu(OverlayWindow.typeAccessibility()));
 
+            // 「列表模式」选卡下拉框（TASK-025）：与长按菜单同款的一层透明窗，
+            // 平时 GONE；点抬头时按"已勾选的卡片池"动态填项（见 showPeriodMenu）。
+            periodMenuView = new CardMenuView(ctx);
+            periodMenuView.setListener(new CardMenuView.Listener() {
+                @Override
+                public void onSelect(int index) {
+                    String m = (index >= 0 && index < periodMenuModes.size())
+                            ? periodMenuModes.get(index) : null;
+                    dismissPeriodMenu();
+                    if (m != null && content != null) content.selectPeriod(m);
+                }
+
+                @Override
+                public void onDismiss() {
+                    dismissPeriodMenu();
+                }
+            });
+            wm.addView(periodMenuView, OverlayWindow.paramsMenu(OverlayWindow.typeAccessibility()));
+
             windowAdded = true;
         } catch (Throwable t) {
             view = null;
@@ -289,7 +351,10 @@ final class OverlayController {
             openView = null;
             prevView = null;
             expandView = null;
+            for (int i = 0; i < todoViews.size(); i++) removeSafely(todoViews.get(i));
+            todoViews.clear();
             menuView = null;
+            periodMenuView = null;
             cardH = CardSpec.cardHeight();
             windowAdded = false;
         }
@@ -319,6 +384,10 @@ final class OverlayController {
             }
             if (menuView != null) {
                 wm.updateViewLayout(menuView,
+                        OverlayWindow.paramsMenu(OverlayWindow.typeAccessibility(), h));
+            }
+            if (periodMenuView != null) {
+                wm.updateViewLayout(periodMenuView,
                         OverlayWindow.paramsMenu(OverlayWindow.typeAccessibility(), h));
             }
             CardDebug.note(ctx, "card height=" + h);
@@ -359,10 +428,74 @@ final class OverlayController {
         }
     }
 
+    /**
+     * 按绘制回写出来的矩形摆**待办逐条勾选框**的触摸窗（TASK-024）。
+     *
+     * @param boxes **View 内坐标**的勾选框矩形列表，顺序 = 卡片上从上到下 = {@link TodoStore#pending}；
+     *              null / 空 = 非待办形态或没有条目 ⇒ 整组让开
+     */
+    private void updateTodoTouches(java.util.List<RectF> boxes) {
+        if (wm == null) return;
+        int n = (boxes == null) ? 0 : boxes.size();
+        // 点击要定位到"第几条" ⇒ 与当前未完成清单按顺序对齐（与绘制用的是同一份数据）
+        java.util.List<TodoItem> items = (n > 0) ? TodoStore.pending(ctx) : null;
+
+        // ① 窗口数量先跟条目数对齐（多退少补）——
+        //    勾掉一条后卡片重绘只剩 n-1 个框，这里必须把末尾那个窗摘掉，
+        //    否则它会留在原地继续吃掉一次点击。
+        while (todoViews.size() < n) {
+            View v = new View(ctx);
+            v.setVisibility(View.GONE);
+            try {
+                wm.addView(v, OverlayWindow.paramsTodoTouch(OverlayWindow.typeAccessibility(),
+                        CardSpec.CARD_LEFT, CardSpec.CARD_TOP, 1, 1));
+                todoViews.add(v);
+            } catch (Throwable t) {
+                CardDebug.note(ctx, "addView todo touch failed");
+                break;
+            }
+        }
+        while (todoViews.size() > n) {
+            removeSafely(todoViews.remove(todoViews.size() - 1));
+        }
+
+        // ② 逐条摆位 + 绑点击（只有"卡片此刻确实可见 且 是待办形态"才接管触摸 ——
+        //    与 openView/prevView 同一条纪律：藏起来就必须让开）
+        boolean showTodo = cardVisible && PeriodRange.TODO.equals(StatsStore.getCardPeriod(ctx));
+        for (int i = 0; i < todoViews.size(); i++) {
+            final long id = (items != null && i < items.size()) ? items.get(i).id : -1L;
+            View v = todoViews.get(i);
+            v.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View x) {
+                    if (id < 0L) return;
+                    // 勾选 = 标记完成（卡片只显未完成 ⇒ 这一条随即从卡片上消失）
+                    TodoStore.setDone(ctx, id, true);
+                    if (content != null) content.refresh();
+                }
+            });
+            RectF b = boxes.get(i);
+            // View 内坐标 → 屏幕坐标（窗口左上角就在 CARD_LEFT/CARD_TOP，与 expandBox 同款换算）
+            int x = Math.round(CardSpec.CARD_LEFT + b.left);
+            int y = Math.round(CardSpec.CARD_TOP + b.top);
+            int w = Math.max(1, Math.round(b.width()));
+            int h = Math.max(1, Math.round(b.height()));
+            try {
+                wm.updateViewLayout(v, OverlayWindow.paramsTodoTouch(
+                        OverlayWindow.typeAccessibility(), x, y, w, h));
+                v.setVisibility(showTodo ? View.VISIBLE : View.GONE);
+            } catch (Throwable t) {
+                v.setVisibility(View.GONE);
+                CardDebug.note(ctx, "updateTodoTouches failed");
+            }
+        }
+    }
+
     // ══════════════════════ 长按菜单 / 隐藏闸门 ══════════════════════
 
     void showMenu() {
         if (menuView == null) return;
+        dismissPeriodMenu();                 // 两张菜单互斥：开这张前先把另一张收掉
         st.menuOpen = true;
         if (ui != null) {
             ui.removeCallbacks(menuTimeout);
@@ -376,6 +509,37 @@ final class OverlayController {
         if (!st.menuOpen) return;
         st.menuOpen = false;
         if (ui != null) ui.removeCallbacks(menuTimeout);
+        applyVisibility();
+    }
+
+    /**
+     * 打开「列表模式」的选卡下拉框（TASK-025）。
+     *
+     * 选项 = **已勾选的卡片池**（按固有顺序，见 {@link StatsStore#poolModes}）。
+     * 池里只有一张时也照常弹（用户能看到"只有这一张"这个事实），点了原地不动。
+     */
+    void showPeriodMenu() {
+        if (periodMenuView == null) return;
+        dismissMenu();                       // 两张菜单互斥
+        java.util.List<String> modes = StatsStore.poolModes(ctx);
+        periodMenuModes.clear();
+        periodMenuModes.addAll(modes);
+        String[] items = new String[modes.size()];
+        for (int i = 0; i < modes.size(); i++) items[i] = StatsStore.modeShortLabel(modes.get(i));
+        periodMenuView.setItems(items);
+        st.periodMenuOpen = true;
+        if (ui != null) {
+            ui.removeCallbacks(periodMenuTimeout);
+            ui.postDelayed(periodMenuTimeout, MENU_AUTO_MS);
+        }
+        CardDebug.note(ctx, "tap title → periodMenu (" + modes.size() + ")");
+        applyVisibility();
+    }
+
+    void dismissPeriodMenu() {
+        if (!st.periodMenuOpen) return;
+        st.periodMenuOpen = false;
+        if (ui != null) ui.removeCallbacks(periodMenuTimeout);
         applyVisibility();
     }
 
@@ -419,6 +583,7 @@ final class OverlayController {
         String cardMode = StatsStore.getCardPeriod(ctx);
         boolean bookMode = PeriodRange.BOOK.equals(cardMode);
         boolean noteMode = PeriodRange.NOTE.equals(cardMode);
+        boolean todoMode = PeriodRange.TODO.equals(cardMode);
         if (openView != null) {
             openView.setVisibility((show && (bookMode || noteMode)) ? View.VISIBLE : View.GONE);
         }
@@ -426,14 +591,24 @@ final class OverlayController {
         if (prevView != null) {
             prevView.setVisibility((show && noteMode) ? View.VISIBLE : View.GONE);
         }
-        // 「展开▽ / 收起△」只在本记形态、卡片可见、且这一帧真画出了按钮时才接管触摸。
+        // 「展开▽ / 收起△」在本记 + 待办两种形态出现、卡片可见、且这一帧真画出了按钮时才接管触摸。
         // 其它形态 / 卡片藏起来时一律 GONE —— 它就在正文区里，藏不掉就会吃掉桌面的长按与滑动。
         if (expandView != null) {
             expandView.setVisibility(
-                    (show && noteMode && !expandBoxScreen.isEmpty()) ? View.VISIBLE : View.GONE);
+                    (show && (noteMode || todoMode) && !expandBoxScreen.isEmpty())
+                            ? View.VISIBLE : View.GONE);
+        }
+        // 待办逐条勾选框：只在本待办形态、卡片可见时接管触摸；其它形态 / 卡片藏起来时整组让开。
+        for (int i = 0; i < todoViews.size(); i++) {
+            View v = todoViews.get(i);
+            if (v != null) v.setVisibility((show && todoMode) ? View.VISIBLE : View.GONE);
         }
         if (menuView != null) {
             menuView.setVisibility((show && st.menuOpen) ? View.VISIBLE : View.GONE);
+        }
+        // 选卡下拉框：与长按菜单同款 —— 卡片可见且下拉框开着才接管触摸
+        if (periodMenuView != null) {
+            periodMenuView.setVisibility((show && st.periodMenuOpen) ? View.VISIBLE : View.GONE);
         }
         CardDebug.note(ctx, "visibility=" + (show ? "VISIBLE" : "GONE")
                 + " (enabled=" + CardPrefs.isEnabled(ctx)
@@ -448,16 +623,21 @@ final class OverlayController {
     }
 
     void removeWindow() {
-        // 六个窗口视图全部要摘干净 —— 漏掉任何一个，下次 ensureWindow 会再 addView 一个，
+        // 所有窗口视图都要摘干净 —— 漏掉任何一个，下次 ensureWindow 会再 addView 一个，
         // 旧的那个就永久留在 WindowManager 里（看不见但一直吃掉那片区域的触摸）。
         // v0.4.2 补上：原来只摘了 view / hitView / titleView，openView / menuView 一直没摘。
+        // V1.0.3-beta 再补：待办勾选窗是一组（数量随条目变），必须逐个摘（见下方 for）。
         removeSafely(view);
         removeSafely(hitView);
         removeSafely(titleView);
         removeSafely(openView);
         removeSafely(prevView);
         removeSafely(expandView);
+        // 待办勾选窗是"一组"，数量随条目变 ⇒ 必须逐个摘干净（同 expandView 一条纪律）
+        for (int i = 0; i < todoViews.size(); i++) removeSafely(todoViews.get(i));
+        todoViews.clear();
         removeSafely(menuView);
+        removeSafely(periodMenuView);
 
         view = null;
         hitView = null;
@@ -466,6 +646,8 @@ final class OverlayController {
         prevView = null;
         expandView = null;
         menuView = null;
+        periodMenuView = null;
+        st.periodMenuOpen = false;
         cardH = CardSpec.cardHeight();
         cardVisible = false;
         expandBoxScreen.setEmpty();

@@ -168,6 +168,26 @@ public final class OverlayWindow {
     }
 
     /**
+     * 待办**逐条勾选框**的触摸区（V1.0.3-beta，TASK-024）。
+     *
+     * 与 {@link #paramsExpandTouch} 完全同款：位置没有固定坐标 —— 每条待办的勾选框随
+     * 条目增减整体位移，所以坐标由绘制时回写的 {@code WeekCardView#todoBoxes}
+     * （已换算成**屏幕坐标**）给。**每条一个窗**（一屏最多五六条）。
+     */
+    public static WindowManager.LayoutParams paramsTodoTouch(int type, int x, int y, int w, int h) {
+        int flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
+
+        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                w, h, type, flags, PixelFormat.TRANSLUCENT);
+        lp.gravity = Gravity.TOP | Gravity.LEFT;
+        lp.x = x;
+        lp.y = y;
+        lp.setTitle("微读墨记·勾选");
+        return lp;
+    }
+
+    /**
      * 长按菜单窗口 —— **整张卡片那么大，但只有中间那个框是不透明的**。
      *
      * 为什么要铺满卡片而不是只铺菜单框：铺满之后，点在框外的部分能被本窗口接住，

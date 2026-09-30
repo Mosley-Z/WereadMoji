@@ -37,6 +37,14 @@ public final class PeriodRange {
      */
     public static final String NOTE = "note";
 
+    /**
+     * 「待办」—— V1.0.3-beta（TASK-024）起的第五个形态：待办清单。
+     *
+     * 与「本书」「本记」一样**不是周期**：没有起止、不能步进，数据走 `TodoStore`。
+     * 放进来同样只为让"形态"这个维度**只有一处定义**（页签、卡片抬头、设置页卡片池共用）。
+     */
+    public static final String TODO = "todo";
+
     private PeriodRange() {
     }
 
@@ -48,6 +56,11 @@ public final class PeriodRange {
     /** 是不是「本记」形态 */
     public static boolean isNote(String m) {
         return NOTE.equals(m);
+    }
+
+    /** 是不是「待办」形态（V1.0.3-beta / TASK-024） */
+    public static boolean isTodo(String m) {
+        return TODO.equals(m);
     }
 
     private static Calendar newCal() {
@@ -159,6 +172,7 @@ public final class PeriodRange {
     public static String title(String mode, long periodStart, boolean current) {
         if (BOOK.equals(mode)) return "本书阅读进度";
         if (NOTE.equals(mode)) return "本记 · 今日一签";
+        if (TODO.equals(mode)) return "待办事项";
         if (!MONTHLY.equals(mode)) {
             if (current) return "本周阅读时长";
             return "周 " + weekLabel(periodStart);

@@ -86,6 +86,14 @@ public class WeekCardView extends View {
     /** 「本记」当前展示的那条划线（v0.4.0） */
     NoteStats note;
     /**
+     * 「待办」形态要展示的**未完成**清单（V1.0.3-beta，TASK-024）。
+     *
+     * 由 `CardContentController` 从 `TodoStore.pending()` 取好塞进来 ——
+     * 🔴 渲染函数**不读存储 / 不读 prefs**（docs/03 §3，与 {@link #note} / {@link #book} 同款口径）。
+     * null = 还没取到（画「暂无待办」）。
+     */
+    java.util.List<com.inkread.weekread.core.TodoItem> todo = null;
+    /**
      * 「本记」空态的自定义提示行（v0.5.3，R02/R08）。
      *
      * 为什么要它：空态有两种性质完全不同的原因，必须让用户分得清 ——
@@ -192,6 +200,16 @@ public class WeekCardView extends View {
     ExpandListener expandListener;
     /** 上一次回写出去的按钮矩形（判"有没有变"，避免重复回调 ⇒ 墨水屏少闪） */
     private final RectF expandBoxSent = new RectF();
+    /**
+     * 待办形态每一条勾选框的矩形（**View 内坐标**，绘制时重建；V1.0.3-beta，TASK-024）。
+     *
+     * 🔴 与 {@link #expandBox} 同款：位置只有绘制时才定得下来（条目增减会让整列位移），
+     * 所以桌面那个「点勾选框」的透明小窗必须等画完再摆（见 {@link #publishTodoBoxes}）。
+     */
+    final java.util.List<RectF> todoBoxes = new java.util.ArrayList<RectF>();
+    /** 上一次回写出去的勾选框列表（判"有没有变"，避免重复回调 ⇒ 墨水屏少闪） */
+    private final java.util.List<RectF> todoBoxesSent = new java.util.ArrayList<RectF>();
+    TodoBoxListener todoBoxListener;
 
     // ── v0.4.4：本记正文的滚动与导出模式 ──
 
@@ -274,6 +292,18 @@ public class WeekCardView extends View {
         void onExpandBox(RectF box);
     }
 
+    /**
+     * 待办**逐条勾选框**矩形的宿主回调（V1.0.3-beta，TASK-024）—— **只有桌面悬浮卡需要实现**。
+     *
+     * 与 {@link ExpandListener} 同款的取舍：卡片主体 `FLAG_NOT_TOUCHABLE`（手势要穿透给桌面），
+     * 勾选框是**画**在卡上的，点它靠 `OverlayController` 另开的一组透明小窗；
+     * 而每条的位置只有本 View 知道 ⇒ 变化时必须通知外面重建窗口。
+     */
+    public interface TodoBoxListener {
+        /** 本帧所有勾选框矩形（**View 内坐标副本**）；空列表 = 非待办形态 / 没有条目 */
+        void onTodoBoxes(java.util.List<RectF> boxes);
+    }
+
     public WeekCardView(Context c) { this(c, null); }
 
     public WeekCardView(Context c, AttributeSet a) {
@@ -309,7 +339,8 @@ public class WeekCardView extends View {
     public void setMode(String m) {
         String v = PeriodRange.MONTHLY.equals(m) ? PeriodRange.MONTHLY
                 : (PeriodRange.BOOK.equals(m) ? PeriodRange.BOOK
-                : (PeriodRange.NOTE.equals(m) ? PeriodRange.NOTE : PeriodRange.WEEKLY));
+                : (PeriodRange.NOTE.equals(m) ? PeriodRange.NOTE
+                : (PeriodRange.TODO.equals(m) ? PeriodRange.TODO : PeriodRange.WEEKLY)));
         if (v.equals(mode)) return;
         mode = v;
         noteHint = null;            // 换形态了，上一个形态的空态提示不再适用（v0.5.3）
@@ -328,6 +359,9 @@ public class WeekCardView extends View {
      * App 全屏档与设置页预览不设，此时按钮要么不画（App）、要么画出来也点不动（预览，本来就是预览）。
      */
     public void setExpandListener(ExpandListener l) { expandListener = l; }
+
+    /** 设「待办勾选框」的宿主回调（V1.0.3-beta，TASK-024）—— 只有桌面悬浮卡需要 */
+    public void setTodoBoxListener(TodoBoxListener l) { todoBoxListener = l; }
 
     public String getMode() {
         return mode;
@@ -378,6 +412,22 @@ public class WeekCardView extends View {
 
     public NoteStats getNote() {
         return note;
+    }
+
+    /**
+     * 设「待办」清单（V1.0.3-beta，TASK-024）。传 null = 还没取到。
+     *
+     * 传进来的**应当只有未完成项**（`TodoStore.pending()`）—— 卡片只显示未完成（验收 A5）。
+     * 换形态 / 勾选后条目变化都靠重设这个列表触发重绘。
+     */
+    public void setTodo(java.util.List<com.inkread.weekread.core.TodoItem> list) {
+        todo = list;
+        errorText = null;
+        refreshing = false;
+        phMain = null;
+        emptyNote = null;
+        collapseNote();     // 与 setNote 同规：换数据 ⇒ 展开态复位（TASK-017 拍板）
+        invalidate();
     }
 
     /** 当前「本书」形态显示的那本（v0.5.3，R06：「打开」要跟着屏幕上的这本走，不是落盘的那本） */
@@ -507,6 +557,26 @@ public class WeekCardView extends View {
     }
 
     /**
+     * 待办勾选框列表回写后**通知宿主**（包级，由 {@link #onDraw} 在画完那一帧调）。
+     * 与 {@link #publishExpandBox} 完全同款：post 到消息队列（不在绘制过程中动窗口），
+     * 且**列表没变就完全不回调**（墨水屏每一次多余的全屏刷新都肉眼可见）。
+     */
+    private void publishTodoBoxes() {
+        if (todoBoxesSent.equals(todoBoxes)) return;
+        todoBoxesSent.clear();
+        for (RectF r : todoBoxes) todoBoxesSent.add(new RectF(r));
+        if (todoBoxListener == null) return;
+        final java.util.ArrayList<RectF> copy = new java.util.ArrayList<RectF>();
+        for (RectF r : todoBoxesSent) copy.add(new RectF(r));
+        post(new Runnable() {
+            @Override
+            public void run() {
+                if (todoBoxListener != null) todoBoxListener.onTodoBoxes(copy);
+            }
+        });
+    }
+
+    /**
      * 设封面位图（v0.3.5.1，方案 A 左封右文）。
      * 传 null = 没拿到（画描边占位框）。异步下载完成后再调一次即可，自动重绘。
      */
@@ -547,6 +617,11 @@ public class WeekCardView extends View {
         return PeriodRange.NOTE.equals(mode);
     }
 
+    /** 当前是否在显示"待办"形态（V1.0.3-beta，TASK-024） */
+    public boolean isTodo() {
+        return PeriodRange.TODO.equals(mode);
+    }
+
     /**
      * 「更新于 HH:MM」的时间来源：周/月看周期缓存，本书看 BookStats#fetchedAt，
      * 本记看取出的时刻。（包级 —— CardLayout 的 updatedLabel 要用）
@@ -554,6 +629,7 @@ public class WeekCardView extends View {
     long dataTime() {
         if (isBook()) return book == null ? 0L : book.fetchedAt;
         if (isNote()) return noteFetchedAt;
+        if (isTodo()) return 0L;              // 待办是本地清单，没有"更新于"概念
         return stats == null ? 0L : stats.fetchedAt;
     }
 
@@ -565,6 +641,7 @@ public class WeekCardView extends View {
         // 行末「展开/收起」按钮的位置是这一帧才算出来的 ⇒ 画完再通知宿主摆触摸窗。
         // （renderer 每帧开头都会先把 expandBox 清空，所以这里拿到的一定是本次的真实结果）
         publishExpandBox();
+        publishTodoBoxes();     // TASK-024：待办逐条勾选框（同上，等画完再摆小窗）
     }
 
     @Override

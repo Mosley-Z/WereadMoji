@@ -746,6 +746,133 @@
                         android:text="@string/label_note_card_size_tip"
                         android:textColor="#FF3C3C3C"
                         android:textSize="13sp" />
+
+                    <!-- ── TASK-025（V1.0.3-beta）：卡片切换方式 + 桌面显示的卡片（卡片池）──
+                         两项都只影响桌面卡片，故放在"桌面卡片"这一分区里（手机角色整块隐藏）。
+                         勾选态由 SettingsActivity 读写 CardPrefs；🆕「至少保留一张」在 Activity 兜底。 -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/custom_switch_mode_title"
+                        android:textColor="#FF000000"
+                        android:textSize="15sp" />
+
+                    <RadioGroup
+                        android:id="@+id/rg_switch_mode"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:orientation="horizontal">
+
+                        <RadioButton
+                            android:id="@+id/rb_switch_loop"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/switch_mode_loop"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp" />
+
+                        <RadioButton
+                            android:id="@+id/rb_switch_list"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/switch_mode_list"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp" />
+                    </RadioGroup>
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:lineSpacingExtra="2dp"
+                        android:text="@string/switch_mode_tip"
+                        android:textColor="#FF3C3C3C"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/custom_card_pool_title"
+                        android:textColor="#FF000000"
+                        android:textSize="15sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:orientation="horizontal">
+
+                        <CheckBox
+                            android:id="@+id/cb_pool_week"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/pool_week"
+                            android:textColor="#FF000000"
+                            android:textSize="14sp" />
+
+                        <CheckBox
+                            android:id="@+id/cb_pool_month"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/pool_month"
+                            android:textColor="#FF000000"
+                            android:textSize="14sp" />
+
+                        <CheckBox
+                            android:id="@+id/cb_pool_book"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/pool_book"
+                            android:textColor="#FF000000"
+                            android:textSize="14sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <CheckBox
+                            android:id="@+id/cb_pool_note"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/pool_note"
+                            android:textColor="#FF000000"
+                            android:textSize="14sp" />
+
+                        <CheckBox
+                            android:id="@+id/cb_pool_todo"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/pool_todo"
+                            android:textColor="#FF000000"
+                            android:textSize="14sp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/card_pool_tip"
+                        android:textColor="#FF3C3C3C"
+                        android:textSize="13sp" />
                 </LinearLayout>
 
                 <!-- TASK-016：自定义页第二个分区「本记导出图」—— 与上面的「桌面卡片」分开，

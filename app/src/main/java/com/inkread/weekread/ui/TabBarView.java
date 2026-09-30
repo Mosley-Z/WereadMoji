@@ -18,14 +18,14 @@ import android.view.View;
 public class TabBarView extends View {
 
     public interface Listener {
-        /** index: 0=本周 1=本月 2=本书 3=本记 */
+        /** index: 0=本周 1=本月 2=本书 3=本记 4=待办（TASK-024：点了直接开待办管理页） */
         void onTabSelected(int index);
     }
 
     private static final int INK = 0xFF000000;
     private static final int GRAY = 0xFF9A9A9A;
 
-    private static final String[] TABS = {"本周", "本月", "本书", "本记"};
+    private static final String[] TABS = {"本周", "本月", "本书", "本记", "待办"};
 
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
     private float unit;      // 1 号 = 屏幕高度 * 0.0015

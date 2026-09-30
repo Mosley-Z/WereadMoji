@@ -203,4 +203,43 @@
     <string name="power_battery_opt_tip">省电模式可能限制后台，导致卡片 / 遥控被系统掐断。到这个页面把「微读墨记」设为「不优化」，能保住它。</string>
     <string name="power_battery_opt_failed">本机打不开这个系统页面</string>
     <string name="power_write_failed">写入失败：可能还没授权，或本机系统不允许改这一项。</string>
+
+    <!-- ══════════ TASK-024：待办（APP 页 + 桌面卡片）V1.0.3-beta ══════════ -->
+    <string name="todo_tab_pending">待办列表</string>
+    <string name="todo_tab_done">已完成</string>
+    <string name="todo_add">＋ 添加待办</string>
+    <string name="todo_sort">排序</string>
+    <string name="todo_sort_exit">完成排序</string>
+    <string name="todo_content_hint">要做什么？</string>
+    <string name="todo_no_date">未设日期</string>
+    <string name="todo_no_time">未设时间</string>
+    <string name="todo_pick_date">选日期</string>
+    <string name="todo_pick_time">选时间</string>
+    <string name="todo_clear">清除</string>
+    <string name="todo_empty_pending">还没有待办，点下面「添加待办」记一条</string>
+    <string name="todo_empty_done">还没有已完成的事项</string>
+    <string name="todo_need_content">请先填写内容</string>
+    <string name="todo_title_add">添加待办</string>
+    <string name="todo_title_edit">编辑待办</string>
+    <string name="todo_save">保存</string>
+    <string name="todo_cancel">取消</string>
+    <string name="todo_delete">删除</string>
+    <!-- 卡片抬头与空态 -->
+    <string name="todo_card_title">待办事项</string>
+    <string name="todo_card_empty">暂无待办</string>
+    <string name="todo_card_full">展开看全部</string>
+
+    <!-- ══════════ TASK-025：卡片切换模式 + 可选卡片 V1.0.3-beta ══════════ -->
+    <string name="custom_switch_mode_title">卡片切换方式</string>
+    <string name="switch_mode_loop">循环模式（默认）</string>
+    <string name="switch_mode_list">列表模式</string>
+    <string name="switch_mode_tip">循环模式：点卡片左上角，依次切换到下一张。列表模式：点卡片左上角弹出列表，直接选一张。</string>
+    <string name="custom_card_pool_title">桌面显示的卡片</string>
+    <string name="pool_week">本周</string>
+    <string name="pool_month">本月</string>
+    <string name="pool_book">本书</string>
+    <string name="pool_note">本记</string>
+    <string name="pool_todo">待办</string>
+    <string name="card_pool_tip">只影响桌面卡片；App 内各页面的查看不受影响。</string>
+    <string name="card_pool_min_one">至少要保留一张卡片</string>
 </resources>

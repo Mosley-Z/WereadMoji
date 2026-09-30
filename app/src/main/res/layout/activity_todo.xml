@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 待办管理页（TASK-024 / V1.0.3-beta）。纯黑白、无动画，与设置页同风格。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#FFFFFFFF">
+
+    <!-- 顶部页签：待办列表 | 已完成（复用通用 SegTabView，与设置页/实验室同一控件） -->
+    <com.inkread.weekread.ui.SegTabView
+        android:id="@+id/seg_todo"
+        android:layout_width="match_parent"
+        android:layout_height="44dp" />
+
+    <ScrollView
+        android:id="@+id/sv_todo"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:scrollbars="vertical">
+
+        <LinearLayout
+            android:id="@+id/todo_list"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingLeft="16dp"
+            android:paddingRight="16dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp" />
+
+    </ScrollView>
+
+    <!-- 空态提示（列表为空时显示） -->
+    <TextView
+        android:id="@+id/tv_todo_empty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:textColor="#FF888888"
+        android:textSize="15sp"
+        android:visibility="gone" />
+
+    <!-- 底部操作栏：添加 | 排序 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingLeft="16dp"
+        android:paddingRight="16dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="12dp">
+
+        <Button
+            android:id="@+id/btn_todo_add"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginRight="6dp"
+            android:text="@string/todo_add" />
+
+        <Button
+            android:id="@+id/btn_todo_sort"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginLeft="6dp"
+            android:text="@string/todo_sort" />
+    </LinearLayout>
+</LinearLayout>

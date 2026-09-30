@@ -71,6 +71,13 @@ final class CardVisibilityState {
     long hideUntil = 0L;
     /** 长按菜单是否展开 */
     boolean menuOpen = false;
+    /**
+     * 「列表模式」下拉框（卡片抬头点开的选择卡菜单）是否展开（V1.0.3-beta，TASK-025）。
+     *
+     * 与 {@link #menuOpen}（长按隐藏菜单）**互斥且互不认识**：两者都是"铺满卡片的一张透明
+     * 菜单窗"，同时开就叠在一起了。开任一个时另一个先关（见 OverlayController）。
+     */
+    boolean periodMenuOpen = false;
 
     // ── Tomo 翻页判据的窗口状态 ──
 
@@ -185,6 +192,7 @@ final class CardVisibilityState {
         hideGate = false;
         hideUntil = 0L;
         menuOpen = false;
+        periodMenuOpen = false;
         screenOnAt = 0L;
         lastHomeTextNodeAt = 0L;
         resetWindows();
