@@ -1,13 +1,13 @@
 {
-  "versionCode": 36,
-  "versionName": "1.0.2-beta",
-  "tag": "v1.0.2-beta",
-  "notes": "实验室新增「续航优化」子页（省电开关 + 一键复制授权命令）；锁屏背景改按固定路径载入；精简实验室文案与标签栏间距、锁屏密码改为居中面板。",
-  "apk": "dist/weread-stats-1.0.2-beta.apk",
-  "size": 317309,
-  "sha256": "6d1556135abe4bdc4e068acdddbacdf76b1289cde55f2d460af21803b42e2490",
+  "versionCode": 37,
+  "versionName": "1.0.3-beta",
+  "tag": "v1.0.3-beta",
+  "notes": "新增「待办」：主页第 5 页签可增删改，桌面卡片也能勾选；周报/月报卡片可切换显示；时间选择弹窗改为黑白自绘（墨水屏可读）。",
+  "apk": "dist/weread-stats-1.0.3-beta.apk",
+  "size": 338087,
+  "sha256": "9d106a7fcbd025be161430de98a120be547b359f1bf0741a8e407eab6ea9a3ae",
   "urls": [
-    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v1.0.2-beta/dist/weread-stats-1.0.2-beta.apk",
-    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v1.0.2-beta/dist/weread-stats-1.0.2-beta.apk"
+    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v1.0.3-beta/dist/weread-stats-1.0.3-beta.apk",
+    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v1.0.3-beta/dist/weread-stats-1.0.3-beta.apk"
   ]
 }
