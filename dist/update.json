@@ -1,13 +1,13 @@
 {
-  "versionCode": 37,
-  "versionName": "1.0.3-beta",
-  "tag": "v1.0.3-beta",
-  "notes": "新增「待办」：主页第 5 页签可增删改，桌面卡片也能勾选；周报/月报卡片可切换显示；时间选择弹窗改为黑白自绘（墨水屏可读）。",
-  "apk": "dist/weread-stats-1.0.3-beta.apk",
-  "size": 338087,
-  "sha256": "9d106a7fcbd025be161430de98a120be547b359f1bf0741a8e407eab6ea9a3ae",
+  "versionCode": 38,
+  "versionName": "1.0.4-beta",
+  "tag": "v1.0.4-beta",
+  "notes": "新增「手机晃动翻页」：在「实验室 → 遥控翻页」开启后，晃一晃手机即可翻墨水屏（左/上=下一页、右/下=上一页，两组方向可分别反转）；新增低/中/高三档灵敏度（默认「中」），与音量键翻页可同时使用。",
+  "apk": "dist/weread-stats-1.0.4-beta.apk",
+  "size": 346279,
+  "sha256": "89aa8a73cf89116f18c3801b7b934ba3487c8121eb36bcc0507a076f45265cf8",
   "urls": [
-    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v1.0.3-beta/dist/weread-stats-1.0.3-beta.apk",
-    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v1.0.3-beta/dist/weread-stats-1.0.3-beta.apk"
+    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v1.0.4-beta/dist/weread-stats-1.0.4-beta.apk",
+    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v1.0.4-beta/dist/weread-stats-1.0.4-beta.apk"
   ]
 }

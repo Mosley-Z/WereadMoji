@@ -14,6 +14,7 @@ import com.inkread.weekread.net.WereadApi;
 import com.inkread.weekread.remote.RemoteKeyService;
 import com.inkread.weekread.remote.RemoteLinkManager;
 import com.inkread.weekread.remote.RemoteRole;
+import com.inkread.weekread.remote.ShakeDetector;
 import com.inkread.weekread.ui.SegTabView;
 import com.inkread.weekread.update.ApkInstaller;
 
@@ -37,6 +38,7 @@ import android.widget.CheckBox;
 import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
@@ -143,6 +145,19 @@ public class SettingsActivity extends Activity {
     private View sectionCardInit;        // 初始化页 ③ 桌面卡片
     private View sectionCardCustom;      // 自定义页「桌面卡片」
 
+    // ── 🆕 TASK-029 实验室 · 遥控翻页 · 手机端「晃动翻页」──
+    private View llShakeBlock;           // 晃动翻页块（仅 role=手机 显示）
+    private CheckBox cbShakeEnabled;     // ① 总开关
+    private RadioGroup rgShakeSens;      // 🆕 ② 灵敏度三档（低/中/高，默认中）
+    private RadioButton rbShakeSensLow;
+    private RadioButton rbShakeSensMid;
+    private RadioButton rbShakeSensHigh;
+    private CheckBox cbShakeLrRev;       // ③ 左右晃方向反转
+    private CheckBox cbShakeUdRev;       // ④ 上下晃方向反转
+    private TextView tvShakeMap;         // ⑤ 动态「当前映射」自证行
+    /** 防回环：refreshShakeUi() 回填控件时会触发监听，置位期间忽略回调。 */
+    private boolean mShakeUiSyncing;
+
     /** 本会话是否处于 phone 角色（onCreate 时定一次；角色改变只在实验室页内发生）。 */
     private boolean remotePhone;
 
@@ -237,6 +252,15 @@ public class SettingsActivity extends Activity {
         etRemoteIdle = (EditText) findViewById(R.id.et_remote_idle);
         sectionCardInit = findViewById(R.id.section_card_init);
         sectionCardCustom = findViewById(R.id.section_card_custom);
+        llShakeBlock = findViewById(R.id.ll_shake_block);          // 🆕 TASK-029
+        cbShakeEnabled = (CheckBox) findViewById(R.id.cb_shake_enabled);
+        rgShakeSens = (RadioGroup) findViewById(R.id.rg_shake_sens);   // 🆕 灵敏度三档
+        rbShakeSensLow = (RadioButton) findViewById(R.id.rb_shake_sens_low);
+        rbShakeSensMid = (RadioButton) findViewById(R.id.rb_shake_sens_mid);
+        rbShakeSensHigh = (RadioButton) findViewById(R.id.rb_shake_sens_high);
+        cbShakeLrRev = (CheckBox) findViewById(R.id.cb_shake_lr_rev);
+        cbShakeUdRev = (CheckBox) findViewById(R.id.cb_shake_ud_rev);
+        tvShakeMap = (TextView) findViewById(R.id.tv_shake_map);
 
         // ── v0.4.3 顶部页签「初始化 / 自定义」；v0.7 加第三段「实验室」──
         // 三个页面是同一个 ScrollView 里的三个容器，切页只切 visibility。
@@ -875,6 +899,48 @@ public class SettingsActivity extends Activity {
             }
         });
 
+        // ── 🆕 TASK-029：手机端「晃动翻页」总开关 + 两个反转开关（仅 role=手机 显示）──
+        //
+        // 落盘在 CardPrefs（boolean，默认全 false）⇒ 老用户升级后**零差异**（验收 A1）。
+        // 每次改动：写偏好 → 刷「当前映射」自证行 → 通知捕获层重算门控
+        //（总开关关掉要**立即停采样**，验收 A13；这就是设置页直接调 ShakeDetector.sync 的原因）。
+        CompoundButton.OnCheckedChangeListener shakeL = new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                if (mShakeUiSyncing) return;      // 防回环：refreshShakeUi 回填时不落盘
+                int id = b.getId();
+                if (id == R.id.cb_shake_enabled) {
+                    CardPrefs.setShakeEnabled(SettingsActivity.this, checked);
+                } else if (id == R.id.cb_shake_lr_rev) {
+                    CardPrefs.setShakeLrRev(SettingsActivity.this, checked);
+                } else {
+                    CardPrefs.setShakeUdRev(SettingsActivity.this, checked);
+                }
+                refreshShakeUi();
+                ShakeDetector.sync(SettingsActivity.this);   // G2 即时生效
+            }
+        };
+        cbShakeEnabled.setOnCheckedChangeListener(shakeL);
+        cbShakeLrRev.setOnCheckedChangeListener(shakeL);
+        cbShakeUdRev.setOnCheckedChangeListener(shakeL);
+
+        // 🆕 TASK-029 手感优化：灵敏度三档（低/中/高，默认中）——
+        //   改档立即落盘 + 通知捕获层**用新参数重建采样**（reload：正在跑才重建）。
+        rgShakeSens.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(RadioGroup g, int checkedId) {
+                if (mShakeUiSyncing) return;      // 防回环：refreshShakeUi 回填时不落盘
+                int sens = CardPrefs.SHAKE_SENS_MID;
+                if (checkedId == R.id.rb_shake_sens_low) {
+                    sens = CardPrefs.SHAKE_SENS_LOW;
+                } else if (checkedId == R.id.rb_shake_sens_high) {
+                    sens = CardPrefs.SHAKE_SENS_HIGH;
+                }
+                CardPrefs.setShakeSens(SettingsActivity.this, sens);
+                ShakeDetector.reload(SettingsActivity.this);   // 档位变了 ⇒ 重建采样
+            }
+        });
+
         // 首次进页即按角色定一次显隐（phone 角色要立刻隐藏「桌面卡片」分区）
         refreshRoleUi();
     }
@@ -897,7 +963,8 @@ public class SettingsActivity extends Activity {
         super.onPause();
         CardA11yService.noteOwnUiForeground(false);
         // 页面不在前台就不再收会话状态（避免持引用）；回来时 onResume 会重新注册
-        RemoteLinkManager.get().setStateListener(null);
+        // 🔴 TASK-029 §2.2：改成 removeStateListener —— 只摘自己这一个，不影响遥控服务的监听
+        RemoteLinkManager.get().removeStateListener(mStateListener);
     }
 
     // ══════════════════════ 🆕 TASK-022 锁屏密码（应用级软锁） ══════════════════════
@@ -1227,9 +1294,62 @@ public class SettingsActivity extends Activity {
         int cardVis = (role == RemoteRole.PHONE) ? View.GONE : View.VISIBLE;
         if (sectionCardInit != null) sectionCardInit.setVisibility(cardVis);
         if (sectionCardCustom != null) sectionCardCustom.setVisibility(cardVis);
+        // 🆕 TASK-029：晃动翻页块**仅手机角色**可见（A2 —— 墨水屏 / 关闭角色下不可见且零响应）
+        if (llShakeBlock != null) {
+            llShakeBlock.setVisibility(role == RemoteRole.PHONE ? View.VISIBLE : View.GONE);
+        }
+        refreshShakeUi();
 
         // 会话状态：注册监听会立刻回推一次当前状态（页面无需手动刷新）
-        RemoteLinkManager.get().setStateListener(mStateListener);
+        // 🔴 TASK-029 §2.2：单槽 setStateListener ⇒ addStateListener。
+        //    否则本页监听会与遥控服务（晃动捕获门控）的监听互相顶掉（验收 A18）。
+        RemoteLinkManager.get().addStateListener(mStateListener);
+
+        // 🆕 TASK-029：角色可能刚改过（G1）⇒ 重算晃动捕获层的注册/注销。
+        //    例：会话已 CONNECTED 时把角色从「墨水屏」改成「手机」，这里要立刻开始采样。
+        ShakeDetector.sync(this);
+    }
+
+    /**
+     * 🆕 TASK-029：刷新「晃动翻页」区块（onCreate / onResume / 角色切换 / 任一开关变更后调用）。
+     *
+     * <p>① 回填 3 个开关（期间置 {@link #mShakeUiSyncing} 防回环）；
+     * ② **总开关关时把两个反转开关置灰**（保留可见，避免布局跳动 —— 方案 §4.2）；
+     * ③ 拼出「当前映射」自证行：用户不必靠"开关名 + 记忆"反推映射，**映射永远以屏幕上的字为准**，
+     *    也便于上机验收逐字比对（A4–A8）。
+     */
+    private void refreshShakeUi() {
+        if (cbShakeEnabled == null) return;
+        boolean on = CardPrefs.isShakeEnabled(this);
+        boolean lrRev = CardPrefs.isShakeLrRev(this);
+        boolean udRev = CardPrefs.isShakeUdRev(this);
+        int sens = CardPrefs.getShakeSens(this);
+        mShakeUiSyncing = true;
+        try {
+            cbShakeEnabled.setChecked(on);
+            cbShakeLrRev.setChecked(lrRev);
+            cbShakeUdRev.setChecked(udRev);
+            rgShakeSens.check(sens == CardPrefs.SHAKE_SENS_LOW ? R.id.rb_shake_sens_low
+                    : sens == CardPrefs.SHAKE_SENS_HIGH ? R.id.rb_shake_sens_high
+                    : R.id.rb_shake_sens_mid);
+        } finally {
+            mShakeUiSyncing = false;
+        }
+        cbShakeLrRev.setEnabled(on);      // 总开关关 ⇒ 置灰（可见）
+        cbShakeUdRev.setEnabled(on);
+        // 🆕 灵敏度三档：总开关关时置灰（与两个反转开关同规则；文字色硬编码黑故文字不变灰，同 A13 已知口径）
+        rbShakeSensLow.setEnabled(on);
+        rbShakeSensMid.setEnabled(on);
+        rbShakeSensHigh.setEnabled(on);
+        if (tvShakeMap != null) {
+            String prev = getString(R.string.lab_shake_page_prev);
+            String next = getString(R.string.lab_shake_page_next);
+            tvShakeMap.setText(getString(R.string.lab_shake_map_now,
+                    lrRev ? next : prev,      // 左晃
+                    lrRev ? prev : next,      // 右晃
+                    udRev ? next : prev,      // 上晃
+                    udRev ? prev : next));    // 下晃
+        }
     }
 
     /** 会话状态回调（主线程）—— 只更新状态行与两个按钮的可用性。 */

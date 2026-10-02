@@ -10,8 +10,10 @@ import android.view.accessibility.AccessibilityEvent;
  * 配置见 res/xml/a11y_remote_service.xml：canRequestFilterKeyEvents + canPerformGestures）。
  *
  * 双角色行为（remote_role，docs/FEATURES/remote.md「双角色」）：
- *  - phone：onKeyEvent 捕获音量键 → 经 RemoteLinkManager 发指令 → 返回 true 消费
- *           （实测观感：音量条不出现；eink 端音量键不受影响，正常调音量）；
+ *  - phone：**两条并列的捕获路径**
+ *           ① onKeyEvent 捕获音量键（本类）；
+ *           ② {@link ShakeDetector} 捕获晃动（TASK-029，仅 role=phone + 总开关 on + 会话已连接时注册）
+ *           → 都经 RemoteLinkManager 发指令（音量键那条返回 true 消费，实测观感：音量条不出现）；
  *  - eink ：RemoteLinkManager 收指令 → RemoteInjector 注入左右滑。
  *
  * 🔴 三条实测硬约束（`_probe/a11y_keyprobe/EVIDENCE.md`，全部内建）：
@@ -25,6 +27,20 @@ public class RemoteKeyService extends AccessibilityService {
     private static final String TAG = "RemoteKeyService";
     private static volatile RemoteKeyService sInstance;
 
+    /**
+     * 🆕 TASK-029：会话状态监听 —— 只在「已连接」期间让晃动捕获层采样（门控 G3）。
+     *
+     * <p>🔴 这里能安全注册，靠的是 TASK-029 顺带修的 §2.2（`RemoteLinkManager` 由单槽
+     * 监听改为 `addStateListener`）—— 否则本监听会和设置页的状态行监听**互相顶掉**。
+     */
+    private final RemoteLinkManager.StateListener mSessionStateListener =
+            new RemoteLinkManager.StateListener() {
+                @Override
+                public void onStateChanged(int state, String peerIp, String detail) {
+                    ShakeDetector.sync(RemoteKeyService.this);
+                }
+            };
+
     /** 探针/调试用：确认服务活着。 */
     public static boolean isAlive() {
         return sInstance != null;
@@ -37,14 +53,21 @@ public class RemoteKeyService extends AccessibilityService {
         Log.i(TAG, "SERVICE_CONNECTED role=" + role
                 + " caps=0x" + Integer.toHexString(
                         getServiceInfo() == null ? 0 : getServiceInfo().getCapabilities()));
-        if (role != RemoteRole.OFF) {
-            RemoteLinkManager.get().setCommandSink(new RemoteLinkManager.CommandSink() {
-                @Override
-                public boolean inject(int cmd) {
-                    return RemoteInjector.inject(RemoteKeyService.this, cmd);
-                }
-            });
-        }
+        // 🔴 TASK-029 §2.1 修复：**无条件**挂 CommandSink。
+        //    此前是 `if (role != OFF)` —— 用户「先开无障碍、后切角色」时，onServiceConnected
+        //    那一刻 role 还是默认 OFF ⇒ sink 从未挂上 ⇒ 链路正常建起、指令也正常收到
+        //    （`recv PAGE_NEXT`），但注入静默不发生（一条日志都没有），观感 =「显示已连接却按了没反应」。
+        //    sink 只在**收到对端指令**时被调用（RemoteLinkManager.onCommand），OFF 角色既不
+        //    startSession 也不会收到指令 ⇒ 无条件挂载**零副作用**。
+        RemoteLinkManager.get().setCommandSink(new RemoteLinkManager.CommandSink() {
+            @Override
+            public boolean inject(int cmd) {
+                return RemoteInjector.inject(RemoteKeyService.this, cmd);
+            }
+        });
+        // 🆕 TASK-029：订阅会话状态，驱动晃动捕获层按 G3 注册/注销
+        RemoteLinkManager.get().addStateListener(mSessionStateListener);
+        ShakeDetector.sync(this);
     }
 
     @Override
@@ -103,6 +126,8 @@ public class RemoteKeyService extends AccessibilityService {
         // （TASK-018 上机排查：曾因本方法零日志而只能靠推断）
         Log.i(TAG, "SERVICE_DESTROYED isSelf=" + (sInstance == this));
         sInstance = null;
+        RemoteLinkManager.get().removeStateListener(mSessionStateListener);   // 🆕 TASK-029
+        ShakeDetector.shutdown();     // 🆕 TASK-029：服务没了 ⇒ 采样必须停，不留残采
         RemoteLinkManager.get().onServiceDestroyed();
         super.onDestroy();
     }

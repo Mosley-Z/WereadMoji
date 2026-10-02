@@ -1104,6 +1104,123 @@
                     android:textColor="#FF3C3C3C"
                     android:textSize="13sp" />
 
+                <!-- ============================================================
+                     🆕 TASK-029：手机端「晃动翻页」（仅 role=手机 显示）
+                     🔴 必须独立成块、放在 ll_remote_session 之外：ll_remote_session 是
+                        role != off 就显示，塞进去会把晃动开关暴露给"墨水屏"角色（验收 A2）。
+                     控件形态沿用本页黑描边风格；⚠ 不用 Material accent 填充（墨水屏近黑会糊）。
+                     ============================================================ -->
+                <LinearLayout
+                    android:id="@+id/ll_shake_block"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <CheckBox
+                        android:id="@+id/cb_shake_enabled"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/lab_shake_label"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+
+                    <!-- 🆕 TASK-029 手感优化：灵敏度三档（低/中/高，默认中）
+                         🔴 墨水屏 accent 近黑 ⇒ RadioButton 必须显式 buttonTint 黑，别用主题色。
+                         总开关关时整行置灰（与下方两个反转开关同规则）。 -->
+                    <LinearLayout
+                        android:id="@+id/ll_shake_sens"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/lab_shake_sens_label"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp" />
+
+                        <RadioGroup
+                            android:id="@+id/rg_shake_sens"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="6dp"
+                            android:orientation="horizontal">
+
+                            <RadioButton
+                                android:id="@+id/rb_shake_sens_low"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:buttonTint="#FF000000"
+                                android:text="@string/lab_shake_sens_low"
+                                android:textColor="#FF000000"
+                                android:textSize="13sp" />
+
+                            <RadioButton
+                                android:id="@+id/rb_shake_sens_mid"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="10dp"
+                                android:buttonTint="#FF000000"
+                                android:text="@string/lab_shake_sens_mid"
+                                android:textColor="#FF000000"
+                                android:textSize="13sp" />
+
+                            <RadioButton
+                                android:id="@+id/rb_shake_sens_high"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="10dp"
+                                android:buttonTint="#FF000000"
+                                android:text="@string/lab_shake_sens_high"
+                                android:textColor="#FF000000"
+                                android:textSize="13sp" />
+                        </RadioGroup>
+                    </LinearLayout>
+
+                    <CheckBox
+                        android:id="@+id/cb_shake_lr_rev"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/lab_shake_rev_lr"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+
+                    <CheckBox
+                        android:id="@+id/cb_shake_ud_rev"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/lab_shake_rev_ud"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+
+                    <!-- 动态「当前映射」自证行（refreshShakeUi 实时拼） -->
+                    <TextView
+                        android:id="@+id/tv_shake_map"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:lineSpacingExtra="3dp"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+
+                    <!-- 说明行（亮屏要求 / 与音量键共存） -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/lab_shake_hint"
+                        android:textColor="#FF3C3C3C"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
                 <!-- 遥控会话控件（role != off 才显示，见 lab.md） -->
                 <LinearLayout
                     android:id="@+id/ll_remote_session"

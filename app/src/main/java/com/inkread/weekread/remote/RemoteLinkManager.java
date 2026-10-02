@@ -7,6 +7,8 @@ import android.util.Log;
 
 import com.inkread.weekread.core.CardPrefs;
 
+import java.util.concurrent.CopyOnWriteArrayList;
+
 /**
  * 会话生命周期（**按需连接策略唯一出口**，TASK-018）：
  *
@@ -61,7 +63,12 @@ public final class RemoteLinkManager {
     private String mDetail;
     private long mLastActiveAt;
     private int mIdleTimeoutMs;
-    private StateListener mListener;
+    /**
+     * 🔴 **多监听**（TASK-029 §2.2 修复）：设置页（状态行）与遥控服务（晃动捕获门控）
+     * 各注册一个，互不顶掉。此前是单槽 {@code mListener}。
+     */
+    private final CopyOnWriteArrayList<StateListener> mListeners =
+            new CopyOnWriteArrayList<StateListener>();
     private CommandSink mCommandSink;
     private Context mAppContext;
     private boolean mServer;                  // 本端是否 Server（连接断开文案区分「等待重连」/「正在重连」）
@@ -87,10 +94,26 @@ public final class RemoteLinkManager {
 
     // ── 对设置页（状态显示）──
 
-    public void setStateListener(StateListener l) {
-        mListener = l;
+    /**
+     * 注册状态监听（**多监听**：设置页 + 遥控服务各一个）。注册后**立刻回推一次**当前状态。
+     *
+     * <p>🔴 TASK-029 §2.2 修复：此前是**单槽** {@code setStateListener} ——
+     * {@code SettingsActivity} 每进一次设置页就覆盖一次，TASK-029 的晃动捕获门控
+     * 再注册时两边会**互相顶掉**（后注册者赢），表现为「状态行不刷新」或「晃动不激活」，
+     * 且**不报错**。改成 add/remove 后两个监听可共存。
+     */
+    public void addStateListener(StateListener l) {
+        if (l == null) {
+            return;
+        }
+        mListeners.addIfAbsent(l);
+        l.onStateChanged(mState, mPeerIp, mDetail);   // 立刻回推一次（页面无需手动刷新）
+    }
+
+    /** 注销状态监听（页面 onPause / 遥控服务 onDestroy）。 */
+    public void removeStateListener(StateListener l) {
         if (l != null) {
-            l.onStateChanged(mState, mPeerIp, mDetail);
+            mListeners.remove(l);
         }
     }
 
@@ -269,8 +292,7 @@ public final class RemoteLinkManager {
         mState = state;
         mPeerIp = (state == STATE_CONNECTED) ? peerIp : null;
         mDetail = detail;
-        StateListener l = mListener;
-        if (l != null) {
+        for (StateListener l : mListeners) {
             l.onStateChanged(mState, mPeerIp, mDetail);
         }
     }

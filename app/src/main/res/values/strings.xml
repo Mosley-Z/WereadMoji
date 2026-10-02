@@ -122,7 +122,7 @@
     <string name="lab_role_phone">手机</string>
     <string name="lab_role_hint_off">未启用遥控。选「墨水屏」或「手机」后，才会出现下面的开关与提示。</string>
     <string name="lab_role_hint_eink">本机 = 墨水屏端：接收手机发来的翻页指令，用无障碍手势翻页。用法：① 本机先连上手机热点；② 点「开始遥控」；③ 在手机上也点「开始遥控」，等它连入。需先在系统无障碍里打开「微读墨记 · 遥控」。</string>
-    <string name="lab_role_hint_phone">本机 = 手机端：捕获音量键，把翻页指令发给墨水屏。用法：① 打开手机热点；② 点「开始遥控」；③ 等墨水屏连入后，按音量键即可翻页。⚠ 手机屏幕熄灭或锁屏后，系统不再向本 App 派发音量键，请保持屏幕点亮（可调最低亮度）。想息屏时也用：可在系统「自由窗口」里把本应用归入「游戏场景应用」，开启「息屏挂机」，并把息屏设为「始终显示」（系统侧设置，未实测）。需先在系统无障碍里打开「微读墨记 · 遥控」。</string>
+    <string name="lab_role_hint_phone">本机 = 手机端：捕获音量键，把翻页指令发给墨水屏。用法：① 打开手机热点；② 点「开始遥控」；③ 等墨水屏连入后，按音量键即可翻页。⚠ 手机屏幕熄灭或锁屏后，系统不再向本 App 派发音量键，请保持屏幕点亮（可调最低亮度）。想息屏时也用：可在系统「自由窗口」里把本应用归入「游戏场景应用」，开启「息屏挂机」，并把息屏设为「始终显示」（系统侧设置，未实测）。也可开启下面的「晃动翻页」：晃一晃手机就能翻页。需先在系统无障碍里打开「微读墨记 · 遥控」。</string>
     <string name="lab_btn_start">开始遥控</string>
     <string name="lab_btn_stop">结束遥控</string>
     <string name="lab_status_prefix">状态：</string>
@@ -132,6 +132,28 @@
     <string name="lab_idle_unit">秒</string>
     <string name="lab_idle_tip">超过这个时间没有任何翻页指令就自动断开连接（默认 300 秒）。调短会更容易断，需要重新点「开始遥控」。</string>
     <string name="lab_mutex_tip">⚠ 同一台设备上，同一时间只能有一个无障碍服务能接管音量键。若本机装有「开关控制 / Switch Access」等同类服务，需先把它关掉，否则本服务收不到按键（按了没反应）。</string>
+
+    <!-- 🆕 TASK-029（V1.0.4-beta；灵敏度三档 = 2026-10-03 手感优化）：
+         手机端「晃动翻页」（与音量键并列的第二条捕获路径）
+         🔴 文案三条硬约束：
+            ① 不得出现「读取屏幕内容」字样（哪怕"不读取"）—— 晃动本就免权限，无需辩解，直接不提；
+            ② ⛔ 不写"息屏可用"、也⛔ 不写"息屏不生效" —— A11 实测（21s 锁屏窗口）5 次晃动
+               全部实时送达（无障碍服务让进程免冻结），**推翻了旧的"息屏不可用"结论**，
+               但**长时间息屏仍未测** ⇒ 文案里干脆不提息屏；确证的限制只有"本应用停最前"
+               （HyperOS 冻结后台进程，实测采样降至 6.7%）；
+            ③ 只写"低 / 中 / 高 三档"，⛔ 不承诺"可自定义灵敏度/阈值"（本版无滑条自定义）。
+         标定依据：验证记录/103 + _probe/shake_phone/EVIDENCE.md §5 + 验证记录/112（A10/A11）。 -->
+    <string name="lab_shake_label">晃动翻页（手机端）</string>
+    <string name="lab_shake_sens_label">灵敏度：</string>
+    <string name="lab_shake_sens_low">低</string>
+    <string name="lab_shake_sens_mid">中</string>
+    <string name="lab_shake_sens_high">高</string>
+    <string name="lab_shake_rev_lr">左右晃方向反转</string>
+    <string name="lab_shake_rev_ud">上下晃方向反转</string>
+    <string name="lab_shake_map_now">当前映射：左晃→%1$s · 右晃→%2$s · 上晃→%3$s · 下晃→%4$s</string>
+    <string name="lab_shake_hint">开启后晃动本机即可翻页。与音量键可同时使用。灵敏度分低/中/高三档（默认中）：太容易误触就调低，要甩很用力才响应就调高。⚠ 本应用需停在最前，切走后不生效。</string>
+    <string name="lab_shake_page_prev">上一页</string>
+    <string name="lab_shake_page_next">下一页</string>
     <string name="main_remote_notice">本机已设为「手机端遥控器」，桌面卡片功能已隐藏。\n要查看阅读数据或改回设置，请点下面的「设置」，到「实验室」里调整角色。</string>
 
     <!-- 🆕 TASK-022（V1.0.1-beta）：实验室 · 锁屏密码（应用级软锁）。

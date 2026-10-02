@@ -200,6 +200,64 @@ public final class CardPrefs {
         sp(c).edit().putInt("remote_idle_timeout", v).commit();
     }
 
+    // ── TASK-029：手机端晃动翻页（V1.0.4-beta）──
+    //
+    // 与「音量键捕获」并列的第二条捕获路径（实现在 remote/ShakeDetector）：
+    //   总开关 on  + role=手机 + 会话已连接 ⇒ 注册 50Hz 加速度计；晃动 → 发翻页指令。
+    // 🔴 三个开关**默认全 false** ⇒ 升级后与现状**零差异**（验收 A1）；
+    //    「左右」「上下」两个反转开关**互相独立**（验收 A6/A7 的独立性）。
+    // 🔴 越界/缺失一律回落 false（与 note_card_size 同一套安全读出纪律）。
+
+    /** 晃动翻页总开关（默认关）。 */
+    public static final boolean DEFAULT_SHAKE_ENABLED = false;
+    /** 左右晃方向反转（默认关 = 左晃上一页 / 右晃下一页）。 */
+    public static final boolean DEFAULT_SHAKE_LR_REV = false;
+    /** 上下晃方向反转（默认关 = 上晃上一页 / 下晃下一页）。 */
+    public static final boolean DEFAULT_SHAKE_UD_REV = false;
+
+    public static boolean isShakeEnabled(Context c) {
+        return sp(c).getBoolean("remote_shake_enabled", DEFAULT_SHAKE_ENABLED);
+    }
+
+    public static void setShakeEnabled(Context c, boolean v) {
+        sp(c).edit().putBoolean("remote_shake_enabled", v).commit();
+    }
+
+    public static boolean isShakeLrRev(Context c) {
+        return sp(c).getBoolean("remote_shake_lr_rev", DEFAULT_SHAKE_LR_REV);
+    }
+
+    public static void setShakeLrRev(Context c, boolean v) {
+        sp(c).edit().putBoolean("remote_shake_lr_rev", v).commit();
+    }
+
+    public static boolean isShakeUdRev(Context c) {
+        return sp(c).getBoolean("remote_shake_ud_rev", DEFAULT_SHAKE_UD_REV);
+    }
+
+    public static void setShakeUdRev(Context c, boolean v) {
+        sp(c).edit().putBoolean("remote_shake_ud_rev", v).commit();
+    }
+
+    // 🆕 TASK-029 手感优化（2026-10-03）：晃动灵敏度三档（低/中/高），**默认中**。
+    //   0=低（更难触发）/ 1=中（默认）/ 2=高（更易触发）；每档四个参数以中档为圆心同向偏移 ≈15%。
+    //   🔴 越界/缺失一律回落中档（与 note_card_size 同一套安全读出纪律）。
+    public static final int SHAKE_SENS_LOW = 0;
+    public static final int SHAKE_SENS_MID = 1;
+    public static final int SHAKE_SENS_HIGH = 2;
+    public static final int DEFAULT_SHAKE_SENS = SHAKE_SENS_MID;
+
+    public static int getShakeSens(Context c) {
+        int v = sp(c).getInt("remote_shake_sens", DEFAULT_SHAKE_SENS);
+        return (v < SHAKE_SENS_LOW || v > SHAKE_SENS_HIGH) ? DEFAULT_SHAKE_SENS : v;
+    }
+
+    public static void setShakeSens(Context c, int v) {
+        if (v < SHAKE_SENS_LOW) v = SHAKE_SENS_LOW;
+        if (v > SHAKE_SENS_HIGH) v = SHAKE_SENS_HIGH;
+        sp(c).edit().putInt("remote_shake_sens", v).commit();
+    }
+
     // ── TASK-025：卡片池（哪几张卡进桌面循环/列表）+ 切换模式（V1.0.3-beta）──
     //
     // 🔴 作用范围**只有桌面卡片** —— 未勾选的卡不参与桌面循环/列表，
