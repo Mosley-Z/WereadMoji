@@ -16,7 +16,8 @@ import com.inkread.weekread.core.CardPrefs;
  *
  * <p>与 {@link RemoteKeyService} 的「音量键捕获」并列，是 phone 角色的**第二条捕获路径**：
  * 检测到手机被甩动 ⇒ 经既有遥控链路（TCP 45678，{@code PAGE_NEXT}/{@code PAGE_PREV}）发指令
- * ⇒ 墨水屏端 {@code RemoteInjector} 翻页。<b>S4 端零改动、零新增权限</b>。
+ * ⇒ 墨水屏端 {@code RemoteInjector} 翻页。<b>S4 端无需为晃动新增代码（复用既有注入路径）、零新增权限</b>
+ * （同卡另顺带修 S4 侧 2 处既有缺陷：R10 几何 / R11 注入串行化，见验证记录 108/111/113）。
  *
  * <h3>算法</h3>
  * <ol>

@@ -22,7 +22,8 @@
 ## 🆕 TASK-029：手机端晃动翻页（V1.0.4-beta）
 
 **一句话**：摇一摇手机 → 墨水屏翻页。与音量键**并列**的两条捕获路径，都汇到
-`RemoteLinkManager.sendCommand`。<b>S4 端零改动、零新增权限</b>（加速度计免权限）。
+`RemoteLinkManager.sendCommand`。<b>S4 端无需为晃动新增代码、零新增权限</b>（加速度计免权限）——
+复用既有 `RemoteInjector` 注入路径；同卡另顺带修其 R10 几何 / R11 串行化 2 处既有缺陷（见上表）。
 
 - **三道门控**（集中在 `ShakeDetector.sync(Context)`）：`role==PHONE` + `remote_shake_enabled` +
   `STATE_CONNECTED`（随会话 CONNECTED 注册 / 断开注销，不常驻采样）。
