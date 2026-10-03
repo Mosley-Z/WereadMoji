@@ -2,10 +2,10 @@
   "versionCode": 38,
   "versionName": "1.0.4-beta",
   "tag": "v1.0.4-beta",
-  "notes": "新增「手机晃动翻页」：在「实验室 → 遥控翻页」开启后，晃一晃手机即可翻墨水屏（左/上=上一页、右/下=下一页，两组方向可分别反转）；新增低/中/高三档灵敏度（默认「中」），与音量键翻页可同时使用。",
+  "notes": "① 遥控翻页更稳：翻页方式由「滑动」改为「点击阅读页左右边界」，不再误弹划线/想法面板；默认方向对齐实际握持（左/上=上一页、右/下=下一页，两组可分别反转）；灵敏度三档（默认「中」）。② 「续航优化」精简为 3 项有效开关（关开放网络提示 / 关动画 / 关时钟屏保），移除 2 项本机无效的旧开关。③ 新增「云端备用更新源」（默认开）：GitHub 连不上时自动改用备用地址，受限网络下也能检查更新。",
   "apk": "dist/weread-stats-1.0.4-beta.apk",
   "size": 346279,
-  "sha256": "e0b4c711480fea1594ca1bcd44d83df0db61a18086e36f7100fcc0e6ee8ff896",
+  "sha256": "393a9234293e4788f37fd2bfca48d5ac4bc5c3dc1a625550fd24833ee49a965a",
   "urls": [
     "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v1.0.4-beta/dist/weread-stats-1.0.4-beta.apk",
     "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v1.0.4-beta/dist/weread-stats-1.0.4-beta.apk"
