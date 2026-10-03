@@ -106,6 +106,11 @@
          不得写「即将支持」之类空头承诺（App 拿不到安装失败回调，必须在点之前讲清）。 -->
     <string name="upd_downgrade_blocked">当前运行的 Beta 版本比最新正式版（%1$s）更新，无法直接退回。正式版下个版本发布后可切换。</string>
 
+    <!-- TASK-030：云端备用更新源（默认开）—— 🔴 如实描述「GitHub 连不上时的兜底」，
+         禁写「加速下载 / 多一个下载源」：它只在 GitHub 失败时才生效。 -->
+    <string name="label_cloud_fallback">云端备用更新源</string>
+    <string name="cloud_fallback_tip">GitHub 连不上时，自动改用我们自己的备用地址，让更新在受限网络下也能完成。GitHub 正常时用不到它；关掉后只用 GitHub。</string>
+
     <!-- V1.0 Beta（TASK-018）：设置页第三段「实验室」· 遥控翻页 -->
     <!-- ⚠ 文案三条硬约束（docs/FEATURES/lab.md §提示文案）：只写已验证事实 / 必须写明按键过滤互斥 /
          角色切换后需重开无障碍。禁「读取屏幕内容」「断开即省电」等超出已验证能力的措辞。 -->
@@ -121,7 +126,7 @@
     <string name="lab_role_eink">墨水屏</string>
     <string name="lab_role_phone">手机</string>
     <string name="lab_role_hint_off">未启用遥控。选「墨水屏」或「手机」后，才会出现下面的开关与提示。</string>
-    <string name="lab_role_hint_eink">本机 = 墨水屏端：接收手机发来的翻页指令，用无障碍手势翻页。用法：① 本机先连上手机热点；② 点「开始遥控」；③ 在手机上也点「开始遥控」，等它连入。需先在系统无障碍里打开「微读墨记 · 遥控」。</string>
+    <string name="lab_role_hint_eink">本机 = 墨水屏端：接收手机发来的翻页指令，点击阅读页左右边界翻页。用法：① 本机先连上手机热点；② 点「开始遥控」；③ 在手机上也点「开始遥控」，等它连入。需先在系统无障碍里打开「微读墨记 · 遥控」。</string>
     <string name="lab_role_hint_phone">本机 = 手机端：捕获音量键，把翻页指令发给墨水屏。用法：① 打开手机热点；② 点「开始遥控」；③ 等墨水屏连入后，按音量键即可翻页。⚠ 手机屏幕熄灭或锁屏后，系统不再向本 App 派发音量键，请保持屏幕点亮（可调最低亮度）。想息屏时也用：可在系统「自由窗口」里把本应用归入「游戏场景应用」，开启「息屏挂机」，并把息屏设为「始终显示」（系统侧设置，未实测）。也可开启下面的「晃动翻页」：晃一晃手机就能翻页。需先在系统无障碍里打开「微读墨记 · 遥控」。</string>
     <string name="lab_btn_start">开始遥控</string>
     <string name="lab_btn_stop">结束遥控</string>
@@ -204,27 +209,22 @@
     <string name="power_copied">已复制，去电脑上粘贴执行</string>
     <string name="power_perm_steps">怎么做：① 用数据线把本机连到电脑；② 电脑上装好 adb（安卓调试工具）；③ 打开电脑命令行，粘贴上面这行并回车；④ 看到 Success 就成功了，回到这里即可。</string>
 
-    <!-- 四个勾选项 -->
+    <!-- 勾选项（3 条：A3 / A5 / Q3） -->
     <string name="power_item_wifi_notif">关掉「开放网络可用」提示</string>
     <string name="power_item_anim">关掉界面动画</string>
-    <string name="power_item_wifi_sleep">息屏就断网</string>
-    <string name="power_item_low_power">开启系统省电模式</string>
+    <string name="power_item_screensaver">关掉时钟屏保</string>
 
     <!-- 各项如实说明（收益 / 风险） -->
     <string name="power_tip_wifi_notif">关掉后系统不再为「附近有开放 WiFi」做后台扫描。不会断网，只是不再提示。</string>
     <string name="power_tip_anim">关掉窗口 / 过渡 / 动画三档，减少系统唤醒。屏幕观感几乎无变化。</string>
-    <string name="power_tip_wifi_sleep">⚠ 与「遥控翻页」冲突：息屏后 WiFi 会断开，手机→墨水屏的遥控链路会一起掉。平时要用遥控就别开这一项。</string>
-    <string name="power_tip_low_power">⚠ 系统省电模式会限制后台活动，可能影响本应用的卡片刷新与遥控。开启后建议点最下面的按钮，把本应用加入「电池优化白名单」。</string>
+    <string name="power_tip_screensaver">关掉息屏后的时钟屏保，减少无谓刷新。⚠ 视机型而定：部分机型的屏保只在充电时显示。</string>
 
-    <!-- B1 二次确认 -->
-    <string name="power_sleep_confirm_title">确定要息屏断网吗？</string>
-    <string name="power_sleep_confirm_msg">开启后，息屏时 WiFi 会断开 —— 手机上的「遥控翻页」会一起失效（墨水屏收不到指令）。\n\n如果你平时用遥控翻页，请不要开这一项。</string>
-    <string name="power_sleep_confirm_ok">仍要开启</string>
-    <string name="power_sleep_confirm_cancel">取消</string>
+    <!-- 底部 · 增强说明（Shizuku，后续版本） -->
+    <string name="power_shizuku_hint">进阶：「息屏自动断网 / 强制深度休眠」等更彻底的省电，需要安装 Shizuku（可选增强，非必需），将在后续版本提供。</string>
 
     <!-- C1 · 电池优化白名单 -->
     <string name="power_btn_battery_opt">打开系统「电池优化」页（把本应用加入白名单）</string>
-    <string name="power_battery_opt_tip">省电模式可能限制后台，导致卡片 / 遥控被系统掐断。到这个页面把「微读墨记」设为「不优化」，能保住它。</string>
+    <string name="power_battery_opt_tip">系统的深度省电可能限制后台，导致卡片 / 遥控被掐断。到这个页面把「微读墨记」设为「不优化」，能保住它。</string>
     <string name="power_battery_opt_failed">本机打不开这个系统页面</string>
     <string name="power_write_failed">写入失败：可能还没授权，或本机系统不允许改这一项。</string>
 

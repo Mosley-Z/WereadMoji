@@ -28,10 +28,12 @@ import java.util.ArrayList;
  * 默认正式版 —— 分支段是字面量 `main`，与改造前逐字相同（老用户行为零差异）。
  * 缓存里的远端信息带通道标记，换通道后不会被旧数据的"有新版本"误导。
  *
- * 清单有两个源，按顺序尝试：
+ * 清单按顺序尝试多个源，成功即止：
  *   ① raw.githubusercontent.com —— 缓存只有几分钟，能立刻反映新版本，作主源
  *   ② cdn.jsdelivr.net          —— CDN 更快，但分支引用(@main)有数小时缓存，作回落
- * 两个都不可达才算失败。
+ *   ③ 自托管云端清单（TASK-030）—— ①② 同属 GitHub 生态，GitHub 整体不可达时两者会同时失效；
+ *      云端源托在完全不同的基础设施上，作**最后兜底**（默认开，可在设置页关）。
+ * 全部不可达才算失败。
  *
  * ⚠ 实测过：部分网络下 github.com 不可达，所以清单地址**不能**用 github.com 域名。
  *   APK 的下载地址由清单里的 urls 字段给出（jsDelivr@tag 优先），不在本类里拼。
@@ -49,19 +51,39 @@ public final class UpdateChecker {
      *
      * 顺序：raw 主源（缓存只有几分钟，能立刻反映新版本）→ jsDelivr 回落（@branch 有缓存滞后）。
      */
-    private static final String[] MANIFEST_URLS_STABLE = {
+    private static final String[] GITHUB_MANIFEST_URLS_STABLE = {
             "https://raw.githubusercontent.com/" + REPO + "/main/dist/update.json",
             "https://cdn.jsdelivr.net/gh/" + REPO + "@main/dist/update.json",
     };
-    private static final String[] MANIFEST_URLS_BETA = {
+    private static final String[] GITHUB_MANIFEST_URLS_BETA = {
             "https://raw.githubusercontent.com/" + REPO + "/beta/dist/update.json",
             "https://cdn.jsdelivr.net/gh/" + REPO + "@beta/dist/update.json",
     };
 
-    /** 本机当前通道对应的清单地址列表（channel ∈ {stable, beta}）。 */
+    /** 云端备用清单（TASK-030）：自托管静态 JSON，字段契约与仓库 dist/update.json 完全一致。 */
+    private static final String CLOUD_STABLE = "https://wereadmoji.app.workbuddy.host/update-stable.json";
+    private static final String CLOUD_BETA   = "https://wereadmoji.app.workbuddy.host/update-beta.json";
+
+    /**
+     * 本机当前通道对应的清单地址列表（channel ∈ {stable, beta}）。
+     *
+     * <p>🆕 TASK-030：默认在 GitHub 两源之后再追加一个**自托管云端源**作兜底 ——
+     * raw 与 jsDelivr 同属 GitHub 生态，GitHub 整体不可达时两者会同时失效；
+     * 云端源托在完全不同的基础设施上，才能覆盖这个窗口。
+     *
+     * <p>🔴 **默认零差异**：开关为开且 GitHub 可用时，云端源排在**最后**、不会被请求；
+     * 开关关闭时，返回的数组与改造前**逐字相同**。
+     */
     private static String[] manifestUrls(Context c) {
-        return CardPrefs.CHANNEL_BETA.equals(CardPrefs.getUpdateChannel(c))
-                ? MANIFEST_URLS_BETA : MANIFEST_URLS_STABLE;
+        final boolean beta = CardPrefs.CHANNEL_BETA.equals(CardPrefs.getUpdateChannel(c));
+        final String[] github = beta ? GITHUB_MANIFEST_URLS_BETA : GITHUB_MANIFEST_URLS_STABLE;
+        if (!CardPrefs.isCloudFallbackEnabled(c)) {
+            return github;                        // 关掉 ⇒ 与改造前逐字相同的数组
+        }
+        final String[] out = new String[github.length + 1];
+        System.arraycopy(github, 0, out, 0, github.length);
+        out[github.length] = beta ? CLOUD_BETA : CLOUD_STABLE;
+        return out;                                // 云端永远排在最后 ⇒ 只做兜底
     }
 
     private static final int TIMEOUT_MS = 8000;

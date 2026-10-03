@@ -376,6 +376,28 @@
                     android:textColor="#FF3C3C3C"
                     android:textSize="13sp" />
 
+                <!-- ── TASK-030：云端备用更新源（默认开）──
+                     GitHub 两源都连不上时，回落自托管清单。🔴 如实描述「连不上时的兜底」，
+                     禁写「加速下载 / 多一个下载源」—— 它只在 GitHub 失败时才生效。 -->
+                <CheckBox
+                    android:id="@+id/cb_cloud_fallback"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:buttonTint="#FF000000"
+                    android:text="@string/label_cloud_fallback"
+                    android:textColor="#FF000000"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:lineSpacingExtra="3dp"
+                    android:text="@string/cloud_fallback_tip"
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="13sp" />
+
                 <!-- 一个按钮走完全程：检查 → 下载并安装 → 下载中 xx% -->
                 <Button
                     android:id="@+id/btn_update"
@@ -1578,7 +1600,7 @@
                         android:textColor="#FF6A6A6A"
                         android:textSize="12sp" />
 
-                    <!-- ── 勾选项 1/4：关「开放网络可用」提示（A3）── -->
+                    <!-- ── 勾选项 1/3：关「开放网络可用」提示（A3）── -->
                     <CheckBox
                         android:id="@+id/cb_power_wifi_notif"
                         android:layout_width="match_parent"
@@ -1597,7 +1619,7 @@
                         android:textColor="#FF6A6A6A"
                         android:textSize="12sp" />
 
-                    <!-- ── 勾选项 2/4：关界面动画（A5）── -->
+                    <!-- ── 勾选项 2/3：关界面动画（A5）── -->
                     <CheckBox
                         android:id="@+id/cb_power_anim"
                         android:layout_width="match_parent"
@@ -1616,14 +1638,14 @@
                         android:textColor="#FF6A6A6A"
                         android:textSize="12sp" />
 
-                    <!-- ── 勾选项 3/4：息屏断网（B1）🔴 默认不勾 + 二次确认 ── -->
+                    <!-- ── 勾选项 3/3：关时钟屏保（Q3）── -->
                     <CheckBox
-                        android:id="@+id/cb_power_wifi_sleep"
+                        android:id="@+id/cb_power_screensaver"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="14dp"
                         android:buttonTint="#FF000000"
-                        android:text="@string/power_item_wifi_sleep"
+                        android:text="@string/power_item_screensaver"
                         android:textColor="#FF000000"
                         android:textSize="15sp" />
 
@@ -1631,26 +1653,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:lineSpacingExtra="3dp"
-                        android:text="@string/power_tip_wifi_sleep"
-                        android:textColor="#FF8A2B2B"
-                        android:textSize="12sp" />
-
-                    <!-- ── 勾选项 4/4：系统省电模式（B2）── -->
-                    <CheckBox
-                        android:id="@+id/cb_power_low_power"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="14dp"
-                        android:buttonTint="#FF000000"
-                        android:text="@string/power_item_low_power"
-                        android:textColor="#FF000000"
-                        android:textSize="15sp" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:lineSpacingExtra="3dp"
-                        android:text="@string/power_tip_low_power"
+                        android:text="@string/power_tip_screensaver"
                         android:textColor="#FF6A6A6A"
                         android:textSize="12sp" />
 
@@ -1672,9 +1675,19 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:layout_marginBottom="12dp"
                         android:lineSpacingExtra="3dp"
                         android:text="@string/power_battery_opt_tip"
+                        android:textColor="#FF6A6A6A"
+                        android:textSize="12sp" />
+
+                    <!-- ── 底部·增强说明（Shizuku，后续版本）── -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:layout_marginBottom="12dp"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/power_shizuku_hint"
                         android:textColor="#FF6A6A6A"
                         android:textSize="12sp" />
                 </LinearLayout><!-- /page_lab_power -->

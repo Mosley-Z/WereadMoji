@@ -20,10 +20,8 @@ import com.inkread.weekread.update.ApkInstaller;
 
 import android.Manifest;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.media.MediaScannerConnection;
@@ -129,6 +127,7 @@ public class SettingsActivity extends Activity {
     private RadioButton rbChannelStable;      // 正式版（稳定，默认）
     private RadioButton rbChannelBeta;        // Beta（尝鲜）
     private TextView tvChannelTip;            // 常显说明行（按通道切换）
+    private CheckBox cbCloudFallback;         // 云端备用更新源（TASK-030，默认开）
 
     // ── V1.0 Beta（TASK-018）实验室 · 遥控翻页 ──
     // 页面元素：角色三选一 + 按角色变化的说明 + 会话开关/状态 + 空闲超时 + 互斥提示。
@@ -173,8 +172,7 @@ public class SettingsActivity extends Activity {
     /** TASK-023：续航子页的控件（refreshPowerUi 要用，故存字段） */
     private CheckBox cbPowerWifiNotif;
     private CheckBox cbPowerAnim;
-    private CheckBox cbPowerWifiSleep;
-    private CheckBox cbPowerLowPower;
+    private CheckBox cbPowerScreensaver;
     private TextView tvPowerPerm;
     private TextView tvPowerCmd;
     /** 同步续航勾选态时抑制监听递归 */
@@ -239,6 +237,7 @@ public class SettingsActivity extends Activity {
         rbChannelStable = (RadioButton) findViewById(R.id.rb_channel_stable);
         rbChannelBeta = (RadioButton) findViewById(R.id.rb_channel_beta);
         tvChannelTip = (TextView) findViewById(R.id.tv_channel_tip);
+        cbCloudFallback = (CheckBox) findViewById(R.id.cb_cloud_fallback);
 
         // ── V1.0 Beta（TASK-018）实验室 · 遥控翻页 ──
         rbRoleOff = (RadioButton) findViewById(R.id.rb_role_off);
@@ -302,7 +301,7 @@ public class SettingsActivity extends Activity {
                 pageLabPower.setVisibility(index == 2 ? View.VISIBLE : View.GONE);
                 svSettings.scrollTo(0, 0);
                 if (index == 1) refreshLockUi();
-                // TASK-023：进续航页复核一次 —— low_power 是易失项，必须读设备真值（Q3 拍板）
+                // TASK-023：进续航页复核一次 —— 勾选态一律读设备真值（不读偏好，防「显示已开/实际已关」）
                 if (index == 2) refreshPowerUi();
             }
         });
@@ -374,12 +373,10 @@ public class SettingsActivity extends Activity {
         tvPowerCmd = (TextView) findViewById(R.id.tv_power_cmd);
         cbPowerWifiNotif = (CheckBox) findViewById(R.id.cb_power_wifi_notif);
         cbPowerAnim = (CheckBox) findViewById(R.id.cb_power_anim);
-        cbPowerWifiSleep = (CheckBox) findViewById(R.id.cb_power_wifi_sleep);
-        cbPowerLowPower = (CheckBox) findViewById(R.id.cb_power_low_power);
+        cbPowerScreensaver = (CheckBox) findViewById(R.id.cb_power_screensaver);
         wirePowerItem(cbPowerWifiNotif, PowerSettingsManager.ITEM_WIFI_NET_NOTIF);
         wirePowerItem(cbPowerAnim, PowerSettingsManager.ITEM_ANIM);
-        wirePowerItem(cbPowerWifiSleep, PowerSettingsManager.ITEM_WIFI_SLEEP);
-        wirePowerItem(cbPowerLowPower, PowerSettingsManager.ITEM_LOW_POWER);
+        wirePowerItem(cbPowerScreensaver, PowerSettingsManager.ITEM_SCREENSAVER);
         ((Button) findViewById(R.id.btn_power_copy)).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -799,6 +796,20 @@ public class SettingsActivity extends Activity {
         rbChannelStable.setOnCheckedChangeListener(channelL);
         rbChannelBeta.setOnCheckedChangeListener(channelL);
 
+        // ── TASK-030：云端备用更新源（默认开）──
+        // 只决定"GitHub 两源都失败时是否再试云端源"，与通道选择无关；切换后重置更新区状态。
+        cbCloudFallback.setChecked(CardPrefs.isCloudFallbackEnabled(this));
+        cbCloudFallback.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                CardPrefs.setCloudFallbackEnabled(SettingsActivity.this, checked);
+                uState = U_IDLE;
+                uInfo = null;
+                btnUpdate.setText(getString(R.string.btn_check_update));
+                tvUpdateStatus.setText("");
+            }
+        });
+
         // ── V1.0 Beta（TASK-018）：实验室 · 遥控翻页 ──
         //
         // 角色三选一：写 remote_role → 重算本页显隐（说明 / 会话控件 / 卡片分区）。
@@ -1086,19 +1097,12 @@ public class SettingsActivity extends Activity {
 
     // ══════════════════════ 🆕 TASK-023 续航（省电指令 · ADB 自助档 1） ══════════════════════
 
-    /**
-     * 把一个勾选项接到一条省电条目上。
-     * <p>🔴 B1（息屏断网）勾选前要弹<b>二次确认</b>（与遥控翻页冲突）；取消勾选则直接还原。
-     */
+    /** 把一个勾选项接到一条省电条目上（勾选 = 写开启值，取消 = 显式还原）。 */
     private void wirePowerItem(final CheckBox cb, final PowerSettingsManager.Item item) {
         cb.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton b, boolean checked) {
                 if (powerUiSyncing) return;                        // 同步态不触发
-                if (checked && item == PowerSettingsManager.ITEM_WIFI_SLEEP) {
-                    confirmWifiSleep(cb);
-                    return;
-                }
                 applyPowerItem(item, checked);
             }
         });
@@ -1116,38 +1120,10 @@ public class SettingsActivity extends Activity {
         refreshPowerUi();
     }
 
-    /** B1（息屏断网）二次确认 —— 与遥控翻页冲突，默认不勾。 */
-    private void confirmWifiSleep(final CheckBox cb) {
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.power_sleep_confirm_title)
-                .setMessage(R.string.power_sleep_confirm_msg)
-                .setPositiveButton(R.string.power_sleep_confirm_ok,
-                        new DialogInterface.OnClickListener() {
-                            @Override
-                            public void onClick(DialogInterface d, int w) {
-                                applyPowerItem(PowerSettingsManager.ITEM_WIFI_SLEEP, true);
-                            }
-                        })
-                .setNegativeButton(R.string.power_sleep_confirm_cancel,
-                        new DialogInterface.OnClickListener() {
-                            @Override
-                            public void onClick(DialogInterface d, int w) {
-                                refreshPowerUi();                  // 取消 ⇒ 回滚勾选显示
-                            }
-                        })
-                .setOnCancelListener(new DialogInterface.OnCancelListener() {
-                    @Override
-                    public void onCancel(DialogInterface d) {
-                        refreshPowerUi();
-                    }
-                })
-                .show();
-    }
-
     /**
-     * 刷新续航子页：授权状态行 + 命令文本 + 4 个勾选项。
+     * 刷新续航子页：授权状态行 + 命令文本 + 3 个勾选项。
      * 🔴 勾选态一律取 {@link PowerSettingsManager#isOn}（设备真值），不读偏好记录 ——
-     * {@code low_power} 会被系统状态机改回，只有读真值才不会「显示已开、实际已关」。
+     * 系统可能改回某项，只有读真值才不会「显示已开、实际已关」。
      */
     private void refreshPowerUi() {
         boolean perm = PowerSettingsManager.hasPermission(this);
@@ -1159,8 +1135,7 @@ public class SettingsActivity extends Activity {
         }
         syncPowerCb(cbPowerWifiNotif, PowerSettingsManager.ITEM_WIFI_NET_NOTIF);
         syncPowerCb(cbPowerAnim, PowerSettingsManager.ITEM_ANIM);
-        syncPowerCb(cbPowerWifiSleep, PowerSettingsManager.ITEM_WIFI_SLEEP);
-        syncPowerCb(cbPowerLowPower, PowerSettingsManager.ITEM_LOW_POWER);
+        syncPowerCb(cbPowerScreensaver, PowerSettingsManager.ITEM_SCREENSAVER);
     }
 
     private void syncPowerCb(CheckBox cb, PowerSettingsManager.Item item) {

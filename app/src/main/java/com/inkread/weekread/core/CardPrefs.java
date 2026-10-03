@@ -156,6 +156,25 @@ public final class CardPrefs {
                 .commit();
     }
 
+    // ── TASK-030：云端备用更新源 ──
+    //
+    // GitHub 两源（raw → jsDelivr）同属 GitHub 生态，GitHub 整体不可达时两者会同时失效；
+    // 打开本项后，两个源都失败时再回落自托管的云端清单（见 UpdateChecker 的 CLOUD_* 常量）。
+
+    /**
+     * 云端备用更新源：**默认开**。
+     *
+     * <p>🔴 备用源的价值恰在用户没能力自己排查的时候，默认关等于默认放弃这层保障。
+     * 关闭后 {@code UpdateChecker.manifestUrls()} 返回的数组与改造前**逐字相同**（默认零差异）。
+     */
+    public static boolean isCloudFallbackEnabled(Context c) {
+        return sp(c).getBoolean("upd_cloud_fallback", true);
+    }
+
+    public static void setCloudFallbackEnabled(Context c, boolean on) {
+        sp(c).edit().putBoolean("upd_cloud_fallback", on).commit();
+    }
+
     // ── TASK-018：遥控翻页（V1.0 Beta）──
     //
     // 同一 APK 装两端，remote_role 决定启用哪几个环节（docs/FEATURES/remote.md）：
