@@ -75,7 +75,7 @@
             禁「读取屏幕内容」字样（本服务 canRetrieveWindowContent=false）；
             禁「断开即省电」字样（App 内关 Wi-Fi 射频未验证，只保证断开连接）。 -->
     <string name="remote_svc_label">微读墨记 · 遥控翻页</string>
-    <string name="a11y_remote_desc">遥控翻页（实验性）：手机端用它接收音量键并向墨水屏发送翻页指令；墨水屏端用它执行左右滑手势完成翻页。不读取屏幕内容；仅在「开始遥控」的会话期间联网。注意：同类按键服务（如开关控制）同机只能启用一个，否则收不到按键。</string>
+    <string name="a11y_remote_desc">遥控翻页（实验性）：手机端用它接收音量键并向墨水屏发送翻页指令；墨水屏端用它点击阅读页左右边界完成翻页。不读取屏幕内容；仅在「开始遥控」的会话期间联网。注意：同类按键服务（如开关控制）同机只能启用一个，否则收不到按键。</string>
 
     <string name="settings_hint">获取 API Key：浏览器打开 weread.qq.com/r/weread-skills，点「快速配置」登录微信读书，再点「获取 API Key」复制（wrk- 开头），粘贴到上面保存。\n\nKey 只存在本机，仅用于读取你自己的阅读统计，不会上传。</string>
     <!-- v0.5.0：版本与更新（在线更新） -->

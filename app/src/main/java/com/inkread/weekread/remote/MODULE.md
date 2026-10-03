@@ -1,7 +1,7 @@
 # remote · 遥控翻页（MODULE.md）
 
 **职责**：手机当遥控器，给墨水屏上的微信读书翻页（V1.0 Beta / TASK-018）。
-**三层解耦**：捕获层（无障碍按键）→ 传输层（`RemoteLink` = `WifiTcpLink`，TCP）→ 注入层（`dispatchGesture` 左右滑）。
+**三层解耦**：捕获层（无障碍按键）→ 传输层（`RemoteLink` = `WifiTcpLink`，TCP）→ 注入层（`dispatchGesture` 点击边界热区）。
 
 > 规格 `docs/FEATURES/remote.md`｜决策 `docs/DECISIONS/ADR-010_V1.0Beta_热点TCP遥控翻页.md`｜
 > 入口 UI =「设置 · 实验室」`docs/FEATURES/lab.md`
@@ -15,7 +15,7 @@
 | `RemoteLink` | 传输**接口**（`start`/`stop`/`send`/`Listener`）—— 换传输层只加实现类 |
 | `WifiTcpLink` | TCP 实现（手机 = Server listen 45678；墨水屏 = Client 连**默认网关**，含重试） |
 | `RemoteLinkManager` | 会话生命周期 + 空闲超时 + 状态回调（**按需连接策略唯一出口**） |
-| `RemoteInjector` | 注入层：`dispatchGesture` 左右滑（几何 **380↔100** / y=400 / 200ms，B2 内缩避系统边缘手势）；派发走**方案 S = 串行队列**（有手势在飞则入队，等 `onCompleted` 再派发下一条，不丢指令，见 `验证记录/110` §10、`验证记录/111`） |
+| `RemoteInjector` | 注入层：`dispatchGesture` **点击边界热区**（下一页=点右 `x=425`、上一页=点左 `x=55`，y=400；左右各 55px 边界**不受正文划线影响**，方案 D 真机标定 `验证记录/118`）；派发走**方案 S = 串行队列**（有手势在飞则入队，等 `onCompleted` 再派发下一条，不丢指令，见 `验证记录/110` §10、`验证记录/111`）。⚠️ 旧「滑动」几何 `380↔100` 因墨水屏把 `dispatchGesture` 判成 tap ⇒ 弹划线面板，已弃用（`验证记录/117`） |
 | `RemoteKeyService` | 独立无障碍服务（配置 `res/xml/a11y_remote_service.xml`）：phone 捕获音量键 / eink 收到指令注入 |
 | `ShakeDetector` | 🆕 TASK-029：phone 的**第二条捕获路径** —— 50Hz 加速度计 → 去重力 → 双峰反转 → 发翻页指令（**零新增权限**） |
 

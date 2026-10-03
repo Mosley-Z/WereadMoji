@@ -44,9 +44,11 @@ import com.inkread.weekread.core.CardPrefs;
  * <b>门槛</b>=主导轴「主峰 / 异号次大峰」比 ≥ 组门槛（x 组 {@link #RATIO_X} / y·z 组 {@link #AMBIG_RATIO}），
  * 且主峰幅度 ≥ 组阈值（x 组 {@link #TH_X} / y·z 组档位阈值），不足则<b>弃权</b>。
  * 实测全局方向一致率 75.8% → 84.8%（不加门槛）/ ≈96%（加门槛，代价 ≈30% 弱甩被忽略）。
- * <p>🔴 标定结论（T029L，用户已确认分段）：<b>左晃 = x 主峰 + / 右晃 = x 主峰 − /
- * 上晃 = z 主峰 + / 下晃 = z 主峰 −</b>。对应指令沿用 {@link #fire} 的既有映射（与修复前一致，
- * 故用户不会感到"左右翻转"）。
+ * <p>🔴 方向标定（2026-10-04 修正，以**用户实际握持**为准）：T029L 原始标定是<b>屏幕朝自己</b>
+ * 握持下做的（左晃 = x 主峰 +），但用户**实际使用是背面朝自己**，轴向符号整体相反 ⇒ 实机为
+ * <b>左晃 = x 主峰 − / 右晃 = x 主峰 + / 上晃 = z 主峰 − / 下晃 = z 主峰 +</b>。
+ * 对应指令见 {@link #fire}：默认（两个反转开关均关）=
+ * <b>左晃→上一页 / 右晃→下一页 / 上晃→上一页 / 下晃→下一页</b>（与 {@code CardPrefs} 默认注释一致）。
  *
  * <h3>🆕 灵敏度三档（TASK-029 手感优化，2026-10-03）</h3>
  * 「低 / 中 / 高」三档，**默认中**；每档四个参数以中档为圆心同向偏移 ≈15%
@@ -536,7 +538,7 @@ public final class ShakeDetector implements SensorEventListener {
                 + " ratio=" + (ratio == Float.MAX_VALUE
                         ? "inf" : String.valueOf(Math.round(ratio * 100f) / 100f))
                 + " [th=" + thr + " r=" + ratioGate + "]"
-                + (pass ? " → " + (sign < 0 ? "PREV" : "NEXT") : " → 弃权(模糊)"));
+                + (pass ? " → " + (sign < 0 ? "PREV" : "NEXT") : " → 弃权(模糊)"));   // 默认映射：sign− = 上一页（rev 勾选时相反，以 fire() 的 SHAKE 日志为准）
         return pass ? new int[]{dom, sign} : null;
     }
 
@@ -609,10 +611,14 @@ public final class ShakeDetector implements SensorEventListener {
     /**
      * 一次甩动**判决通过** ⇒ 按 {@link #judge} 给出的方向符号 + 对应反转开关决定指令，直接发给对端。
      *
-     * <p>映射（**延续修复前语义**，故用户不会感到左右翻转；T029L 标定：左 = x 主峰 +
-     * ／右 = x 主峰 − ／上 = z 主峰 + ／下 = z 主峰 −）：
+     * <p>映射（默认 = 两个反转开关均关；按**用户实际握持（背面朝自己）**标定：左 = x 主峰 −
+     * ／右 = x 主峰 + ／上 = z 主峰 − ／下 = z 主峰 +）：
      * {@code cmd = (rev ? −sign : sign) < 0 ? PAGE_PREV : PAGE_NEXT} —— x 通道走 {@code lr_rev}，
      * y/z 通道走 {@code ud_rev}，两组完全独立。
+     * <br>默认结果：<b>左晃→上一页 / 右晃→下一页 / 上晃→上一页 / 下晃→下一页</b>。
+     * <br>⚠️ 2026-10-04 二修：2026-10-03 曾据"文档默认（屏幕朝自己标定）"把公式改成
+     * {@code rev ? sign : −sign}，但真机（背面朝自己）实测四方向**全部相反**（验证记录/117）
+     * ⇒ 改回 {@code rev ? −sign : sign}，对齐用户实际握持语义。
      *
      * @param idx  **主导轴**下标（来自 {@link #judge}），不再是"触发轴"
      * @param sign 主峰符号（+1/−1）
@@ -628,7 +634,7 @@ public final class ShakeDetector implements SensorEventListener {
         } catch (Throwable t) {
             Log.w(TAG, "fire: read prefs failed(swallowed): " + t);
         }
-        final int eff = rev ? -sign : sign;
+        final int eff = rev ? -sign : sign;   // 🔴 2026-10-04 二修：默认 左/上→上一页、右/下→下一页（勾选 rev = 反向）
         final int cmd = (eff < 0)
                 ? RemoteProtocol.CMD_PAGE_PREV : RemoteProtocol.CMD_PAGE_NEXT;
         boolean sent = false;

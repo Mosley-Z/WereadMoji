@@ -14,7 +14,7 @@ import android.view.accessibility.AccessibilityEvent;
  *           ① onKeyEvent 捕获音量键（本类）；
  *           ② {@link ShakeDetector} 捕获晃动（TASK-029，仅 role=phone + 总开关 on + 会话已连接时注册）
  *           → 都经 RemoteLinkManager 发指令（音量键那条返回 true 消费，实测观感：音量条不出现）；
- *  - eink ：RemoteLinkManager 收指令 → RemoteInjector 注入左右滑。
+ *  - eink ：RemoteLinkManager 收指令 → RemoteInjector 注入点击边界热区（方案 D）。
  *
  * 🔴 三条实测硬约束（`_probe/a11y_keyprobe/EVIDENCE.md`，全部内建）：
  *  ① 按键过滤全局互斥：与「开关控制」等同机共存时**一条都收不到** —— 实验室页必须给可操作指引；

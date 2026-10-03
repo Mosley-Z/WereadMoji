@@ -163,7 +163,7 @@ public final class CardPrefs {
 
     /** 遥控角色：关闭（默认 —— 不开 socket、不建连，设置页只多一个角色开关） */
     public static final int REMOTE_ROLE_OFF = 0;
-    /** 遥控角色：墨水屏端（Client：连手机热点网关，收指令 → 注入左右滑） */
+    /** 遥控角色：墨水屏端（Client：连手机热点网关，收指令 → 注入点击边界热区） */
     public static final int REMOTE_ROLE_EINK = 1;
     /** 遥控角色：手机端（Server：listen 等墨水屏连入，捕获音量键 → 发指令） */
     public static final int REMOTE_ROLE_PHONE = 2;

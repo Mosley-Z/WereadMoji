@@ -4,7 +4,7 @@
         所有新能力（按键过滤 / 手势）都落在本服务上，现有纯墨水屏用户的无障碍声明不受影响。
      能力说明（与 help.txt / 头注三处同步 —— 本项目文案漂移常客）：
      · canRequestFilterKeyEvents：手机端捕获音量键（"观察输入"的按键过滤，**不是**"读取屏幕内容"）；
-     · canPerformGestures：墨水屏端注入左右滑翻页手势（"执行手势"，参数来自 Step 0-a 实测）。
+     · canPerformGestures：墨水屏端注入翻页点击手势（点击阅读页左右边界热区，参数来自 验证记录/118 真机标定）。
      订阅面最小：不读窗口内容（canRetrieveWindowContent 缺省 false），
      事件类型只留 typeWindowStateChanged 占位（phone 端只走 onKeyEvent，eink 端被动收指令）。
      ⚠️ 按键过滤全局互斥（实测）：同类服务同机只能有一个生效 —— 实验室页必须给用户操作指引。 -->
