@@ -1,13 +1,13 @@
 {
-  "versionCode": 38,
-  "versionName": "1.0.4-beta",
-  "tag": "v1.0.4-beta",
-  "notes": "① 遥控翻页更稳：翻页方式由「滑动」改为「点击阅读页左右边界」，不再误弹划线/想法面板；默认方向对齐实际握持（左/上=上一页、右/下=下一页，两组可分别反转）；灵敏度三档（默认「中」）。② 「续航优化」精简为 3 项有效开关（关开放网络提示 / 关动画 / 关时钟屏保），移除 2 项本机无效的旧开关。③ 新增「云端备用更新源」（默认开）：GitHub 连不上时自动改用备用地址，受限网络下也能检查更新。",
-  "apk": "dist/weread-stats-1.0.4-beta.apk",
-  "size": 346279,
-  "sha256": "393a9234293e4788f37fd2bfca48d5ac4bc5c3dc1a625550fd24833ee49a965a",
+  "versionCode": 39,
+  "versionName": "1.1.0-beta",
+  "tag": "v1.1.0-beta",
+  "notes": "① 新增「安装角色」：首装时选「手机端」或「阅读器端」，同一份安装包适配两种用法，设置内可随时切换。② 手机端新增「蓝牙控制」：手机经蓝牙直接向墨水屏发送翻页按键（走系统输入层，不依赖网络、不弹划线与想法面板）；含连接保活（息屏不掉）、断链探测与恢复引导、首次配对三步引导（App 内可让本机被墨水屏发现）。③ 修若干稳定性问题（前台服务早退清理、晃动翻页随连接状态即时生效等）。🔴 蓝牙遥控需先在墨水屏「设置·已连接的设备」完成一次配对，且重连只能由墨水屏发起。",
+  "apk": "dist/weread-stats-1.1.0-beta.apk",
+  "size": 366759,
+  "sha256": "ef5d58fc71c2e4bf515984db721c2a9130c2e127e1499eba585cd9803c779d80",
   "urls": [
-    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v1.0.4-beta/dist/weread-stats-1.0.4-beta.apk",
-    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v1.0.4-beta/dist/weread-stats-1.0.4-beta.apk"
+    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v1.1.0-beta/dist/weread-stats-1.1.0-beta.apk",
+    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v1.1.0-beta/dist/weread-stats-1.1.0-beta.apk"
   ]
 }
