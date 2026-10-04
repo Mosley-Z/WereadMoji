@@ -111,6 +111,19 @@
     <string name="label_cloud_fallback">云端备用更新源</string>
     <string name="cloud_fallback_tip">GitHub 连不上时，自动改用我们自己的备用地址，让更新在受限网络下也能完成。GitHub 正常时用不到它；关掉后只用 GitHub。</string>
 
+    <!-- 🆕 TASK-031（V1.1.0-beta）：本机角色 —— App 形态「阅读器端 / 手机端」。
+         🔴 与 remote_role（TCP 传输角色）**正交**、不得混用（ADR-012）。
+         🔴 措辞只描述"形态差异"，不承诺任何未验证能力。 -->
+    <string name="label_install_role">本机角色</string>
+    <string name="install_role_reader">阅读器端</string>
+    <string name="install_role_phone">手机端</string>
+    <string name="install_role_tip">同一 APK 两种形态：「阅读器端」= 正常看阅读统计 + 桌面卡片（默认）；「手机端」= 当遥控控制面板用，主入口直接进「设置-实验室」，只显示与手机相关的子标签。切换后重开 App 生效。此选择只存本机、不上传。</string>
+    <string name="install_role_changed">已切换本机角色，重开 App 后生效。</string>
+    <string name="install_role_dialog_title">这台设备用来做什么？</string>
+    <string name="install_role_dialog_msg">为手机端安装：把它当遥控面板用 —— 主入口直接进「设置-实验室」，不显示阅读统计。\n为阅读器安装：正常看阅读统计与桌面卡片。\n\n以后可在「设置 - 初始化 - 本机角色」里随时更改。</string>
+    <string name="install_role_pick_phone">为手机端安装</string>
+    <string name="install_role_pick_reader">为阅读器安装</string>
+
     <!-- V1.0 Beta（TASK-018）：设置页第三段「实验室」· 遥控翻页 -->
     <!-- ⚠ 文案三条硬约束（docs/FEATURES/lab.md §提示文案）：只写已验证事实 / 必须写明按键过滤互斥 /
          角色切换后需重开无障碍。禁「读取屏幕内容」「断开即省电」等超出已验证能力的措辞。 -->

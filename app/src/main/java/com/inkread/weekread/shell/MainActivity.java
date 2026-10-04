@@ -23,6 +23,8 @@ import com.inkread.weekread.ui.TabBarView;
 import com.inkread.weekread.update.ApkInstaller;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.net.Uri;
@@ -75,16 +77,115 @@ public class MainActivity extends Activity {
     /** TASK-018：本机是否处于 phone 角色（手机端遥控器）—— 是则隐藏卡片相关 UI（A7）。 */
     private boolean remotePhone;
 
+    /**
+     * 🆕 TASK-031：本机被安装为「手机端」形态（控制面板）。
+     *
+     * <p>与 {@link #remotePhone} 是**两条轴**（App 形态 vs TCP 传输角色，见 `ADR-012`）：
+     * 本形态下卡片 UI 根本不装配，`onResume`/`onPause` 需据此早退（否则拿到 null 卡片会 NPE）。
+     * 置位后立即 {@code finish()} 并跳「设置-实验室」，所以它主要保护"即将销毁的这一帧"。
+     */
+    private boolean installPhone;
+
+    /**
+     * 阅读器端卡片 UI 是否已装配（{@link #setupReaderUi()} 跑完才置 true）。
+     *
+     * <p>用于保护生命周期回调：首装弹窗期间 / 手机端形态下 UI 未建，`onResume` 若照常执行
+     * 会对 null 的 tabbar/card 抛 NPE（TASK-031 真机复现过）。
+     */
+    private boolean readerUiReady;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        // ── 🆕 TASK-031：安装角色 —— 首装引导 + 入口分流 ──
+        // 🔴 首装判定必须放在**任何可能写 cfg 的动作之前**：本工程启动早期唯一可能写 cfg 的是
+        //    UpdateChecker.autoCheck（它与 CardPrefs 共用 "cfg" prefs，写盘在后台线程 + 联网成功后）。
+        //    先跑它再读 `isFreshInstall()` 会有竞态误判（改了 prefs ⇒ 被判成"非首装"）。
+        final boolean firstRun =
+                !CardPrefs.isInstallRoleChosen(this) && CardPrefs.isFreshInstall(this);
 
         // v0.5.0：清掉上次没下完的更新残包；并静默查一次更新。
         // 静默检查每天至多一次，结果落盘 —— 用户进设置页自然看到「有新版本」，全程不弹窗。
         ApkInstaller.cleanupPartial(this);
         UpdateChecker.autoCheck(this);
 
+        if (firstRun) {
+            // 🔴 首装：**先把阅读器 UI 建好**，二选一弹窗叠在其上。
+            //    为什么不能在弹窗定案后再建：onStart/onResume 会在 onCreate 返回后**立刻**跑
+            //    （弹窗不阻塞生命周期），那时若 UI 未建，show() 会对 null 的 tabbar 抛 NPE。
+            //    先建好 ⇒ 选「阅读器」即刻可用；选「手机端」⇒ enterApp() 里立即转设置-实验室并 finish，
+            //    那一瞬的阅读器 UI 无副作用（全新安装还没有 Key，refresh() 直接空转）。
+            setupReaderUi();
+            askInstallRole();
+            return;
+        }
+        enterApp();
+    }
+
+    /**
+     * 🆕 TASK-031：首次安装引导 —— 二选一「为手机端安装 / 为阅读器安装」。
+     *
+     * <p>只在「全新安装 + `install_role` 从未写入」时调用一次。**关掉不选 / 按返回**一律记
+     * 「阅读器端」（= 默认值），确保不会因为用户没理弹窗而卡住。选完直接 {@link #enterApp()}。
+     */
+    private void askInstallRole() {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.install_role_dialog_title)
+                .setMessage(R.string.install_role_dialog_msg)
+                .setCancelable(true)
+                .setPositiveButton(R.string.install_role_pick_phone, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        CardPrefs.setInstallRole(MainActivity.this, CardPrefs.INSTALL_ROLE_PHONE);
+                        enterApp();
+                    }
+                })
+                .setNegativeButton(R.string.install_role_pick_reader, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        CardPrefs.setInstallRole(MainActivity.this, CardPrefs.INSTALL_ROLE_READER);
+                        enterApp();
+                    }
+                })
+                .setOnCancelListener(new DialogInterface.OnCancelListener() {
+                    @Override
+                    public void onCancel(DialogInterface d) {
+                        CardPrefs.setInstallRole(MainActivity.this, CardPrefs.INSTALL_ROLE_READER);
+                        enterApp();
+                    }
+                })
+                .show();
+    }
+
+    /**
+     * 🆕 TASK-031：入口分流 —— 按 `install_role` 决定"落地页"。
+     *
+     * <ul>
+     *   <li><b>手机端</b>（`phone`）⇒ 立即转「设置-实验室」并 {@code finish()}（纯控制面板，返回即退出）；
+     *       置 {@link #installPhone} 让 onResume/onPause 早退（卡片 UI 根本没装配，防 NPE）。</li>
+     *   <li><b>阅读器端</b>（`reader`，默认）⇒ {@link #setupReaderUi()}，与现状**零差异**。</li>
+     * </ul>
+     */
+    private void enterApp() {
+        if (CardPrefs.getInstallRole(this) == CardPrefs.INSTALL_ROLE_PHONE) {
+            installPhone = true;
+            Intent it = new Intent(this, SettingsActivity.class);
+            it.putExtra(SettingsActivity.EXTRA_OPEN_LAB, true);
+            startActivity(it);
+            finish();
+            return;
+        }
+        // 阅读器端：装好 UI（首装路径已在 onCreate 里先建好，避免重复装配）
+        if (!readerUiReady) setupReaderUi();
+    }
+
+    /**
+     * 阅读器端落地页（= TASK-031 之前的 {@code onCreate} 主体，**内容零改动**）。
+     * 手机端形态下**不调用**本方法 ⇒ 卡片 UI / 无障碍让位 / 取数整条不装配。
+     */
+    private void setupReaderUi() {
         card = (WeekCardView) findViewById(R.id.card);
         tabbar = (TabBarView) findViewById(R.id.tabbar);
         picker = (PeriodPickerView) findViewById(R.id.picker);
@@ -219,6 +320,8 @@ public class MainActivity extends Activity {
                 startActivity(new Intent(MainActivity.this, SettingsActivity.class));
             }
         });
+
+        readerUiReady = true;      // TASK-031：UI 装配完成，生命周期回调自此可安全跑 show()/refresh()
     }
 
     /** 选项卡下标 → 形态 */
@@ -358,8 +461,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (remotePhone) {
-            return;                 // 手机端遥控器：卡片 UI 已隐藏，无需让位/同步/取数
+        if (remotePhone || installPhone || !readerUiReady) {
+            return;                 // 卡片 UI 未装配（手机端形态 / 遥控手机角色 / 首装弹窗期间）⇒ 无需让位/同步/取数
         }
         // 先声明"用户现在在我们自己的界面里" —— 桌面卡片必须让位。
         // 必须在 sync() 之前：sync() 会让服务重算一次可见性，
@@ -375,7 +478,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
-        if (remotePhone) {
+        if (remotePhone || installPhone || !readerUiReady) {
             return;
         }
         CardA11yService.noteOwnUiForeground(false);

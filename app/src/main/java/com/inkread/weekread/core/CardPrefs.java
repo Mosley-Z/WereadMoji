@@ -324,4 +324,52 @@ public final class CardPrefs {
     public static void setSwitchMode(Context c, int v) {
         sp(c).edit().putInt("switch_mode", (v == SWITCH_LIST) ? SWITCH_LIST : SWITCH_LOOP).commit();
     }
+
+    // ── TASK-031：本机角色（安装形态）—— 「这台设备用来读 / 用来当遥控面板」──
+    //
+    // 🔴 这是 **App 形态**（V1.1.0-beta，ADR-012），与遥控线的 `remote_role`（TCP 传输角色）**正交**、**不得混用**：
+    //   · install_role=reader（默认）= 现状：阅读统计主页 + 桌面卡片 + 全部既有子标签；
+    //   · install_role=phone        = 控制面板：主入口直进「设置-实验室」，只装配手机端关联子标签。
+    // 🔴 越界/缺失一律回落 reader（与 note_card_size 同一套安全读出纪律）；缺省即 reader ⇒ 老用户升级零感知。
+
+    /** 本机角色：阅读器端（默认）—— 正常当阅读器用 */
+    public static final int INSTALL_ROLE_READER = 0;
+    /** 本机角色：手机端 —— 退化为遥控控制面板 */
+    public static final int INSTALL_ROLE_PHONE = 1;
+
+    public static final int DEFAULT_INSTALL_ROLE = INSTALL_ROLE_READER;
+
+    private static final String K_INSTALL_ROLE = "install_role";
+
+    public static int getInstallRole(Context c) {
+        int v = sp(c).getInt(K_INSTALL_ROLE, DEFAULT_INSTALL_ROLE);
+        if (v < INSTALL_ROLE_READER || v > INSTALL_ROLE_PHONE) return DEFAULT_INSTALL_ROLE;
+        return v;
+    }
+
+    public static void setInstallRole(Context c, int v) {
+        if (v < INSTALL_ROLE_READER || v > INSTALL_ROLE_PHONE) v = DEFAULT_INSTALL_ROLE;
+        sp(c).edit().putInt(K_INSTALL_ROLE, v).commit();
+    }
+
+    /**
+     * 本机角色是否"已经选过"（键是否被写过）。
+     *
+     * <p>用于首装引导判据：**键从未写入** 且 {@link #isFreshInstall} ⇒ 才弹一次二选一。
+     * 与 `getInstallRole()`（缺省返回 reader）不同 —— 后者是"读出来用"，这个是"是否写过"。
+     */
+    public static boolean isInstallRoleChosen(Context c) {
+        return sp(c).contains(K_INSTALL_ROLE);
+    }
+
+    /**
+     * 是否**全新安装**（首启）：`cfg` 一份偏好都没有。
+     *
+     * <p>🔴 调用时机有硬要求：必须在**任何可能写 `cfg` 的动作之前**读（见 `MainActivity.onCreate`）。
+     * 本工程启动早期唯一可能写 `cfg` 的是 `UpdateChecker.autoCheck`（与 CardPrefs 共用 `cfg`，
+     * 且写盘在后台线程 + 联网成功后）—— 若先跑它再读本项，存在竞态误判。
+     */
+    public static boolean isFreshInstall(Context c) {
+        return sp(c).getAll().isEmpty();
+    }
 }

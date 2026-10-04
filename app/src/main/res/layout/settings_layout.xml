@@ -47,6 +47,60 @@
                 android:orientation="vertical"
                 android:paddingTop="12dp">
 
+                <!-- ================= ⓪ 本机角色（🆕 TASK-031） ================= -->
+                <!-- App 形态「阅读器端 / 手机端」，与「实验室-角色」（remote_role）**正交**、不得混用。
+                     置于页首 = 回答"这台设备是什么"，是首装引导之后的第一项。 -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_install_role"
+                    android:textColor="#FF000000"
+                    android:textSize="17sp" />
+
+                <RadioGroup
+                    android:id="@+id/rg_install_role"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:orientation="horizontal">
+
+                    <RadioButton
+                        android:id="@+id/rb_inst_reader"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/install_role_reader"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_inst_phone"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/install_role_phone"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+                </RadioGroup>
+
+                <TextView
+                    android:id="@+id/tv_install_role_tip"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:lineSpacingExtra="3dp"
+                    android:text="@string/install_role_tip"
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="13sp" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="12dp"
+                    android:background="#FFD8D8D8" />
+
                 <!-- ================= ① 微信读书 API Key ================= -->
 
                 <TextView

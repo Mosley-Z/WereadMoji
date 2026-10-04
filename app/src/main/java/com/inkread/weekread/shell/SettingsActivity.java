@@ -188,6 +188,14 @@ public class SettingsActivity extends Activity {
     private int uState = U_IDLE;
     private UpdateChecker.Info uInfo;
 
+    // ── 🆕 TASK-031：安装角色（App 形态，与 remote_role 正交）──
+
+    /** 主入口以「手机端」进入时携带：设置页直接定位到「实验室」页。 */
+    public static final String EXTRA_OPEN_LAB = "open_lab";
+
+    /** 初始化页 ⓪「本机角色」单选组（阅读器端 / 手机端）。 */
+    private RadioGroup rgInstallRole;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -261,50 +269,23 @@ public class SettingsActivity extends Activity {
         cbShakeUdRev = (CheckBox) findViewById(R.id.cb_shake_ud_rev);
         tvShakeMap = (TextView) findViewById(R.id.tv_shake_map);
 
-        // ── v0.4.3 顶部页签「初始化 / 自定义」；v0.7 加第三段「实验室」──
+        // ── v0.4.3 顶部页签「初始化 / 自定义 / 实验室」；v0.7 加第三段「实验室」──
         // 三个页面是同一个 ScrollView 里的三个容器，切页只切 visibility。
-        final View pageInit = findViewById(R.id.page_init);
-        final View pageCustom = findViewById(R.id.page_custom);
-        final View pageLab = findViewById(R.id.page_lab);
-        final ScrollView svSettings = (ScrollView) findViewById(R.id.sv_settings);
-        SegTabView seg = (SegTabView) findViewById(R.id.seg);
+        // 🆕 TASK-031：切换逻辑抽到 showTopPage()，便于「手机端入口」程序化定位到实验室页。
+        final SegTabView seg = (SegTabView) findViewById(R.id.seg);
         // SegTabView 默认只给两段标签，这里显式扩到三段（它本来就是通用 N 段控件）
         seg.setLabels(new String[]{"初始化", "自定义", "实验室"});
         seg.setListener(new SegTabView.Listener() {
             @Override
             public void onSegSelected(int index) {
-                pageInit.setVisibility(index == 0 ? View.VISIBLE : View.GONE);
-                pageCustom.setVisibility(index == 1 ? View.VISIBLE : View.GONE);
-                pageLab.setVisibility(index == 2 ? View.VISIBLE : View.GONE);
-                // 切页回到顶部：各页高度不同，留着旧滚动位置会看着像"卡住了"
-                svSettings.scrollTo(0, 0);
-                // 进实验室页时刷一次角色/状态显示 —— 不轮询、不常驻（会话状态由 Listener 推）
-                if (index == 2) refreshRoleUi();
+                showTopPage(index);
             }
         });
 
-        // ── 🆕 TASK-021 / 022 / 023 实验室子标签（遥控翻页 | 锁屏密码 | 续航优化；后续卡在此扩段）──
-        // 作用与顶部 seg 相同：同一个 ScrollView 内，切换子页容器的 visibility。
-        final View pageLabRemote = findViewById(R.id.page_lab_remote);
-        final View pageLabLock = findViewById(R.id.page_lab_lockscreen);
-        final View pageLabPower = findViewById(R.id.page_lab_power);
-        SegTabView segLab = (SegTabView) findViewById(R.id.seg_lab);
-        segLab.setLabels(new String[]{
-                getString(R.string.lab_tab_remote), getString(R.string.lab_tab_lockscreen),
-                getString(R.string.lab_tab_power) });
-        segLab.setListener(new SegTabView.Listener() {
-            @Override
-            public void onSegSelected(int index) {
-                // 后续子页（待办卡片…）在此按 index 继续追加
-                pageLabRemote.setVisibility(index == 0 ? View.VISIBLE : View.GONE);
-                pageLabLock.setVisibility(index == 1 ? View.VISIBLE : View.GONE);
-                pageLabPower.setVisibility(index == 2 ? View.VISIBLE : View.GONE);
-                svSettings.scrollTo(0, 0);
-                if (index == 1) refreshLockUi();
-                // TASK-023：进续航页复核一次 —— 勾选态一律读设备真值（不读偏好，防「显示已开/实际已关」）
-                if (index == 2) refreshPowerUi();
-            }
-        });
+        // ── 🆕 TASK-021 / 022 / 023 实验室子标签（遥控翻页 | 锁屏密码 | 续航优化）──
+        // 🆕 TASK-031：改为「按 install_role 动态装配」（手机端形态只装手机端关联子标签）。
+        //   作用与顶部 seg 相同：同一个 ScrollView 内，切换子页容器的 visibility。详见 bindLabTabs()。
+        bindLabTabs();
 
         // ── 🆕 TASK-022 锁屏密码子页（应用级软锁）──
         // 落盘在 LockPrefs（盐 + SHA-256，非明文）；开关默认关 ⇒ 老用户升级后零差异（验收 A6）。
@@ -952,8 +933,111 @@ public class SettingsActivity extends Activity {
             }
         });
 
+        // ── 🆕 TASK-031：本机角色切换（初始化页 · ⓪ 本机角色）──
+        // 一键切 install_role ⇒ 入口与"实验室可见子标签"随之变化；提示重开 App 生效。
+        // 🔴 install_role（App 形态）与 remote_role（TCP 传输角色）**正交**，此处只动前者。
+        rgInstallRole = (RadioGroup) findViewById(R.id.rg_install_role);
+        rgInstallRole.check(CardPrefs.getInstallRole(this) == CardPrefs.INSTALL_ROLE_PHONE
+                ? R.id.rb_inst_phone : R.id.rb_inst_reader);
+        rgInstallRole.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(RadioGroup g, int checkedId) {
+                int role = (checkedId == R.id.rb_inst_phone)
+                        ? CardPrefs.INSTALL_ROLE_PHONE : CardPrefs.INSTALL_ROLE_READER;
+                if (role == CardPrefs.getInstallRole(SettingsActivity.this)) return;   // 无变化不处理
+                CardPrefs.setInstallRole(SettingsActivity.this, role);
+                bindLabTabs();        // 实验室可见子标签随之变化
+                Toast.makeText(SettingsActivity.this, R.string.install_role_changed,
+                        Toast.LENGTH_LONG).show();
+            }
+        });
+
         // 首次进页即按角色定一次显隐（phone 角色要立刻隐藏「桌面卡片」分区）
         refreshRoleUi();
+
+        // ── 🆕 TASK-031：从主入口以「手机端」路由进来时，直接定位到「实验室」页 ──
+        // 🔴 SegTabView.setSelected 同值早退、不回调 listener ⇒ 必须手动走一次 showTopPage()。
+        if (getIntent() != null && getIntent().getBooleanExtra(EXTRA_OPEN_LAB, false)) {
+            seg.setSelected(2);
+            showTopPage(2);
+        }
+    }
+
+    // ────────────────────── 🆕 TASK-031：安装角色（App 形态）──────────────────────
+
+    /**
+     * 顶部三段（初始化 / 自定义 / 实验室）切换 —— 切可见性 + 回到页顶 + 进实验室页时刷新角色显隐。
+     *
+     * <p>抽成方法（TASK-031）：既供 {@link SegTabView} 的 listener 用，也供「手机端」入口
+     * 程序化定位到实验室页用（`setSelected` 不会回调 listener）。
+     */
+    private void showTopPage(int index) {
+        findViewById(R.id.page_init).setVisibility(index == 0 ? View.VISIBLE : View.GONE);
+        findViewById(R.id.page_custom).setVisibility(index == 1 ? View.VISIBLE : View.GONE);
+        findViewById(R.id.page_lab).setVisibility(index == 2 ? View.VISIBLE : View.GONE);
+        // 切页回到顶部：各页高度不同，留着旧滚动位置会看着像"卡住了"
+        ((ScrollView) findViewById(R.id.sv_settings)).scrollTo(0, 0);
+        // 进实验室页时刷一次角色/状态显示 —— 不轮询、不常驻（会话状态由 Listener 推）
+        if (index == 2) refreshRoleUi();
+    }
+
+    /**
+     * 🆕 TASK-031：按 {@code install_role} **动态装配**实验室子标签（onCreate 与角色切换时调用）。
+     *
+     * <p>把原来写死的 3 段换成**可扩展表** {@code {labelRes, page, phoneRelevant}}：
+     * <ul>
+     *   <li><b>阅读器端</b> ⇒ 全部装配（与改造前**逐项一致**，验收 A3）；</li>
+     *   <li><b>手机端</b> ⇒ 只装配 {@code phoneRelevant} 的项（当前 = 遥控翻页；TASK-033 加「蓝牙控制」一行即露出）。</li>
+     * </ul>
+     * 🔴 子标签文案用资源 id（不写死字符串）：TASK-033 改 {@code lab_tab_remote} 字面量后自动生效。
+     */
+    private void bindLabTabs() {
+        final boolean phone = CardPrefs.getInstallRole(this) == CardPrefs.INSTALL_ROLE_PHONE;
+
+        // ── 可扩展表：新增手机端子标签，在下面追加一行并把 phoneRelevant 置 true 即可 ──
+        final int[] labelRes = {
+                R.string.lab_tab_remote,       // 热点翻页（TASK-033 改名）
+                R.string.lab_tab_lockscreen,   // 锁屏密码
+                R.string.lab_tab_power };      // 续航优化
+        final View[] page = {
+                findViewById(R.id.page_lab_remote),
+                findViewById(R.id.page_lab_lockscreen),
+                findViewById(R.id.page_lab_power) };
+        final boolean[] phoneRelevant = { true, false, false };
+
+        // 按角色过滤出"保留的下标"
+        final int[] keep = new int[labelRes.length];
+        int n = 0;
+        for (int i = 0; i < labelRes.length; i++) {
+            if (!phone || phoneRelevant[i]) keep[n++] = i;
+        }
+
+        final String[] labels = new String[n];
+        for (int i = 0; i < n; i++) labels[i] = getString(labelRes[keep[i]]);
+
+        final SegTabView segLab = (SegTabView) findViewById(R.id.seg_lab);
+        segLab.setLabels(labels);
+        final int count = n;
+        final ScrollView sv = (ScrollView) findViewById(R.id.sv_settings);
+        segLab.setListener(new SegTabView.Listener() {
+            @Override
+            public void onSegSelected(int index) {
+                for (int i = 0; i < count; i++) {
+                    page[keep[i]].setVisibility(i == index ? View.VISIBLE : View.GONE);
+                }
+                sv.scrollTo(0, 0);
+                int orig = keep[index];
+                if (orig == 1) refreshLockUi();
+                // TASK-023：进续航页复核一次 —— 勾选态一律读设备真值（不读偏好，防「显示已开/实际已关」）
+                if (orig == 2) refreshPowerUi();
+            }
+        });
+
+        // 复位到第 0 个可见子页（setLabels 只在越界时钳 selected，故这里显式置一次可见性）
+        segLab.setSelected(0);
+        for (int i = 0; i < count; i++) {
+            page[keep[i]].setVisibility(i == 0 ? View.VISIBLE : View.GONE);
+        }
     }
 
     @Override
