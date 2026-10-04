@@ -85,6 +85,15 @@
             android:label="@string/todo_card_title"
             android:theme="@android:style/Theme.Material.Light" />
 
+        <!-- 🆕 TASK-037（V1.2.0-beta）：手机端「遥控台」。
+             入口 = MainActivity 在 install_role=phone 时转来；exported=false（只由本应用内部拉起）。
+             无新增权限、无新增包依赖（纯 framework View 自绘）。阅读器端不实例化本 Activity。 -->
+        <activity
+            android:name=".shell.ConsoleActivity"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+
         <!-- 「怎么用」：把面向使用者的说明内置进来（v0.4.2），文案在 res/raw/help.txt -->
         <activity
             android:name=".shell.HelpActivity"

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  V1.2.0-beta · 手机端「遥控台」布局骨架（TASK-037）。
+  ⚠️ 仅 install_role=phone 时由 ConsoleActivity 加载；阅读器端不使用本布局（零差异）。
+  视觉 token 见 docs/09_手机端遥控台UI规范.md。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/console_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/ink_paper">
+
+    <!-- 顶栏：常驻状态胶囊（左）+ 齿轮入设置（右）—— docs/09 §5.1 -->
+    <LinearLayout
+        android:id="@+id/console_topbar"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingLeft="16dp"
+        android:paddingRight="8dp">
+
+        <com.inkread.weekread.ui.StatusChipView
+            android:id="@+id/console_chip"
+            android:layout_width="0dp"
+            android:layout_height="34dp"
+            android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/console_gear"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:gravity="center"
+            android:text="&#9881;"
+            android:textColor="@color/ink_text2"
+            android:textSize="22sp"
+            android:contentDescription="@string/console_gear"
+            android:background="?android:attr/selectableItemBackground" />
+    </LinearLayout>
+
+    <!-- 内容区：翻页页（主）② 连接页（TASK-040 追加） -->
+    <FrameLayout
+        android:id="@+id/console_content"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <com.inkread.weekread.ui.FlipKeyView
+            android:id="@+id/console_flip"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+    </FrameLayout>
+</LinearLayout>

@@ -327,4 +327,17 @@
     <string name="pool_todo">待办</string>
     <string name="card_pool_tip">只影响桌面卡片；App 内各页面的查看不受影响。</string>
     <string name="card_pool_min_one">至少要保留一张卡片</string>
+
+    <!-- ══════════ 🆕 TASK-037~040（V1.2.0-beta）：手机端「遥控台」 ══════════
+         🔴 仅 install_role=phone 使用；阅读器端零差异。
+         🔴 文案红线：只写已验证能力；不出现「读取屏幕内容」；不承诺未验证项。 -->
+    <string name="console_gear">设置</string>
+    <!-- 状态胶囊四态（与设置页 lab_bt_status_* 同源语义） -->
+    <string name="console_st_off">未启用</string>
+    <string name="console_st_waiting">等待连接</string>
+    <string name="console_st_lost">已断开</string>
+    <string name="console_st_connected">已连接 %1$s</string>
+    <!-- 翻页键：未连接时点了给出路标（不静默失败） -->
+    <string name="console_not_connected">还没连上墨水屏：先开启「蓝牙控制」并完成一次性配对</string>
+    <string name="console_connect_hint">连接与配对：设置 → 实验室 → 蓝牙控制</string>
 </resources>
