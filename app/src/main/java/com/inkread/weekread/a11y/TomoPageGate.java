@@ -367,7 +367,7 @@ final class TomoPageGate {
                 + " span=" + (st.swipeLastAt - st.swipeFirstAt) + "ms"
                 + " → " + (leave ? "离开第1页" : "落到第1页") + " (cur=" + st.pageGate + ")");
         if (leave != st.pageGate) {
-            st.pageGate = leave;
+            rt.setPageGate(leave);              // A4：经统一入口（含 180s 兜底超时维护）
             ov.applyVisibility();
         }
     }

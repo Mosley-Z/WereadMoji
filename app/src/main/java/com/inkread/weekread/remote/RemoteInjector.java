@@ -79,6 +79,18 @@ public final class RemoteInjector {
      * @return 指令被接受返回 true；非翻页指令（BYE 等）返回 false。
      */
     public static boolean inject(AccessibilityService svc, int cmd) {
+        // 🔴 C1（CODE_REVIEW 加固）：只允许「阅读器端（EINK）」执行注入 —— 手机端只发不收。
+        //    本方法是注入层**唯一入口**，而 sink 在 RemoteKeyService 里是**无条件挂载**的
+        //    （保留 TASK-029 §2.1 修复本意：先开无障碍、后切角色时也能收到指令），
+        //    所以真正的角色门控放在这里**惰性判**：非 EINK 一律拒绝（不注入、不弹面板、
+        //    不改任何状态）。此前 phone 端若也收到指令会照样注入 ⇒ 手机自己乱翻页。
+        //    ⚠️ BYE **不经过**本方法（RemoteLinkManager 收到 BYE 时已先行结束会话）
+        //       ⇒ 会话结束语义**不变**。
+        RemoteRole role = RemoteRole.from(svc);
+        if (role != RemoteRole.EINK) {
+            Log.i(TAG, "inject 拒绝：role=" + role + "（仅阅读器端注入）");
+            return false;
+        }
         final boolean isNext;
         if (cmd == RemoteProtocol.CMD_PAGE_NEXT) {
             isNext = true;    // 点击右热区 = 下一页

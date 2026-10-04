@@ -182,7 +182,7 @@ public class CardA11yService extends AccessibilityService {
      */
     public static void resetPageGate() {
         if (sInstance == null) return;
-        sInstance.st.pageGate = false;
+        sInstance.router.setPageGate(false);        // A4：经统一入口（撤掉 180s 兜底超时）
         sInstance.st.settingsGate = false;          // TASK-009：手动出口覆盖所有瞬态闸
         sInstance.st.lastHomeResolveAt = 0L;        // 顺手让下次桌面事件重查默认桌面
         sInstance.tomo.cancelSwipeWindow();
@@ -262,7 +262,7 @@ public class CardA11yService extends AccessibilityService {
     private void calibrateOnReconnect() {
         int r = homeProbe.checkCurrentScreen();
         if (r == ElaHomeProbe.CUR_HOME_NOT_P1) {
-            st.pageGate = true;
+            router.setPageGate(true);               // A4：经统一入口（含 180s 兜底超时维护）
             CardDebug.note(this, "reconnect calibrate: 在桌面但非第 1 页 ⇒ pageGate=true（让位）");
         } else if (r == ElaHomeProbe.CUR_NOT_HOME) {
             st.onDesktop = false;

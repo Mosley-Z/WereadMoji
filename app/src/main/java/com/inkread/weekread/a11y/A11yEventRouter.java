@@ -212,6 +212,56 @@ final class A11yEventRouter {
     };
 
     /**
+     * 🔴 A4（CODE_REVIEW 加固）：`pageGate` 的**兜底超时**（毫秒）。
+     *
+     * <p>与 {@link #GATE_MAX_MS}（iconGate）同一先例：`pageGate` 一旦被某个判据置 true，
+     * 若之后**所有恢复路径都没赶上**（翻页事件被 ROM 漏投、resume 指纹缺失、探测未命中…），
+     * 卡片就会**永久藏死**——用户只会以为"卡片坏了"。这里挂一个无条件清闸，失败方向
+     * 只允许是"多显示一会儿"，绝不允许"再也不出现"。
+     *
+     * <p>为什么以前没有也"能用"：`pageGate` 的恢复口够多（Tomo 落到 P1 / ELauncher resume /
+     * 设置页手动重置 / 服务重连）。但 CODE_REVIEW 指出：那些都是**条件性**恢复，只要条件
+     * 恰好都不满足，就有藏死风险。加这条后至少有个 180s 的兜底。
+     */
+    private static final long PAGE_GATE_MAX_MS = 180_000L;
+
+    /** `pageGate` 兜底超时任务：`setPageGate(true)` 时挂上，`setPageGate(false)` / 服务断开时撤掉 */
+    private final Runnable pageGateTimeout = new Runnable() {
+        @Override
+        public void run() {
+            if (!st.pageGate) return;
+            st.pageGate = false;
+            st.pageGateAt = 0L;
+            CardDebug.note(ctx, "st.pageGate=false (timeout " + (PAGE_GATE_MAX_MS / 1000) + "s)");
+            ov.applyVisibility();
+        }
+    };
+
+    /**
+     * 🔴 A4：`pageGate` 的**统一写入口** —— 所有判据（Tomo / ELauncher / 重连自检）都必须
+     * 经由它置 / 清闸门，保证兜底超时与闸门**同生共死**。
+     *
+     * <p>语义与原各处 `st.pageGate = x;` **逐字等价**（只赋值），额外做的仅是维护
+     * {@link #pageGateTimeout}：置 true（从 false 跃变）时挂超时；清 false 时撤超时。
+     * 显隐仍由调用方各自决定（本方法**不**碰 `applyVisibility`），保持"单一出口"纪律。
+     */
+    void setPageGate(boolean v) {
+        boolean was = st.pageGate;
+        st.pageGate = v;
+        if (v) {
+            if (!was) {
+                st.pageGateAt = android.os.SystemClock.uptimeMillis();
+                if (ui != null) {
+                    ui.removeCallbacks(pageGateTimeout);
+                    ui.postDelayed(pageGateTimeout, PAGE_GATE_MAX_MS);
+                }
+            }
+        } else if (ui != null) {
+            ui.removeCallbacks(pageGateTimeout);
+        }
+    }
+
+    /**
      * 临时探针开关：把收到的所有无障碍事件原样写进 card_debug.log。
      *
      * ⚠️ 常规构建必须为 false。它的用途只有一个：下次再遇到"某个界面明明换了、
@@ -625,11 +675,14 @@ final class A11yEventRouter {
         // 刷了锚点会把紧跟的真实进入探测误伤在抑制窗里（抑制窗锚点只由 ElaGate
         // settle 的真滚动指纹刷新）。
         if (page == 0) {
-            if (st.settingsGate) {
-                st.settingsGate = false;
-                CardDebug.note(ctx, "settingsGate=false (pageRaw sx=0)");
-                ov.applyVisibility();
-            }
+            // 🔴 A5（CODE_REVIEW 加固）：page==0 **不再直接清 settingsGate**。
+            //    实测（见上方注释）tap 进设置的瞬间也会伴生一条 sx=0 ⇒ 旧行为会把闸门
+            //    清掉、卡片闪出来一帧，紧接着真实进入探测又把它藏回去（墨水屏上就是
+            //    一次刺眼的全屏闪烁）。清闸改由两条**更有依据**的路径负责：
+            //      · 「探测未命中」= SettingsPageProbe.applyGate(false)（根窗口确为
+            //        ELauncher 却没查到 settings_top ⇒ 确认不在设置页，恢复要快）；
+            //      · 「resume 实锤」= ElauncherPageGate 的 frame 路径（!leave ⇒ 清闸）。
+            //    这里只作废在途探测（sx=0 的过渡残树不该再改状态）。
             probe.cancel();
         } else if (page <= 1) {
             // 🔴 是否 resume 序列在调度时定格（elaFrame 是 Ela 判据窗口的现场指纹）：
@@ -680,7 +733,7 @@ final class A11yEventRouter {
         st.homeChangedAt = now;
         st.homeSettleLogged = 0;
         // ② 把上一个桌面残留的翻页状态全部清掉 —— 新桌面的第 1 页与旧桌面的页码无关
-        st.pageGate = false;
+        setPageGate(false);                            // A4：经统一入口（撤销上一个桌面的兜底超时）
         st.desktopPage = 0;
         st.pendingPage = -1;
         tomo.cancelSwipeWindow();
@@ -786,6 +839,7 @@ final class A11yEventRouter {
         if (ui != null) {
             ui.removeCallbacks(applyPendingPage);
             ui.removeCallbacks(gateTimeout);
+            ui.removeCallbacks(pageGateTimeout);   // A4：pageGate 兜底超时一并撤掉
         }
         probe.cancel();                            // TASK-009：在途的内容探测一并作废
         ela.cancelHomeProbe();                     // TASK-010：在途的"回 P1"探测一并作废

@@ -42,6 +42,13 @@ public class WifiTcpLink implements RemoteLink {
     private static final int RETRY_MAX = 12;
     private static final int RETRY_GAP_MS = 1500;
 
+    /**
+     * 🔴 B2：单行最大字符数。协议行只有 `PAGE_NEXT` / `PAGE_PREV` / `BYE` / `HELLO <ip>`
+     * 等，几十字符足够。超过即视为协议异常、断开连接 —— 堵住"对端持续发无换行字节 ⇒
+     * `readLine()` 无上限缓冲 ⇒ OOM"的泄漏面。
+     */
+    private static final int MAX_LINE_CHARS = 256;
+
     private final boolean mServer;
     private final String mGateway;            // client 形态：默认网关（= 手机地址）
     private volatile Listener mListener;
@@ -148,6 +155,12 @@ public class WifiTcpLink implements RemoteLink {
         try {
             mSocket = s;
             s.setKeepAlive(true);
+            // 🔴 B2（选 B）：**不设** socket 读超时。
+            //    会话层「空闲自动断开」（RemoteLinkManager，默认 300s、可调 30–3600s）到点会
+            //    endSessionInternal() → link.stop() → closeQuietly()，把本 socket **连通监听
+            //    端口一起关**，已给"连上却不说话的哑连接"设了 ≤3600s 上界。此处再叠加一个
+            //    读超时属**冗余**，且会在用户把「空闲自动断开」调大到 >900s 时把**合法**的
+            //    空闲连接误断（行为变化）。故删除（保留本行注释说明决策，防日后又被加回来）。
             BufferedReader r = new BufferedReader(
                     new InputStreamReader(s.getInputStream(), "UTF-8"));
             OutputStream w = s.getOutputStream();
@@ -163,7 +176,8 @@ public class WifiTcpLink implements RemoteLink {
             }
             established = true;
             String line;
-            while (mRunning && (line = r.readLine()) != null) {
+            // 🔴 B2：用**带上限**的读行替换 readLine()（无上限缓冲是 45678 的泄漏面之一）。
+            while (mRunning && (line = readLineBounded(r)) != null) {
                 Listener ll = mListener;
                 if (ll == null) break;
                 int cmd = RemoteProtocol.parse(line);
@@ -173,6 +187,11 @@ public class WifiTcpLink implements RemoteLink {
             }
         } catch (IOException e) {
             Log.w(TAG, "session io " + e);
+            lose = "链路异常";
+        } catch (Throwable t) {
+            // 🔴 B2：任何非 IOException（含 Error）也要保证走到 finally 的 close + 丢失回调，
+            //    否则一条意外 Throwable 会绕过 onConnectionLost ⇒ 状态行滞留"已连接"。
+            Log.w(TAG, "session error " + t);
             lose = "链路异常";
         } finally {
             try {
@@ -195,6 +214,30 @@ public class WifiTcpLink implements RemoteLink {
                 }
             }
         }
+    }
+
+    /**
+     * 🔴 B2：**带上限**地读一行（替换无上限的 {@code BufferedReader.readLine()}）。
+     *
+     * <p>与 {@code readLine()} 语义一致：遇 {@code '\n'} 返回该行（不含换行符）；流结束（EOF）
+     * 返回已累计内容（无内容则返回 null，表示对端正常断开）。唯一差别：累计超过
+     * {@link #MAX_LINE_CHARS} 仍未见换行 ⇒ 抛 {@code IOException}（协议异常 ⇒ 断开连接），
+     * 堵住"对端发无穷字节 ⇒ 无上限缓冲 ⇒ OOM"的泄漏面。
+     *
+     * <p>兼容 CRLF：{@code '\r'} 直接跳过（本协议只发 {@code '\n'}，多一层防御无坏处）。
+     */
+    private static String readLineBounded(BufferedReader r) throws IOException {
+        StringBuilder sb = new StringBuilder(64);
+        int c;
+        while ((c = r.read()) != -1) {
+            if (c == '\n') return sb.toString();
+            if (c == '\r') continue;
+            sb.append((char) c);
+            if (sb.length() > MAX_LINE_CHARS) {
+                throw new IOException("line too long (> " + MAX_LINE_CHARS + " chars)");
+            }
+        }
+        return sb.length() == 0 ? null : sb.toString();
     }
 
     /**

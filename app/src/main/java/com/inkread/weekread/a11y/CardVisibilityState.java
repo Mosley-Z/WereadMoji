@@ -55,6 +55,11 @@ final class CardVisibilityState {
     int pendingPage = -1;
     /** 「用户已经翻离桌面第 1 页」闸门（v0.6.0） */
     boolean pageGate = false;
+    /**
+     * `pageGate` 置位时刻（`uptimeMillis()`），供 **A4 的 180s 兜底超时**用（`A11yEventRouter`）。
+     * 与 {@link #iconGateAt} 同一先例：置 true 时挂一个无条件清闸，失败方向只允许"多显示一会儿"。
+     */
+    long pageGateAt = 0L;
     /** ELauncher「设置」隐藏页闸门（TASK-009：内容探测命中置位；resume/落回 P1 实锤清除） */
     boolean settingsGate = false;
     /** 最近一次「resume / 落到第 1 页」实锤时刻（uptimeMillis），探测置位的抑制窗锚点，见 SettingsPageProbe */
@@ -184,6 +189,7 @@ final class CardVisibilityState {
         desktopPage = 0;
         pendingPage = -1;
         pageGate = false;
+        pageGateAt = 0L;
         settingsGate = false;
         settingsSettledAt = 0L;
         shadeOpen = false;

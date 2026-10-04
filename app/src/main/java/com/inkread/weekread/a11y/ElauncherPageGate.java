@@ -267,7 +267,7 @@ final class ElauncherPageGate {
                     + ") → 离开第1页 (cur=" + st.pageGate + ")");
             cancelHomeProbe();                      // 人不在 P1，作废在途的"回 P1"探测
             if (!st.pageGate) {
-                st.pageGate = true;
+                rt.setPageGate(true);               // A4：经统一入口（含 180s 兜底超时维护）
                 ov.applyVisibility();
             }
             return;
@@ -311,13 +311,13 @@ final class ElauncherPageGate {
         if (leave) {
             cancelHomeProbe();
             if (!st.pageGate) {
-                st.pageGate = true;
+                rt.setPageGate(true);           // A4：经统一入口（含 180s 兜底超时维护）
                 dirty = true;
             }
         } else if (frame) {
             cancelHomeProbe();
             if (st.pageGate) {
-                st.pageGate = false;
+                rt.setPageGate(false);          // A4：经统一入口（撤掉兜底超时）
                 dirty = true;
             }
         } else {

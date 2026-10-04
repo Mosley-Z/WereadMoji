@@ -59,6 +59,9 @@ public class RemoteKeyService extends AccessibilityService {
         //    （`recv PAGE_NEXT`），但注入静默不发生（一条日志都没有），观感 =「显示已连接却按了没反应」。
         //    sink 只在**收到对端指令**时被调用（RemoteLinkManager.onCommand），OFF 角色既不
         //    startSession 也不会收到指令 ⇒ 无条件挂载**零副作用**。
+        //    🔴 C1（CODE_REVIEW 加固）：角色的**执行门控**已在 `RemoteInjector.inject()` 内
+        //    惰性判（仅 EINK 端真正注入，phone 端只发不收）⇒ 这里**依旧无条件挂载**，
+        //    与上面的 §2.1 修复本意一致，两者不冲突。
         RemoteLinkManager.get().setCommandSink(new RemoteLinkManager.CommandSink() {
             @Override
             public boolean inject(int cmd) {
@@ -89,6 +92,15 @@ public class RemoteKeyService extends AccessibilityService {
                 break;
             default:
                 return false;
+        }
+        // 🔴 B1（CODE_REVIEW 加固）：**只有"正在遥控（会话已连接）"时才吞音量键**。
+        //    此前只要 role=phone 就无条件 `return true` —— 用户没点「开始遥控」、
+        //    或会话已断 / 空闲超时后，音量键仍被吃掉 ⇒ 音量调不动（用户侧："音量键失灵"）。
+        //    改为：会话不在 CONNECTED ⇒ 不消费（return false），音量键**交还系统**。
+        if (RemoteLinkManager.get().getState() != RemoteLinkManager.STATE_CONNECTED) {
+            Log.i(TAG, "onKeyEvent " + RemoteProtocol.name(cmd)
+                    + " → 会话未连接，音量键交还系统（不消费）");
+            return false;
         }
         // ②③ 只认 keyCode；仅 repeat==0 产生翻页（A12 长按不连翻），重复 DOWN 也消费掉
         //
