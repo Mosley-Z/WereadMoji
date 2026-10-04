@@ -29,12 +29,17 @@ public class StatusChipView extends View {
     public static final int ST_CONNECTED = 2;
     public static final int ST_LOST = 3;
 
-    /** 交互回调：点胶囊主体 / 点右侧换向图标。 */
+    /** 交互回调：点胶囊主体 / 点右侧换向图标 / 点右侧「更多」图标。 */
     public interface Listener {
         void onChipTap();
 
         void onSwapTap();
+
+        void onMoreTap();
     }
+
+    /** 右侧单个图标热区宽（dp）。两个图标并排 ⇒ 占 2×ICON_W。 */
+    private static final float ICON_W = 34f;
 
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF r = new RectF();
@@ -116,7 +121,7 @@ public class StatusChipView extends View {
 
         // 文字
         float tx = cx + dotR + InkTheme.dp(getContext(), 8f);
-        float swapW = InkTheme.dp(getContext(), 34f);   // 右侧换向热区宽
+        float iconsW = InkTheme.dp(getContext(), ICON_W * 2f);   // 右侧两枚图标总宽
         p.setTypeface(InkTheme.serif());
         p.setTextSize(InkTheme.sp(getContext(), 13f));
         p.setTextAlign(Paint.Align.LEFT);
@@ -124,7 +129,7 @@ public class StatusChipView extends View {
         Paint.FontMetrics fm = p.getFontMetrics();
         float baseline = cy - (fm.ascent + fm.descent) / 2f;
         // 超出可用宽度就省略（状态文案都短，正常不会触发）
-        float avail = w - tx - swapW - pad;
+        float avail = w - tx - iconsW - pad;
         String show = text;
         if (p.measureText(show) > avail && show.length() > 1) {
             while (show.length() > 1 && p.measureText(show + "…") > avail) {
@@ -134,12 +139,15 @@ public class StatusChipView extends View {
         }
         c.drawText(show, tx, baseline, p);
 
-        // 右侧换向图标「⇄」（TASK-038：一键交换左右方向）
-        float swCx = w - pad - swapW / 2f + InkTheme.dp(getContext(), 4f);
+        // 右侧两枚图标：⇄ 换向（TASK-038）/ ⋯ 更多（排布·间隔）
         p.setTextAlign(Paint.Align.CENTER);
         p.setTextSize(InkTheme.sp(getContext(), 15f));
+        float moreCx = w - pad - InkTheme.dp(getContext(), ICON_W / 2f);
+        float swapCx = moreCx - InkTheme.dp(getContext(), ICON_W);
         p.setColor(swapChecked ? InkTheme.BAMBOO : InkTheme.INK2);
-        c.drawText("⇄", swCx, baseline, p);
+        c.drawText("⇄", swapCx, baseline, p);
+        p.setColor(InkTheme.INK2);
+        c.drawText("⋯", moreCx, baseline, p);
 
         p.setTextAlign(Paint.Align.LEFT);
         p.setTypeface(null);
@@ -151,8 +159,13 @@ public class StatusChipView extends View {
             case MotionEvent.ACTION_DOWN:
                 return true;
             case MotionEvent.ACTION_UP:
-                float swapW = InkTheme.dp(getContext(), 34f);
-                if (e.getX() >= getWidth() - swapW) {
+                float iconsW = InkTheme.dp(getContext(), ICON_W * 2f);
+                float right = getWidth();
+                if (e.getX() >= right - iconsW / 2f) {
+                    // 右半图标区 = 「更多」（排布 / 连翻间隔）
+                    if (listener != null) listener.onMoreTap();
+                } else if (e.getX() >= right - iconsW) {
+                    // 左半图标区 = 换向
                     if (listener != null) listener.onSwapTap();
                 } else {
                     if (listener != null) listener.onChipTap();

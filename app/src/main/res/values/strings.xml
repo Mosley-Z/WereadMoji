@@ -340,4 +340,15 @@
     <!-- 翻页键：未连接时点了给出路标（不静默失败） -->
     <string name="console_not_connected">还没连上墨水屏：先开启「蓝牙控制」并完成一次性配对</string>
     <string name="console_connect_hint">连接与配对：设置 → 实验室 → 蓝牙控制</string>
+    <!-- 🆕 TASK-038：翻页交互（换向 / 排布 / 连翻间隔） -->
+    <string name="console_swap_on">已交换方向：左/上 = 下一页</string>
+    <string name="console_swap_off">已恢复方向：右/下 = 下一页</string>
+    <string name="console_opt_title">遥控台选项</string>
+    <string name="console_opt_layout">按键排布</string>
+    <string name="console_layout_hz">左右各半（默认）</string>
+    <string name="console_layout_vt">上下各半</string>
+    <string name="console_opt_repeat">长按连翻间隔</string>
+    <string name="console_repeat_fast">快（连翻更密）</string>
+    <string name="console_repeat_mid">中（默认）</string>
+    <string name="console_repeat_slow">慢（更稳）</string>
 </resources>

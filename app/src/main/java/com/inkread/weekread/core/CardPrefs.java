@@ -293,6 +293,53 @@ public final class CardPrefs {
         sp(c).edit().putBoolean("bt_control_enabled", v).commit();
     }
 
+    // ── 🆕 TASK-038：遥控台翻页交互偏好（V1.2.0-beta）──
+    //
+    // 🔴 与热点通道的方向设置（`remote_shake_lr_rev` 等）**彼此独立** —— 蓝牙翻页自有一套
+    //    `bt_flip_*`，命名隔离、不复用，避免两条通道"串味"（验收 R4）。
+    // 🔴 三项**默认值**（不换向 / 左右排布 / 220ms）⇒ 与 TASK-037 基座行为零差异。
+
+    /** 方向交换（默认关）：false = 左/上「上一页」、右/下「下一页」。 */
+    public static final boolean DEFAULT_BT_FLIP_SWAP = false;
+    /** 上下排布（默认关）—— 关 = 左右各半。 */
+    public static final boolean DEFAULT_BT_FLIP_VERTICAL = false;
+    /** 长按连翻默认间隔（ms）。 */
+    public static final int BT_FLIP_REPEAT_DEFAULT = 220;
+    /** 间隔下限（ms）—— 过快会灌爆对端按键队列。 */
+    public static final int BT_FLIP_REPEAT_MIN = 120;
+    /** 间隔上限（ms）。 */
+    public static final int BT_FLIP_REPEAT_MAX = 400;
+
+    public static boolean isBtFlipSwap(Context c) {
+        return sp(c).getBoolean("bt_flip_swap", DEFAULT_BT_FLIP_SWAP);
+    }
+
+    public static void setBtFlipSwap(Context c, boolean v) {
+        sp(c).edit().putBoolean("bt_flip_swap", v).commit();
+    }
+
+    public static boolean isBtFlipVertical(Context c) {
+        return sp(c).getBoolean("bt_flip_vertical", DEFAULT_BT_FLIP_VERTICAL);
+    }
+
+    public static void setBtFlipVertical(Context c, boolean v) {
+        sp(c).edit().putBoolean("bt_flip_vertical", v).commit();
+    }
+
+    /** 长按连翻间隔（ms）。越界/缺失一律钳回 `[MIN, MAX]`（同一套安全读出纪律）。 */
+    public static int getBtFlipRepeatMs(Context c) {
+        int v = sp(c).getInt("bt_flip_repeat_ms", BT_FLIP_REPEAT_DEFAULT);
+        if (v < BT_FLIP_REPEAT_MIN) return BT_FLIP_REPEAT_MIN;
+        if (v > BT_FLIP_REPEAT_MAX) return BT_FLIP_REPEAT_MAX;
+        return v;
+    }
+
+    public static void setBtFlipRepeatMs(Context c, int v) {
+        if (v < BT_FLIP_REPEAT_MIN) v = BT_FLIP_REPEAT_MIN;
+        if (v > BT_FLIP_REPEAT_MAX) v = BT_FLIP_REPEAT_MAX;
+        sp(c).edit().putInt("bt_flip_repeat_ms", v).commit();
+    }
+
     // ── TASK-025：卡片池（哪几张卡进桌面循环/列表）+ 切换模式（V1.0.3-beta）──
     //
     // 🔴 作用范围**只有桌面卡片** —— 未勾选的卡不参与桌面循环/列表，
