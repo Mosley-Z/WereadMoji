@@ -18,6 +18,9 @@
 | `RemoteInjector` | 注入层：`dispatchGesture` **点击边界热区**（下一页=点右 `x=425`、上一页=点左 `x=55`，y=400；左右各 55px 边界**不受正文划线影响**，方案 D 真机标定 `验证记录/118`）；派发走**方案 S = 串行队列**（有手势在飞则入队，等 `onCompleted` 再派发下一条，不丢指令，见 `验证记录/110` §10、`验证记录/111`）。⚠️ 旧「滑动」几何 `380↔100` 因墨水屏把 `dispatchGesture` 判成 tap ⇒ 弹划线面板，已弃用（`验证记录/117`） |
 | `RemoteKeyService` | 独立无障碍服务（配置 `res/xml/a11y_remote_service.xml`）：phone 捕获音量键 / eink 收到指令注入 |
 | `ShakeDetector` | 🆕 TASK-029：phone 的**第二条捕获路径** —— 50Hz 加速度计 → 去重力 → 双峰反转 → 发翻页指令（**零新增权限**） |
+| `HidLink` | 🆕 TASK-032：**T1 蓝牙 HID 外设链路**（第 3 种模型，见 `ADR-012`）—— 手机注册 `BluetoothHidDevice` 直接给墨水屏 OS 发按键。🆕 TASK-033 起对外暴露 `isHostConnected()` / `pagePrev()` / `pageNext()`（供 `RemoteLinkManager` 通道分派）。⚠️ `SDK_INT<28` 或不支持 ⇒ `supported()=false`，fail-closed |
+| `HidConst` | 🆕 TASK-033：**HID 常量唯一来源**（`PROFILE_HID_DEVICE=19` / `SUBCLASS1_COMBO=0xC0` / `REPORT_ID_KEYBOARD=1` / `KEY_PAGE_UP=0x4B` / `KEY_PAGE_DOWN=0x4E` / 消费者音量键 `0xE9`/`0xEA`）—— 避免 `HidLink` 与调用方各写一份魔数 |
+| `HidKeepAliveService` | 🆕 TASK-032：**HID 注册保活前台服务**（`foregroundServiceType=connectedDevice` + `PARTIAL_WAKE_LOCK`）—— 官方明文 + 真机铁证：注册在退后台/息屏时被自动注销 ⇒ 必须前台服务保活。只在手机端启用「蓝牙控制」时启动（默认零差异）。🆕 TASK-033 加静态入口 `instance()`/`link()`/`isRunning()`/`start()`/`stop()` + `StateListener`（设置页订阅刷状态行） |
 
 ## 🆕 TASK-029：手机端晃动翻页（V1.0.4-beta）
 
@@ -54,6 +57,19 @@
   `PolicyMaker reason=accessibility` —— **推翻旧"息屏不可用"结论**，但**长时间息屏未测**
   ⇒ 文案里不提息屏）；误触发**无法靠幅度区分**（走路/拿起放下峰值 p90 4.23 ≥ 有意甩动 3.89）
   ⇒ **三档都压不住走路误触**，"低档"只是要甩更用力，**不是**走路不翻；横持方向语义未定义。
+
+## 🆕 TASK-033：蓝牙控制通道（HID 落码）
+
+**一句话**：设置页「实验室 · 蓝牙控制」开关 → 启 `HidKeepAliveService`（注册保活）→ 音量键 / 晃动
+不再（只）走 TCP，改由 **HID 直发按键**给墨水屏（`sendCommand` 通道分派）。
+
+- **通道分派**（`RemoteLinkManager.sendCommand`）：**HID 优先**（`HidKeepAliveService.link()` 非空且
+  `isHostConnected()` ⇒ `pageNext()`/`pagePrev()`），否则退回 TCP（**TCP 行为逐字不变**）。
+- **统一门控**（`RemoteLinkManager.canSend()`）：HID 已连 **或** TCP `STATE_CONNECTED` ⇒ 允许发；
+  音量键（`RemoteKeyService.onKeyEvent`）与晃动（`ShakeDetector.sync` G3）都改读这个统一判据。
+- **互斥**：开「蓝牙控制」时先 `stopSession()` 结束 TCP 会话（两条通道不并存）。
+- **默认零差异**：`bt_control_enabled` 默认 `false` ⇒ 不启服务、无通知、行为与旧版一致。
+- **子标签**：`lab_tab_remote` 改名「热点翻页」+ 新增 `lab_tab_bt`「蓝牙控制」（手机端与阅读器端都装配）。
 
 ## 关键约束（🔴 硬约束）
 

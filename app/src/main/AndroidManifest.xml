@@ -25,6 +25,23 @@
          桌面卡片走 TYPE_ACCESSIBILITY_OVERLAY（由 CardA11yService 自己持有窗口），
          不需要悬浮窗权限。唯一的存储读权限 = 上面的 READ_EXTERNAL_STORAGE（仅锁屏背景图用）。 -->
 
+    <!-- 🆕 TASK-032（V1.1.0-beta）：T1 蓝牙 HID 外设遥控。
+         手机当蓝牙 HID 键盘，**直接给墨水屏 OS 发按键**（走输入源层，绕过墨水屏 App / TCP / 注入层）。
+         🔴 这是本项目**第三次**打破「清单零改动」的能力面扩大（经 ADR-012 拍板；前两次 = READ_EXTERNAL_STORAGE / WRITE_SECURE_SETTINGS）：
+           · BLUETOOTH / BLUETOOTH_ADMIN：legacy（本工程 targetSdk=30）⇒ 安装即授，供 getProfileProxy/registerApp 用；
+             ⚠️ **不能**加 maxSdkVersion=30 —— 本机 API 37 会因此不授予 ⇒ getProfileProxy 抛
+             SecurityException: Need BLUETOOTH permission（探针实测踩过）。
+           · BLUETOOTH_CONNECT：API 31+ 运行时授权（蓝牙访问的正式权限）。
+           · FOREGROUND_SERVICE(+_CONNECTED_DEVICE) / POST_NOTIFICATIONS / WAKE_LOCK：HID 注册保活前台服务用。
+         🔴 能力落**新服务**上，res/xml/a11y_card_service.xml **一字不改**；默认未启用「蓝牙控制」⇒ 对现状零差异。 -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Android 11 起 queryIntentActivities 受「包可见性」过滤：不声明这里，
          连 CATEGORY_HOME 的桌面都查不到（实测返回空表，卡片会被判定成"不在桌面"而永不显示）。 -->
     <queries>
@@ -124,6 +141,16 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/a11y_remote_service" />
         </service>
+
+        <!-- 🆕 TASK-032（V1.1.0-beta）：HID 注册保活前台服务（foregroundServiceType=connectedDevice）。
+             为什么需要：BluetoothHidDevice 的注册在 App 退后台/息屏时会被系统自动注销 ⇒
+             必须用前台服务 + PARTIAL_WAKE_LOCK 保活。只在手机端启用「蓝牙控制」时启动；
+             默认未启用 ⇒ 不常驻、无通知（验收 A6）。
+             ⚠️ exported="false"：TASK-033 起由设置页「蓝牙控制」开关触发（不再用 adb 拉起）。 -->
+        <service
+            android:name=".remote.HidKeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
 
     </application>
 </manifest>
