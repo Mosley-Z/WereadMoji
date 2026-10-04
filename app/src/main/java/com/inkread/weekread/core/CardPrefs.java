@@ -293,6 +293,23 @@ public final class CardPrefs {
         sp(c).edit().putBoolean("bt_control_enabled", v).commit();
     }
 
+    // ── 🆕 TASK-039：音量键翻页（蓝牙通道 · V1.2.0-beta）──
+    //
+    // 🔴 **只作用于蓝牙通道**（即 `bt_control_enabled=true` 时）：让手机侧面**实体音量键**
+    //    也能翻页（复用 RemoteKeyService 捕获层，按通道分流 —— 蓝牙走 HID、热点走 TCP）。
+    //    · true（默认）= 蓝牙通道下占用音量键发 HID 翻页键；
+    //    · false       = 交还系统（音量键正常调音量）。
+    // 🔴 **热点通道行为不受本开关影响**（既有音量键翻页照旧）—— 避免动到已验证路径。
+    public static final boolean DEFAULT_BT_VOLKEY = true;
+
+    public static boolean isBtVolkeyEnabled(Context c) {
+        return sp(c).getBoolean("bt_volkey_enabled", DEFAULT_BT_VOLKEY);
+    }
+
+    public static void setBtVolkeyEnabled(Context c, boolean v) {
+        sp(c).edit().putBoolean("bt_volkey_enabled", v).commit();
+    }
+
     // ── 🆕 TASK-038：遥控台翻页交互偏好（V1.2.0-beta）──
     //
     // 🔴 与热点通道的方向设置（`remote_shake_lr_rev` 等）**彼此独立** —— 蓝牙翻页自有一套

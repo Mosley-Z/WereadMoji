@@ -351,4 +351,8 @@
     <string name="console_repeat_fast">快（连翻更密）</string>
     <string name="console_repeat_mid">中（默认）</string>
     <string name="console_repeat_slow">慢（更稳）</string>
+    <!-- 🆕 TASK-039：音量键翻页（蓝牙通道）—— 🔴 如实写，不把未验证的息屏能力写成已验证 -->
+    <string name="console_opt_volkey">音量键</string>
+    <string name="console_volkey_enable">用手机音量键翻页（蓝牙控制开启时生效）</string>
+    <string name="console_volkey_note">开启后占用手机音量键：翻页期间本机音量调不了，不用时关掉即可恢复。手机熄屏后能否继续按键翻页，本机尚未实测。</string>
 </resources>

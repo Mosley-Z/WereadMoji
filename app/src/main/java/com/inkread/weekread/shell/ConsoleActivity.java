@@ -5,6 +5,8 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.os.Bundle;
 import android.view.View;
+import android.widget.CheckBox;
+import android.widget.CompoundButton;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
@@ -223,6 +225,21 @@ public class ConsoleActivity extends Activity {
         });
         box.addView(rgRepeat);
 
+        // ── TASK-039：音量键翻页（蓝牙通道）──
+        box.addView(sectionLabel(R.string.console_opt_volkey));
+        final CheckBox cbVol = new CheckBox(this);
+        cbVol.setText(R.string.console_volkey_enable);
+        cbVol.setTextColor(InkTheme.INK);
+        cbVol.setChecked(CardPrefs.isBtVolkeyEnabled(this));
+        cbVol.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                CardPrefs.setBtVolkeyEnabled(ConsoleActivity.this, checked);
+            }
+        });
+        box.addView(cbVol);
+        box.addView(noteLabel(R.string.console_volkey_note));
+
         new AlertDialog.Builder(this)
                 .setTitle(R.string.console_opt_title)
                 .setView(box)
@@ -244,6 +261,17 @@ public class ConsoleActivity extends Activity {
         rb.setText(strId);
         rb.setTextColor(InkTheme.INK);
         return rb;
+    }
+
+    /** 说明小字（低于正文一档、淡墨色）。 */
+    private TextView noteLabel(int strId) {
+        TextView tv = new TextView(this);
+        tv.setText(strId);
+        tv.setTextSize(12f);
+        tv.setTextColor(InkTheme.INK3);
+        tv.setLineSpacing(0f, 1.3f);
+        tv.setPadding(0, (int) InkTheme.dp(this, 2f), 0, 0);
+        return tv;
     }
 
     private void send(boolean next) {

@@ -5,6 +5,8 @@ import android.util.Log;
 import android.view.KeyEvent;
 import android.view.accessibility.AccessibilityEvent;
 
+import com.inkread.weekread.core.CardPrefs;
+
 /**
  * 遥控无障碍服务（**独立于卡片服务** —— res/xml/a11y_card_service.xml 一字不改，硬约束 A6；
  * 配置见 res/xml/a11y_remote_service.xml：canRequestFilterKeyEvents + canPerformGestures）。
@@ -12,6 +14,9 @@ import android.view.accessibility.AccessibilityEvent;
  * 双角色行为（remote_role，docs/FEATURES/remote.md「双角色」）：
  *  - phone：**两条并列的捕获路径**
  *           ① onKeyEvent 捕获音量键（本类）；
+ *              🆕 TASK-039：按**通道分流** —— 蓝牙控制开 ⇒ 音量键发 **HID 键**（`RemoteLinkManager`
+ *              内部 HID 优先分派）；热点通道 ⇒ 发 **TCP 指令**（原行为）。蓝牙通道下另受
+ *              `CardPrefs.bt_volkey_enabled`（默认开）门控：关掉 ⇒ 音量键交还系统调音量。
  *           ② {@link ShakeDetector} 捕获晃动（TASK-029，仅 role=phone + 总开关 on + 会话已连接时注册）
  *           → 都经 RemoteLinkManager 发指令（音量键那条返回 true 消费，实测观感：音量条不出现）；
  *  - eink ：RemoteLinkManager 收指令 → RemoteInjector 注入点击边界热区（方案 D）。
@@ -92,6 +97,14 @@ public class RemoteKeyService extends AccessibilityService {
                 break;
             default:
                 return false;
+        }
+        // 🆕 TASK-039：蓝牙通道下的音量键翻页开关（默认开）。
+        //    🔴 **只作用于蓝牙通道**（`bt_control_enabled=true`）：关掉 ⇒ 音量键交还系统调音量。
+        //    热点通道**不受本开关影响** —— 只在蓝牙通道生效，避免动到已验证的热点路径（验收 A4）。
+        if (CardPrefs.isBtControlEnabled(this) && !CardPrefs.isBtVolkeyEnabled(this)) {
+            Log.i(TAG, "onKeyEvent keyCode=" + event.getKeyCode()
+                    + " → 蓝牙通道且「音量键翻页」已关，交还系统（不消费）");
+            return false;
         }
         // 🔴 B1（CODE_REVIEW 加固）：**只有"正在遥控（任一通道已就绪）"时才吞音量键**。
         //    此前只要 role=phone 就无条件 `return true` —— 用户没点「开始遥控」、
