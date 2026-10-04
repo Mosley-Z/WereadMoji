@@ -1172,9 +1172,9 @@ public class SettingsActivity extends Activity {
             status = getString(hid.everConnected()
                     ? R.string.lab_bt_status_lost : R.string.lab_bt_status_registered);
         } else {
-            android.bluetooth.BluetoothDevice host = hid.host();
-            String name = (host == null) ? ""
-                    : (host.getName() != null ? host.getName() : host.getAddress());
+            // 🆕 审查修复（NG-4）：走 HidLink.safeName 兜底 —— host.getName()/getAddress() 在
+            //   BLUETOOTH_CONNECT 未授予/被撤时会抛 SecurityException（此处无 try/catch 会带走进程）。
+            String name = HidLink.safeName(hid.host());
             status = getString(R.string.lab_bt_status_connected, name);
         }
         tvBtStatus.setText(getString(R.string.lab_bt_status_prefix) + status);

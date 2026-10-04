@@ -58,11 +58,14 @@ public class HidLink {
 
     private final Context mCtx;
     private BluetoothAdapter mAdapter;
-    private BluetoothHidDevice mHid;
-    private BluetoothDevice mHost;         // 当前 HID 主机（= 墨水屏）
+    // 🔴 审查修复（NG-3）：mHid/mHost 由 binder 线程写、主线程读（isHostConnected/sendKey/host()）
+    //   ⇒ 必须 volatile 建立 happens-before。同族的 mRegistered/mRunning/mProfileUnavailable/mEverConnected
+    //   本就是 volatile —— 此前的遗漏会造成可见性竞态（可能读到过期引用）。
+    private volatile BluetoothHidDevice mHid;
+    private volatile BluetoothDevice mHost;   // 当前 HID 主机（= 墨水屏）
     private volatile boolean mRegistered;
     private volatile boolean mRunning;
-    private Listener mListener;
+    private volatile Listener mListener;      // 同族：主线程 setListener 写、binder 回调读
 
     /** 🆕 TASK-034：ROM 无 HID Device profile（{@code getProfileProxy} 返回 false）⇒ 显式上抛「本机不支持」。 */
     private volatile boolean mProfileUnavailable;
@@ -81,6 +84,41 @@ public class HidLink {
     /** 本机是否支持 HID 外设（API 28+）。false ⇒ 调用方 fail-closed（报"本机不支持"、退回 TCP）。 */
     public static boolean supported() {
         return Build.VERSION.SDK_INT >= 28;
+    }
+
+    /**
+     * 🆕 审查修复（NG-4）：安全取蓝牙**地址**（仅供日志；null 设备 ⇒ {@code "null"}、异常/空 ⇒ {@code "?"}）。
+     *
+     * <p>{@code BluetoothDevice.getAddress()} 在无 {@code BLUETOOTH_CONNECT}（API 31+）或权限被撤时
+     * 会抛 {@link SecurityException}；本方法跑在 HID 的 binder 回调链里，异常逃逸会带走整个进程 ⇒ 就地兜底。
+     */
+    private static String safeAddr(BluetoothDevice d) {
+        if (d == null) return "null";
+        try {
+            String a = d.getAddress();
+            return (a != null && a.length() > 0) ? a : "?";
+        } catch (Throwable t) {
+            return "?";
+        }
+    }
+
+    /**
+     * 🆕 审查修复（NG-4）：安全取设备**显示名**（异常 / 为空则退地址，再失败则空串）。
+     *
+     * <p>供 UI 状态行与常驻通知共用 —— 二者都在可能抛 {@link SecurityException} 的调用链上
+     * （{@code getName()}/{@code getAddress()} 需 {@code BLUETOOTH_CONNECT}），一律就地兜底、绝不逃逸。
+     */
+    public static String safeName(BluetoothDevice d) {
+        if (d == null) return "";
+        try {
+            String n = d.getName();
+            if (n != null && n.length() > 0) return n;
+        } catch (Throwable ignored) { }
+        try {
+            String a = d.getAddress();
+            if (a != null && a.length() > 0) return a;
+        } catch (Throwable ignored) { }
+        return "";
     }
 
     public void setListener(Listener l) {
@@ -203,14 +241,12 @@ public class HidLink {
         BluetoothHidDevice.Callback cb = new BluetoothHidDevice.Callback() {
             @Override public void onAppStatusChanged(BluetoothDevice d, boolean reg) {
                 mRegistered = reg;
-                Log.i(TAG, "onAppStatusChanged registered=" + reg
-                        + " dev=" + (d == null ? "null" : d.getAddress()));
+                Log.i(TAG, "onAppStatusChanged registered=" + reg + " dev=" + safeAddr(d));
                 Listener l = mListener;
                 if (l != null) l.onRegistered(reg, d);
             }
             @Override public void onConnectionStateChanged(BluetoothDevice d, int state) {
-                Log.i(TAG, "onConnectionStateChanged "
-                        + (d == null ? "null" : d.getAddress()) + " state=" + state);
+                Log.i(TAG, "onConnectionStateChanged " + safeAddr(d) + " state=" + state);
                 if (state == BluetoothProfile.STATE_CONNECTED) {
                     mHost = d;
                     mEverConnected = true;   // 🆕 TASK-034：断链提示据此区分「首次待连」与「连过又断」

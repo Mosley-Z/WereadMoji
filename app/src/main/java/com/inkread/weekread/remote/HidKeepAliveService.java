@@ -14,6 +14,7 @@ import android.os.PowerManager;
 import android.util.Log;
 
 import com.inkread.weekread.R;
+import com.inkread.weekread.core.CardPrefs;
 
 /**
  * TASK-032 · T1 蓝牙 HID 注册保活前台服务。
@@ -136,26 +137,37 @@ public class HidKeepAliveService extends Service {
                 updateNotification(getString(registered
                         ? R.string.lab_bt_noti_registered : R.string.lab_bt_noti_init));
                 notifyListeners();   // 🆕 TASK-033：驱动设置页状态行
+                // 🆕 审查修复（NG-2）：注册态变化会改变 canSend() 判据 ⇒ 重算晃动门控。
+                ShakeDetector.sync(HidKeepAliveService.this);
             }
             @Override public void onConnectionState(BluetoothDevice device, int state) {
                 Log.i(TAG, "conn state=" + state);
                 // 🆕 TASK-034：连态变化 → 通知正文（断开时给「去墨水屏点连接」引导，A1/A2）
                 if (state == BluetoothProfile.STATE_CONNECTED) {
-                    String name = (device == null) ? ""
-                            : (device.getName() != null ? device.getName() : device.getAddress());
+                    String name = HidLink.safeName(device);   // 🆕 审查修复（NG-4）：防 SecurityException 逃逸
                     updateNotification(getString(R.string.lab_bt_noti_connected, name));
                 } else if (state == BluetoothProfile.STATE_DISCONNECTED) {
                     updateNotification(getString(R.string.lab_bt_noti_disconnected));
                 }
                 notifyListeners();   // 🆕 TASK-033
+                // 🆕 审查修复（NG-2）：HID 连/断态直接决定 canSend() ⇒ 重算晃动门控。
+                //   放**服务层**（而非仅设置页）：设置页不在前台、墨水屏稍后自动连上时同样即时生效/停采。
+                ShakeDetector.sync(HidKeepAliveService.this);
             }
         });
         boolean started = mLink.start();
         if (!started) {
-            // 🆕 TASK-034：ROM 无 HID profile ⇒ start() 返回 false 且不会有任何后续回调
+            // 🆕 TASK-034：ROM 无 HID profile / 无蓝牙适配器 ⇒ start() 返回 false 且不会有任何后续回调
             //   （onServiceConnected 不会来）⇒ 主动通知 UI 显式提示「本机不支持」，别停在假「等待连接」。
-            Log.w(TAG, "HID start 失败（本机不支持或 ROM 无 HID profile）⇒ 通知 UI");
+            // 🆕 审查修复（NG-1）：`startForegroundCompat()` + `acquireWakeLock()` 已在 L122-123 执行 ⇒
+            //   若不在此收尾，会留下**用户划不掉的「蓝牙遥控运行中」假通知 + WakeLock 白占**（撞文案红线）。
+            //   故：复位「蓝牙控制」开关（否则开关亮着却状态=未启用，自相矛盾）+ 通知 UI + **服务自停**
+            //   （`stopSelf()` ⇒ `onDestroy` 清通知 / 释放锁）。
+            Log.w(TAG, "HID start 失败（本机不支持 / 无蓝牙适配器）⇒ 复位开关 + 服务自停");
+            try { CardPrefs.setBtControlEnabled(this, false); } catch (Throwable ignored) {}
             notifyListeners();
+            stopSelf();
+            return;
         }
     }
 
@@ -188,6 +200,8 @@ public class HidKeepAliveService extends Service {
             if (nm != null) nm.cancel(NOTI_ID);
         } catch (Throwable ignored) {}
         notifyListeners();   // 🆕 TASK-033：服务已停 ⇒ 设置页状态行回「未启用」
+        // 🆕 审查修复（NG-2）：服务停 ⇒ `link()` 归 null ⇒ `canSend()` 转 false ⇒ 确保晃动采样停。
+        ShakeDetector.sync(this);
         super.onDestroy();
     }
 
