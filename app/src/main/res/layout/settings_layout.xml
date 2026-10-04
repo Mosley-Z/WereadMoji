@@ -1489,6 +1489,49 @@
                             android:textSize="13sp"
                             android:visibility="gone" />
 
+                        <!-- 🆕 TASK-035：首次配对引导 —— 仅在「已启用但从未连过」时显示（refreshBtUi 控制） -->
+                        <TextView
+                            android:id="@+id/tv_bt_pair_guide"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/lab_bt_pair_guide"
+                            android:textColor="#FFB00020"
+                            android:textSize="13sp"
+                            android:visibility="gone" />
+
+                        <!-- 🆕 TASK-035：让本机可被发现（ACTION_REQUEST_DISCOVERABLE）—— 与首次配对引导同显隐 -->
+                        <LinearLayout
+                            android:id="@+id/ll_bt_discover"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:orientation="vertical"
+                            android:visibility="gone">
+
+                            <Button
+                                android:id="@+id/btn_bt_discoverable"
+                                android:layout_width="match_parent"
+                                android:layout_height="44dp"
+                                android:background="@drawable/btn_ink"
+                                android:minWidth="0dp"
+                                android:minHeight="0dp"
+                                android:stateListAnimator="@null"
+                                android:text="@string/lab_bt_btn_discoverable"
+                                android:textColor="@color/btn_ink_text"
+                                android:textSize="15sp" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:lineSpacingExtra="3dp"
+                                android:text="@string/lab_bt_discoverable_tip"
+                                android:textColor="#FF666666"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
                         <!-- 测试翻页：连接成功后立即可验，也兼作"试一下"入口 -->
                         <LinearLayout
                             android:id="@+id/ll_bt_test"

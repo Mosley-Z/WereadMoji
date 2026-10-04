@@ -91,8 +91,24 @@
 - 🆕 **通知生命周期修复**：`nm.notify()` 重投的 ongoing 通知，**仅靠服务销毁不会撤掉**
   （真机实测：停用后通知栏仍常驻且划不掉）⇒ `onDestroy` 显式 `stopForeground(true)` + `nm.cancel()`。
 - **默认零差异**：仅「蓝牙控制」启用时才启服务；未启用 ⇒ 无通知、无提示、无常驻探测。
-- 🔴 **已知缺口（转 TASK-035）**：首次配对需**手机进入「可被发现」**（`ACTION_REQUEST_DISCOVERABLE`），
-  本卡**未实现**（原 `lab_bt_pair_tip` 曾写"打开开关即进入可被发现"= 与代码不符，已改为如实表述）。
+- ~~已知缺口（转 TASK-035）：首次配对需手机进入「可被发现」~~ ⇒ ✅ **已在 TASK-035 落地**（见下节）。
+
+## 🆕 TASK-035：首次配对引导（App 内「让本机可被发现」）
+
+**一句话**：新用户必须**手动走一遍配对**（旧配对无 HID ⇒ 必须在「注册态」下重配），App 把它做成
+**三步引导**，并补上此前缺失的「**App 内让本机可被发现**」。
+
+- **两类「未连接」引导互斥**（按 `HidLink.everConnected()` 分流，不再混用）：
+  - 从未连过 ⇒ `tv_bt_pair_guide`（**首次配对引导**：三步）+ `ll_bt_discover`（按钮块）
+  - 连过又断 ⇒ `tv_bt_reconnect_guide`（TASK-034 恢复引导）
+- 🆕 **App 内动作** `requestDiscoverable()`（`SettingsActivity`）：`ACTION_REQUEST_DISCOVERABLE`
+  + `EXTRA_DISCOVERABLE_DURATION=300`，`startActivityForResult` 回执 `resultCode` = 授予秒数
+  （`RESULT_CANCELED`=用户拒绝 ⇒ 分别 Toast）。**0 新增权限**（复用 `BLUETOOTH_ADMIN`）。
+- ⛔ **只让本机可被看见，不做自动配对**（Android 不允许第三方静默配对）；文案不承诺"装上即用"。
+- 🔴 **文案硬事实**：先提醒**两侧「取消配对 / 忘记设备」再重配**（旧配对 SDP 里没有 `0x1124(HID)`，
+  不重配连不上，见 `ADR-012` 背景 / TASK-035 卡面 R2）。
+- **涉及文件**：`shell/SettingsActivity.java`、`res/layout/settings_layout.xml`、`res/values/strings.xml`、
+  `res/raw/help.txt`（改后须重构建）、本文件。
 
 ## 关键约束（🔴 硬约束）
 

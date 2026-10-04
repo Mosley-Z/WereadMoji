@@ -193,7 +193,7 @@
     <string name="lab_bt_test_prev">上一页</string>
     <string name="lab_bt_test_next">下一页</string>
     <string name="lab_bt_test_tip">连接成功后，点上面的「上一页 / 下一页」可立即验证：墨水屏上的微信读书应跟着翻页（不会弹划线/想法页）。</string>
-    <string name="lab_bt_pair_tip">首次使用要配对一次：① 先打开上面的开关（本机注册为蓝牙键盘）；② 在墨水屏的系统「设置 · 蓝牙」里选「与新设备配对」，扫描并点本机的蓝牙名；③ 两边确认配对码。配对一次后，以后打开开关，多数情况下墨水屏会自动连回。</string>
+    <string name="lab_bt_pair_tip">首次使用要配对一次：① 先打开上面的开关（本机注册为蓝牙键盘）；② 在墨水屏的系统「设置 · 蓝牙」里选「与新设备配对」，扫描并点本机的蓝牙名；③ 两边确认配对码。⚠ 若本机与这台墨水屏以前配对过，请先在两侧「取消配对 / 忘记此设备」，再按上面重新配对（旧配对里没有蓝牙键盘能力，不重新配对连不上）。配对一次后，以后打开开关，多数情况下墨水屏会自动连回。</string>
     <string name="lab_bt_reconnect_tip">若一直连不上：请在墨水屏的「设置 · 已连接的设备」→「之前连接的设备」里，点本机蓝牙名即可连回（重连由墨水屏一侧发起）。</string>
     <string name="lab_bt_not_conflict_tip">「蓝牙控制」与「热点翻页」是两条独立通道。开启「蓝牙控制」时，本机原有的热点遥控会话会自动结束，避免两个通道打架。</string>
     <string name="lab_bt_eink_note">本机 = 墨水屏端：无需开启「蓝牙控制」，也不影响被手机端的蓝牙控制（翻页键由系统直接接收，不经本 App）。这一页只是说明，不开启本项就没有任何后台行为。</string>
@@ -205,6 +205,13 @@
     <string name="lab_bt_noti_registered">等待墨水屏连接…</string>
     <string name="lab_bt_noti_connected">已连接 %1$s</string>
     <string name="lab_bt_noti_disconnected">已断开 · 请在墨水屏点「连接」</string>
+    <!-- 🆕 TASK-035：首次配对引导（App 内让本机可被发现） -->
+    <string name="lab_bt_pair_guide">👉 首次配对（三步）：① 打开上面的开关；② 点下面按钮让本机可被发现，在系统弹窗点「允许」；③ 墨水屏上：设置 → 蓝牙 →「与新设备配对」，扫描点本机蓝牙名，两侧确认配对码。\n⚠ 曾与本机配对过：请先在两侧「取消配对 / 忘记设备」再重配，否则连不上。</string>
+    <string name="lab_bt_btn_discoverable">让本机可被发现（配对用）</string>
+    <string name="lab_bt_discoverable_tip">只在配对时需要。允许后本机 5 分钟内可被墨水屏发现；到时间会自动恢复隐藏，不影响日常使用。</string>
+    <string name="lab_bt_discoverable_ok">已允许：本机 %1$d 秒内可被墨水屏发现，请到墨水屏上扫描配对。</string>
+    <string name="lab_bt_discoverable_denied">未允许：本机不会出现在墨水屏的扫描列表里。请再点一次，并在弹窗里选「允许」。</string>
+    <string name="lab_bt_discoverable_fail">无法开启可被发现：请到系统「设置 · 蓝牙」里手动打开「可被附近的设备看到」。</string>
     <string name="main_remote_notice">本机已设为「手机端遥控器」，桌面卡片功能已隐藏。\n要查看阅读数据或改回设置，请点下面的「设置」，到「实验室」里调整角色。</string>
 
     <!-- 🆕 TASK-022（V1.0.1-beta）：实验室 · 锁屏密码（应用级软锁）。

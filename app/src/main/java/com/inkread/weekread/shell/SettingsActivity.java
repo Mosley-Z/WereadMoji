@@ -166,6 +166,9 @@ public class SettingsActivity extends Activity {
     private TextView tvBtUnsupported;    // 「本机不支持」红字（SDK<28 或 ROM 无 HID profile）
     private TextView tvBtStatus;         // 「状态：…」
     private TextView tvBtReconnectGuide; // 🆕 TASK-034：断链恢复引导（仅「已注册未连接」时显示）
+    private TextView tvBtPairGuide;      // 🆕 TASK-035：首次配对引导（仅「已启用但从未连过」时显示）
+    private View llBtDiscover;           // 🆕 TASK-035：让本机可被发现按钮块（与配对引导同显隐）
+    private Button btnBtDiscoverable;
     private View llBtTest;               // 测试翻页行（连接后才显示）
     private Button btnBtTestPrev;
     private Button btnBtTestNext;
@@ -292,6 +295,9 @@ public class SettingsActivity extends Activity {
         tvBtUnsupported = (TextView) findViewById(R.id.tv_bt_unsupported);
         tvBtStatus = (TextView) findViewById(R.id.tv_bt_status);
         tvBtReconnectGuide = (TextView) findViewById(R.id.tv_bt_reconnect_guide);
+        tvBtPairGuide = (TextView) findViewById(R.id.tv_bt_pair_guide);
+        llBtDiscover = findViewById(R.id.ll_bt_discover);
+        btnBtDiscoverable = (Button) findViewById(R.id.btn_bt_discoverable);
         llBtTest = findViewById(R.id.ll_bt_test);
         btnBtTestPrev = (Button) findViewById(R.id.btn_bt_test_prev);
         btnBtTestNext = (Button) findViewById(R.id.btn_bt_test_next);
@@ -994,6 +1000,12 @@ public class SettingsActivity extends Activity {
             @Override public void onClick(View v) { sendBtTest(true); }
         });
 
+        // 🆕 TASK-035：让本机可被发现（配对用）—— 走系统弹窗（ACTION_REQUEST_DISCOVERABLE）。
+        // ⛔ 只做"让系统主动把本机暴露给墨水屏"，**不做自动配对**（Android 不允许第三方静默配对）。
+        btnBtDiscoverable.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { requestDiscoverable(); }
+        });
+
         // ── 🆕 TASK-031：本机角色切换（初始化页 · ⓪ 本机角色）──
         // 一键切 install_role ⇒ 入口与"实验室可见子标签"随之变化；提示重开 App 生效。
         // 🔴 install_role（App 形态）与 remote_role（TCP 传输角色）**正交**，此处只动前者。
@@ -1167,8 +1179,15 @@ public class SettingsActivity extends Activity {
         }
         tvBtStatus.setText(getString(R.string.lab_bt_status_prefix) + status);
 
-        // 🆕 TASK-034：断链恢复引导 —— 仅「已注册但未连接（且本机可用）」时亮出（A1/A2，≤2 步恢复）
-        tvBtReconnectGuide.setVisibility((usable && running && !connected) ? View.VISIBLE : View.GONE);
+        // 🆕 TASK-034 / TASK-035：两类「未连接」引导**互斥**（按"是否连过"分流，不混）——
+        //   ① 从未连过（hid.everConnected()==false）⇒ **首次配对引导**（三步 + 「让本机可被发现」按钮）
+        //   ② 连过又断（everConnected()==true）  ⇒ **断链恢复引导**（去墨水屏「之前连接的设备」点本机名）
+        //   时长/文案与真机行为对齐：见 ADR-012 决定 3、验证记录/129。
+        boolean needsPair = usable && running && !connected && !hid.everConnected();
+        boolean lostLink = usable && running && !connected && hid.everConnected();
+        tvBtPairGuide.setVisibility(needsPair ? View.VISIBLE : View.GONE);
+        llBtDiscover.setVisibility(needsPair ? View.VISIBLE : View.GONE);
+        tvBtReconnectGuide.setVisibility(lostLink ? View.VISIBLE : View.GONE);
 
         // 测试翻页行：仅"已连接"才露（未连无意义）
         llBtTest.setVisibility(connected ? View.VISIBLE : View.GONE);
@@ -1188,6 +1207,40 @@ public class SettingsActivity extends Activity {
         boolean ok = next ? hid.pageNext() : hid.pagePrev();
         if (!ok) {
             Toast.makeText(this, R.string.lab_bt_reconnect_tip, Toast.LENGTH_LONG).show();
+        }
+    }
+
+    /** 🆕 TASK-035：ACTION_REQUEST_DISCOVERABLE 的请求码。 */
+    private static final int REQ_BT_DISCOVERABLE = 3501;
+
+    /**
+     * 🆕 TASK-035：让本机「可被发现」，方便墨水屏把它扫出来配对。
+     *
+     * <p>走系统标准弹窗 {@code ACTION_REQUEST_DISCOVERABLE}（**用户必须自己点「允许」**，第三方 App
+     * 无法静默开启）。回执 {@code resultCode} = 系统授予的可被发现秒数；{@code RESULT_CANCELED}(=0)
+     * = 用户拒绝。⛔ 本方法**只让本机可被看见，不做任何自动配对**（Android 不允许第三方静默配对）。
+     */
+    private void requestDiscoverable() {
+        try {
+            Intent it = new Intent(android.bluetooth.BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE);
+            // 300s：够用户切到墨水屏完成扫描/点选；系统可能自行缩短，以回执为准
+            it.putExtra(android.bluetooth.BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300);
+            startActivityForResult(it, REQ_BT_DISCOVERABLE);
+        } catch (Throwable t) {
+            // 极少数 ROM 无此 Activity：降级提示用户去系统蓝牙设置手动开启
+            Toast.makeText(this, R.string.lab_bt_discoverable_fail, Toast.LENGTH_LONG).show();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_BT_DISCOVERABLE) {
+            if (resultCode > 0) {
+                Toast.makeText(this, getString(R.string.lab_bt_discoverable_ok, resultCode), Toast.LENGTH_LONG).show();
+            } else {
+                Toast.makeText(this, R.string.lab_bt_discoverable_denied, Toast.LENGTH_LONG).show();
+            }
         }
     }
 
