@@ -11,6 +11,8 @@ import com.inkread.weekread.core.StatsStore;
 import com.inkread.weekread.feature.NoteExport;
 import com.inkread.weekread.net.UpdateChecker;
 import com.inkread.weekread.net.WereadApi;
+import com.inkread.weekread.remote.HidKeepAliveService;
+import com.inkread.weekread.remote.HidLink;
 import com.inkread.weekread.remote.RemoteKeyService;
 import com.inkread.weekread.remote.RemoteLinkManager;
 import com.inkread.weekread.remote.RemoteRole;
@@ -157,6 +159,19 @@ public class SettingsActivity extends Activity {
     /** 防回环：refreshShakeUi() 回填控件时会触发监听，置位期间忽略回调。 */
     private boolean mShakeUiSyncing;
 
+    // ── 🆕 TASK-033 实验室 · 蓝牙控制（HID 外设通道）──
+    private TextView tvBtIntro;          // 页顶简介（手机端 / 墨水屏端文案不同）
+    private View llBtControls;           // 手机端控件块（墨水屏端隐藏）
+    private CheckBox cbBtEnabled;        // 启用开关
+    private TextView tvBtUnsupported;    // 「本机不支持」红字（SDK<28 或 ROM 无 HID profile）
+    private TextView tvBtStatus;         // 「状态：…」
+    private View llBtTest;               // 测试翻页行（连接后才显示）
+    private Button btnBtTestPrev;
+    private Button btnBtTestNext;
+    private TextView tvBtEinkNote;       // 墨水屏端说明（手机端隐藏）
+    /** 防回环：refreshBtUi() 回填勾选态时会触发监听，置位期间忽略回调。 */
+    private boolean mBtUiSyncing;
+
     /** 本会话是否处于 phone 角色（onCreate 时定一次；角色改变只在实验室页内发生）。 */
     private boolean remotePhone;
 
@@ -268,6 +283,17 @@ public class SettingsActivity extends Activity {
         cbShakeLrRev = (CheckBox) findViewById(R.id.cb_shake_lr_rev);
         cbShakeUdRev = (CheckBox) findViewById(R.id.cb_shake_ud_rev);
         tvShakeMap = (TextView) findViewById(R.id.tv_shake_map);
+
+        // ── 🆕 TASK-033 实验室 · 蓝牙控制 ──
+        tvBtIntro = (TextView) findViewById(R.id.tv_bt_intro);
+        llBtControls = findViewById(R.id.ll_bt_controls);
+        cbBtEnabled = (CheckBox) findViewById(R.id.cb_bt_enabled);
+        tvBtUnsupported = (TextView) findViewById(R.id.tv_bt_unsupported);
+        tvBtStatus = (TextView) findViewById(R.id.tv_bt_status);
+        llBtTest = findViewById(R.id.ll_bt_test);
+        btnBtTestPrev = (Button) findViewById(R.id.btn_bt_test_prev);
+        btnBtTestNext = (Button) findViewById(R.id.btn_bt_test_next);
+        tvBtEinkNote = (TextView) findViewById(R.id.tv_bt_eink_note);
 
         // ── v0.4.3 顶部页签「初始化 / 自定义 / 实验室」；v0.7 加第三段「实验室」──
         // 三个页面是同一个 ScrollView 里的三个容器，切页只切 visibility。
@@ -933,6 +959,39 @@ public class SettingsActivity extends Activity {
             }
         });
 
+        // ── 🆕 TASK-033：蓝牙控制（HID 外设通道）──
+        // 启用开关 ⇒ 写偏好 + 启/停 HidKeepAliveService（前台服务注册 HID、保活）。
+        // 🔴 开启时顺带结束 TCP 会话：两条通道**不并存**，避免串扰（验收 A6）。
+        cbBtEnabled.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                if (mBtUiSyncing) return;      // 防回环：refreshBtUi 回填时不落盘
+                CardPrefs.setBtControlEnabled(SettingsActivity.this, checked);
+                if (checked) {
+                    // 与热点通道互斥：开蓝牙控制前先结束 TCP 会话
+                    try {
+                        if (RemoteLinkManager.get().getState() != RemoteLinkManager.STATE_IDLE) {
+                            RemoteLinkManager.get().stopSession();
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                    HidKeepAliveService.start(SettingsActivity.this);
+                } else {
+                    HidKeepAliveService.stop(SettingsActivity.this);
+                }
+                refreshBtUi();
+                ShakeDetector.sync(SettingsActivity.this);   // 通道就绪态变化 ⇒ 重算晃动门控
+            }
+        });
+
+        // 测试翻页（连接成功后立即验证 HID 链路；不经会话门控，直发）
+        btnBtTestPrev.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { sendBtTest(false); }
+        });
+        btnBtTestNext.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { sendBtTest(true); }
+        });
+
         // ── 🆕 TASK-031：本机角色切换（初始化页 · ⓪ 本机角色）──
         // 一键切 install_role ⇒ 入口与"实验室可见子标签"随之变化；提示重开 App 生效。
         // 🔴 install_role（App 形态）与 remote_role（TCP 传输角色）**正交**，此处只动前者。
@@ -947,6 +1006,7 @@ public class SettingsActivity extends Activity {
                 if (role == CardPrefs.getInstallRole(SettingsActivity.this)) return;   // 无变化不处理
                 CardPrefs.setInstallRole(SettingsActivity.this, role);
                 bindLabTabs();        // 实验室可见子标签随之变化
+                refreshBtUi();        // 🆕 TASK-033：蓝牙控制页按新角色重刷（手机端控件块 ↔ 墨水屏端说明）
                 Toast.makeText(SettingsActivity.this, R.string.install_role_changed,
                         Toast.LENGTH_LONG).show();
             }
@@ -986,8 +1046,8 @@ public class SettingsActivity extends Activity {
      *
      * <p>把原来写死的 3 段换成**可扩展表** {@code {labelRes, page, phoneRelevant}}：
      * <ul>
-     *   <li><b>阅读器端</b> ⇒ 全部装配（与改造前**逐项一致**，验收 A3）；</li>
-     *   <li><b>手机端</b> ⇒ 只装配 {@code phoneRelevant} 的项（当前 = 遥控翻页；TASK-033 加「蓝牙控制」一行即露出）。</li>
+     *   <li><b>阅读器端</b> ⇒ 全部装配（改造前 3 项保持原位序，另加「蓝牙控制」只读页）；</li>
+     *   <li><b>手机端</b> ⇒ 只装配 {@code phoneRelevant} 的项（当前 = 热点翻页 + 蓝牙控制）。</li>
      * </ul>
      * 🔴 子标签文案用资源 id（不写死字符串）：TASK-033 改 {@code lab_tab_remote} 字面量后自动生效。
      */
@@ -997,13 +1057,16 @@ public class SettingsActivity extends Activity {
         // ── 可扩展表：新增手机端子标签，在下面追加一行并把 phoneRelevant 置 true 即可 ──
         final int[] labelRes = {
                 R.string.lab_tab_remote,       // 热点翻页（TASK-033 改名）
+                R.string.lab_tab_bt,           // 蓝牙控制（TASK-033 新增）
                 R.string.lab_tab_lockscreen,   // 锁屏密码
                 R.string.lab_tab_power };      // 续航优化
         final View[] page = {
                 findViewById(R.id.page_lab_remote),
+                findViewById(R.id.page_lab_bt),
                 findViewById(R.id.page_lab_lockscreen),
                 findViewById(R.id.page_lab_power) };
-        final boolean[] phoneRelevant = { true, false, false };
+        // 蓝牙控制：手机端（发键）与阅读器端（只读说明）都可见 ⇒ 两侧都装配
+        final boolean[] phoneRelevant = { true, true, false, false };
 
         // 按角色过滤出"保留的下标"
         final int[] keep = new int[labelRes.length];
@@ -1027,9 +1090,10 @@ public class SettingsActivity extends Activity {
                 }
                 sv.scrollTo(0, 0);
                 int orig = keep[index];
-                if (orig == 1) refreshLockUi();
+                if (orig == 1) refreshBtUi();      // TASK-033：蓝牙控制（按角色/连态刷状态行）
+                if (orig == 2) refreshLockUi();
                 // TASK-023：进续航页复核一次 —— 勾选态一律读设备真值（不读偏好，防「显示已开/实际已关」）
-                if (orig == 2) refreshPowerUi();
+                if (orig == 3) refreshPowerUi();
             }
         });
 
@@ -1037,6 +1101,80 @@ public class SettingsActivity extends Activity {
         segLab.setSelected(0);
         for (int i = 0; i < count; i++) {
             page[keep[i]].setVisibility(i == 0 ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    // ══════════════════════ 🆕 TASK-033 蓝牙控制（HID 外设通道）══════════════════════
+
+    /**
+     * 刷新「蓝牙控制」子页（onCreate / onResume / 开关变更 / HID 状态变化时调用）。
+     *
+     * <p>按 {@code install_role} 分两种形态：
+     * <ul>
+     *   <li><b>手机端</b> ⇒ 显示控件块；开关态回填偏好；SDK&lt;28 时开关置灰并显红字；状态行按
+     *       「未运行 / 已启用待连 / 已连接」三态渲染（**读服务真值，不读偏好**）；仅「已连接」
+     *       时才露出测试翻页行。</li>
+     *   <li><b>阅读器端</b> ⇒ 隐藏控件块，只显示「本机=墨水屏端」说明（不启动任何后台，验收 A10）。</li>
+     * </ul>
+     */
+    private void refreshBtUi() {
+        if (tvBtIntro == null) return;
+
+        boolean phone = CardPrefs.getInstallRole(this) == CardPrefs.INSTALL_ROLE_PHONE;
+        boolean supported = HidLink.supported();
+
+        // 页顶简介（手机端专用）；墨水屏端隐藏 —— 该端的说明由下方 tvBtEinkNote 承担（避免重复两遍）
+        tvBtIntro.setText(R.string.lab_bt_intro);
+        tvBtIntro.setVisibility(phone ? View.VISIBLE : View.GONE);
+        // 手机端显示控件块；墨水屏端显示「本机=墨水屏端」说明
+        llBtControls.setVisibility(phone ? View.VISIBLE : View.GONE);
+        tvBtEinkNote.setVisibility(phone ? View.GONE : View.VISIBLE);
+        if (!phone) return;   // 墨水屏端到此为止（无开关、无状态行）
+
+        // 回填开关态（防回环：置位期间 cbBtEnabled 的 onCheckedChanged 会早退）
+        mBtUiSyncing = true;
+        cbBtEnabled.setChecked(CardPrefs.isBtControlEnabled(this));
+        mBtUiSyncing = false;
+
+        // 不支持（SDK<28 ⇒ 无 BluetoothHidDevice 类）：红字提示 + 开关置灰
+        tvBtUnsupported.setVisibility(supported ? View.GONE : View.VISIBLE);
+        cbBtEnabled.setEnabled(supported);
+
+        // 状态行：以「服务是否运行 + HID 主机是否连接」为准（真值，不读偏好）
+        HidLink hid = HidKeepAliveService.link();
+        boolean running = HidKeepAliveService.isRunning() && hid != null;
+        boolean connected = running && hid.isHostConnected();
+        String status;
+        if (!running) {
+            status = getString(R.string.lab_bt_status_off);
+        } else if (!connected) {
+            status = getString(R.string.lab_bt_status_registered);
+        } else {
+            android.bluetooth.BluetoothDevice host = hid.host();
+            String name = (host == null) ? ""
+                    : (host.getName() != null ? host.getName() : host.getAddress());
+            status = getString(R.string.lab_bt_status_connected, name);
+        }
+        tvBtStatus.setText(getString(R.string.lab_bt_status_prefix) + status);
+
+        // 测试翻页行：仅"已连接"才露（未连无意义）
+        llBtTest.setVisibility(connected ? View.VISIBLE : View.GONE);
+    }
+
+    /**
+     * 测试翻页（设置页按钮直发，不经会话门控）：连接成功后立即验证 HID 链路是否真能翻页。
+     *
+     * <p>失败（未连接 / 发送未受理）时给同一句「重连由墨水屏发起」的引导，不静默失败。
+     */
+    private void sendBtTest(boolean next) {
+        HidLink hid = HidKeepAliveService.link();
+        if (hid == null || !hid.isHostConnected()) {
+            Toast.makeText(this, R.string.lab_bt_reconnect_tip, Toast.LENGTH_LONG).show();
+            return;
+        }
+        boolean ok = next ? hid.pageNext() : hid.pagePrev();
+        if (!ok) {
+            Toast.makeText(this, R.string.lab_bt_reconnect_tip, Toast.LENGTH_LONG).show();
         }
     }
 
@@ -1051,6 +1189,9 @@ public class SettingsActivity extends Activity {
         refreshUpdateUi();
         refreshLockUi();           // TASK-022：锁屏子页状态（可能在别处改过偏好）
         refreshPowerUi();          // TASK-023：续航子页（易失项以设备真值为准复核）
+        // 🆕 TASK-033：蓝牙控制子页（订阅 HID 状态变化；先单刷一次拿当前真值）
+        HidKeepAliveService.addListener(mHidStateListener);
+        refreshBtUi();
     }
 
     @Override
@@ -1060,6 +1201,8 @@ public class SettingsActivity extends Activity {
         // 页面不在前台就不再收会话状态（避免持引用）；回来时 onResume 会重新注册
         // 🔴 TASK-029 §2.2：改成 removeStateListener —— 只摘自己这一个，不影响遥控服务的监听
         RemoteLinkManager.get().removeStateListener(mStateListener);
+        // 🆕 TASK-033：摘 HID 状态监听（离页不持引用；回来时 onResume 重新注册）
+        HidKeepAliveService.removeListener(mHidStateListener);
     }
 
     // ══════════════════════ 🆕 TASK-022 锁屏密码（应用级软锁） ══════════════════════
@@ -1416,6 +1559,18 @@ public class SettingsActivity extends Activity {
         @Override
         public void onStateChanged(int state, String peerIp, String detail) {
             showSessionState(state, peerIp, detail);
+        }
+    };
+
+    /** 🆕 TASK-033：HID 注册 / 连接态回调 —— 只刷「蓝牙控制」状态行（服务端推，非轮询）。
+     *  🔴 回调来自 HID 的 binder 线程（`BluetoothHidDevice.Callback`）⇒ 必须切回主线程再动 View，
+     *  否则触发 `CalledFromWrongThreadException`（会被服务端 try/catch 吞掉、状态行静默不刷新）。 */
+    private final HidKeepAliveService.StateListener mHidStateListener = new HidKeepAliveService.StateListener() {
+        @Override
+        public void onHidStateChanged() {
+            runOnUiThread(new Runnable() {
+                @Override public void run() { refreshBtUi(); }
+            });
         }
     };
 

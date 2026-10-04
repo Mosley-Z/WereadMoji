@@ -135,7 +135,7 @@
          🔴 TASK-022-R1：子标签栏已显示页名 ⇒ 删掉页内重复小标题（lab_remote_title / lock_title）
          与页顶简介（lab_page_tip）。
          🔴 TASK-023 微调：页顶「实验室」标题（原 label_lab）已删 —— 页名由外层顶部标签栏承担。 -->
-    <string name="lab_tab_remote">遥控翻页</string>
+    <string name="lab_tab_remote">热点翻页</string>
     <string name="lab_tab_lockscreen">锁屏密码</string>
     <string name="lab_remote_intro">手机当遥控器：在手机上按音量键，墨水屏上的微信读书翻页（音量上 = 上一页，音量下 = 下一页）。默认关闭，与现在完全一样。</string>
     <string name="lab_role_label">角色</string>
@@ -176,6 +176,27 @@
     <string name="lab_shake_hint">开启后晃动本机即可翻页。与音量键可同时使用。灵敏度分低/中/高三档（默认中）：太容易误触就调低，要甩很用力才响应就调高。⚠ 本应用需停在最前，切走后不生效。</string>
     <string name="lab_shake_page_prev">上一页</string>
     <string name="lab_shake_page_next">下一页</string>
+
+    <!-- 🆕 TASK-033（V1.1.0-beta）：实验室 · 蓝牙控制（HID 外设通道）。
+         🔴 文案三条硬约束（验收 A8）：① 未验证前不写"支持蓝牙遥控"这类泛化承诺；
+            ② 不得出现「读取屏幕内容」字样；③ 不写"装上即用"（必须一次性配对）。
+         只写已验证事实：需一次性配对；墨水屏端无需启用、也不影响被手机控制（HID 走 OS 输入源层，不经墨水屏 App）。 -->
+    <string name="lab_tab_bt">蓝牙控制</string>
+    <string name="lab_bt_intro">把本机当「蓝牙键盘」：本机发翻页键，墨水屏上的微信读书直接翻页（走蓝牙，不用连热点）。默认关闭，与现在完全一样。</string>
+    <string name="lab_bt_enable">启用蓝牙控制（本机当蓝牙键盘）</string>
+    <string name="lab_bt_unsupported">⚠ 本机不支持蓝牙控制（需 Android 9 及以上）。下面的开关不可用，翻页请改用「热点翻页」。</string>
+    <string name="lab_bt_status_prefix">状态：</string>
+    <string name="lab_bt_status_off">未启用</string>
+    <string name="lab_bt_status_registered">已启用（等待墨水屏连接）</string>
+    <string name="lab_bt_status_connected">已连接 %1$s</string>
+    <string name="lab_bt_test_label">测试翻页：</string>
+    <string name="lab_bt_test_prev">上一页</string>
+    <string name="lab_bt_test_next">下一页</string>
+    <string name="lab_bt_test_tip">连接成功后，点上面的「上一页 / 下一页」可立即验证：墨水屏上的微信读书应跟着翻页（不会弹划线/想法页）。</string>
+    <string name="lab_bt_pair_tip">首次使用要配对一次：① 先打开上面的开关（本机进入「可被发现」）；② 在墨水屏的系统「设置 · 蓝牙」里选「与新设备配对」，扫描并点本机的蓝牙名；③ 两边确认配对码。配对一次后，以后打开开关会由墨水屏自动连回。</string>
+    <string name="lab_bt_reconnect_tip">若一直连不上：请在墨水屏的蓝牙设置里，点本机名字旁的「连接」（重连由墨水屏一侧发起）。</string>
+    <string name="lab_bt_not_conflict_tip">「蓝牙控制」与「热点翻页」是两条独立通道。开启「蓝牙控制」时，本机原有的热点遥控会话会自动结束，避免两个通道打架。</string>
+    <string name="lab_bt_eink_note">本机 = 墨水屏端：无需开启「蓝牙控制」，也不影响被手机端的蓝牙控制（翻页键由系统直接接收，不经本 App）。这一页只是说明，不开启本项就没有任何后台行为。</string>
     <string name="main_remote_notice">本机已设为「手机端遥控器」，桌面卡片功能已隐藏。\n要查看阅读数据或改回设置，请点下面的「设置」，到「实验室」里调整角色。</string>
 
     <!-- 🆕 TASK-022（V1.0.1-beta）：实验室 · 锁屏密码（应用级软锁）。

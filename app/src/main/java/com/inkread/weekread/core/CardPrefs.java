@@ -277,6 +277,22 @@ public final class CardPrefs {
         sp(c).edit().putInt("remote_shake_sens", v).commit();
     }
 
+    // ── 🆕 TASK-033：「蓝牙控制」（HID 外设通道，V1.1.0-beta）──
+    //
+    // 🔴 独立于 TCP「热点翻页」的**另一条链路**（HID 外设模型，见 ADR-012）：手机当蓝牙键盘，
+    //    翻页键走**操作系统**层直接送到墨水屏，不经墨水屏 App、不经 TCP。
+    //    true  ⇒ 手机端注册 HID + 前台服务保活；翻页优先走 HID。
+    //    false（默认）⇒ **与现状零差异**：不注册 HID、不启前台服务、无通知（验收 A6/A10）。
+    public static final boolean DEFAULT_BT_CONTROL = false;
+
+    public static boolean isBtControlEnabled(Context c) {
+        return sp(c).getBoolean("bt_control_enabled", DEFAULT_BT_CONTROL);
+    }
+
+    public static void setBtControlEnabled(Context c, boolean v) {
+        sp(c).edit().putBoolean("bt_control_enabled", v).commit();
+    }
+
     // ── TASK-025：卡片池（哪几张卡进桌面循环/列表）+ 切换模式（V1.0.3-beta）──
     //
     // 🔴 作用范围**只有桌面卡片** —— 未勾选的卡不参与桌面循环/列表，

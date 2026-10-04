@@ -1417,6 +1417,162 @@
                 </LinearLayout><!-- /page_lab_remote -->
 
                 <!-- ============================================================
+                     🆕 TASK-033 子页：蓝牙控制（HID 外设通道）
+                     启用开关 + 状态 + 测试翻页 + 配对/重连引导。
+                     默认整块 GONE，由 seg_lab 切页控制。
+                     🔴 墨水屏端：整个控件块隐藏、只留说明 ⇒ 保证"零侵入"（验收 A10）。
+                     ============================================================ -->
+                <LinearLayout
+                    android:id="@+id/page_lab_bt"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <!-- 页顶简介（手机端 / 墨水屏端文案由 refreshBtUi 分派） -->
+                    <TextView
+                        android:id="@+id/tv_bt_intro"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/lab_bt_intro"
+                        android:textColor="#FF3C3C3C"
+                        android:textSize="13sp" />
+
+                    <!-- ── 手机端控件块（墨水屏端隐藏）── -->
+                    <LinearLayout
+                        android:id="@+id/ll_bt_controls"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <CheckBox
+                            android:id="@+id/cb_bt_enabled"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/lab_bt_enable"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:id="@+id/tv_bt_unsupported"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/lab_bt_unsupported"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp"
+                            android:visibility="gone" />
+
+                        <TextView
+                            android:id="@+id/tv_bt_status"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:lineSpacingExtra="3dp"
+                            android:textColor="#FF000000"
+                            android:textSize="14sp" />
+
+                        <!-- 测试翻页：连接成功后立即可验，也兼作"试一下"入口 -->
+                        <LinearLayout
+                            android:id="@+id/ll_bt_test"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/lab_bt_test_label"
+                                android:textColor="#FF000000"
+                                android:textSize="13sp" />
+
+                            <Button
+                                android:id="@+id/btn_bt_test_prev"
+                                android:layout_width="0dp"
+                                android:layout_height="42dp"
+                                android:layout_marginStart="8dp"
+                                android:layout_weight="1"
+                                android:background="@drawable/btn_ink"
+                                android:minWidth="0dp"
+                                android:minHeight="0dp"
+                                android:stateListAnimator="@null"
+                                android:text="@string/lab_bt_test_prev"
+                                android:textColor="@color/btn_ink_text"
+                                android:textSize="15sp" />
+
+                            <Button
+                                android:id="@+id/btn_bt_test_next"
+                                android:layout_width="0dp"
+                                android:layout_height="42dp"
+                                android:layout_marginStart="8dp"
+                                android:layout_weight="1"
+                                android:background="@drawable/btn_ink"
+                                android:minWidth="0dp"
+                                android:minHeight="0dp"
+                                android:stateListAnimator="@null"
+                                android:text="@string/lab_bt_test_next"
+                                android:textColor="@color/btn_ink_text"
+                                android:textSize="15sp" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/lab_bt_test_tip"
+                            android:textColor="#FF3C3C3C"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/lab_bt_pair_tip"
+                            android:textColor="#FF3C3C3C"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/lab_bt_reconnect_tip"
+                            android:textColor="#FF3C3C3C"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/lab_bt_not_conflict_tip"
+                            android:textColor="#FF3C3C3C"
+                            android:textSize="13sp" />
+                    </LinearLayout><!-- /ll_bt_controls -->
+
+                    <!-- ── 墨水屏端说明（手机端隐藏）—— 双侧明示，验收 A10 ── -->
+                    <TextView
+                        android:id="@+id/tv_bt_eink_note"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/lab_bt_eink_note"
+                        android:textColor="#FF3C3C3C"
+                        android:textSize="13sp"
+                        android:visibility="gone" />
+                </LinearLayout><!-- /page_lab_bt -->
+
+                <!-- ============================================================
                      🆕 TASK-022 子页 B：锁屏密码（应用级软锁）
                      启用开关 + 4 位密码 + 背景图 + 如实提示（可绕过 / 重启失效 /
                      依赖卡片无障碍服务）。默认整块 GONE，由 seg_lab 切页控制。

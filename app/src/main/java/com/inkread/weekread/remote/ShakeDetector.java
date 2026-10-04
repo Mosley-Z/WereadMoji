@@ -161,7 +161,9 @@ public final class ShakeDetector implements SensorEventListener {
      * <pre>
      * G1 role == PHONE          —— 晃动是手机端的捕获方式（墨水屏/关闭角色下不注册）
      * G2 remote_shake_enabled   —— 总开关（默认关 ⇒ 装后与现状零差异）
-     * G3 STATE_CONNECTED        —— 仅会话中采样（加速度计是常驻 50Hz 源，不白耗电）
+     * G3 有可发通道就绪          —— 仅"能发指令"时采样（加速度计是常驻 50Hz 源，不白耗电）
+     *                              🆕 TASK-033：判据 = {@code RemoteLinkManager.canSend()}
+     *                              （HID 已连接 或 TCP 已连接），兼容「蓝牙控制」通道。
      * </pre>
      *
      * 调用点：① 遥控服务连接/销毁；② 会话状态变化（经 {@code addStateListener}）；
@@ -175,7 +177,7 @@ public final class ShakeDetector implements SensorEventListener {
         try {
             want = RemoteRole.from(c) == RemoteRole.PHONE
                     && CardPrefs.isShakeEnabled(c)
-                    && RemoteLinkManager.get().getState() == RemoteLinkManager.STATE_CONNECTED;
+                    && RemoteLinkManager.get().canSend();
         } catch (Throwable t) {
             Log.w(TAG, "sync: gate check failed(swallowed): " + t);
             return;

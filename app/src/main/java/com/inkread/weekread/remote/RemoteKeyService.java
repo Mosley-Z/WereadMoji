@@ -93,13 +93,15 @@ public class RemoteKeyService extends AccessibilityService {
             default:
                 return false;
         }
-        // 🔴 B1（CODE_REVIEW 加固）：**只有"正在遥控（会话已连接）"时才吞音量键**。
+        // 🔴 B1（CODE_REVIEW 加固）：**只有"正在遥控（任一通道已就绪）"时才吞音量键**。
         //    此前只要 role=phone 就无条件 `return true` —— 用户没点「开始遥控」、
         //    或会话已断 / 空闲超时后，音量键仍被吃掉 ⇒ 音量调不动（用户侧："音量键失灵"）。
-        //    改为：会话不在 CONNECTED ⇒ 不消费（return false），音量键**交还系统**。
-        if (RemoteLinkManager.get().getState() != RemoteLinkManager.STATE_CONNECTED) {
+        //    改为：**无可发通道** ⇒ 不消费（return false），音量键**交还系统**。
+        //    🆕 TASK-033：判据由「TCP 会话 CONNECTED」升级为 `canSend()`（= HID 已连接 **或** TCP 已连接），
+        //    否则「蓝牙控制」通道下音量键会被误判为"未连接"而不生效。
+        if (!RemoteLinkManager.get().canSend()) {
             Log.i(TAG, "onKeyEvent " + RemoteProtocol.name(cmd)
-                    + " → 会话未连接，音量键交还系统（不消费）");
+                    + " → 无可发通道（HID/TCP 均未就绪），音量键交还系统（不消费）");
             return false;
         }
         // ②③ 只认 keyCode；仅 repeat==0 产生翻页（A12 长按不连翻），重复 DOWN 也消费掉

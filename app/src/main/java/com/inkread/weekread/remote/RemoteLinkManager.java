@@ -258,8 +258,24 @@ public final class RemoteLinkManager {
         endSessionInternal("已结束");
     }
 
-    /** phone 角色：捕获层把音量键翻译成指令后调这里。会话不在 CONNECTED 返回 false。 */
+    /**
+     * phone 角色：捕获层把音量键/晃动翻译成指令后调这里。
+     *
+     * <p>🔴 TASK-033：**通道分派** —— 若「蓝牙控制」已启用且 HID 主机已连接 ⇒ 走 HID（蓝牙键盘，
+     * 直接给墨水屏 OS 发按键）；否则走 TCP 会话（原行为）。两条通道**互不串扰**：
+     * HID 优先，且启用「蓝牙控制」时 UI 会先结束 TCP 会话（验收 A6）。
+     */
     public boolean sendCommand(int cmd) {
+        // ① 蓝牙 HID 通道（唯一判据 = HID 主机已连接；不依赖 TCP 会话状态）
+        HidLink hid = HidKeepAliveService.link();
+        if (hid != null && hid.isHostConnected()) {
+            boolean ok = (cmd == RemoteProtocol.CMD_PAGE_NEXT) ? hid.pageNext()
+                       : (cmd == RemoteProtocol.CMD_PAGE_PREV) ? hid.pagePrev()
+                       : false;
+            Log.i(TAG, "send via HID " + RemoteProtocol.name(cmd) + " ok=" + ok);
+            return ok;
+        }
+        // ② TCP 通道（原行为：会话不在 CONNECTED 返回 false）
         if (mState != STATE_CONNECTED) {
             return false;
         }
@@ -270,6 +286,20 @@ public final class RemoteLinkManager {
             scheduleIdleCheck();
         }
         return ok;
+    }
+
+    /**
+     * 🆕 TASK-033：捕获层（音量键 / 晃动）的**统一门控** —— 是否有任一通道就绪可发指令。
+     *
+     * <p>= HID 主机已连接（蓝牙控制）**或** TCP 会话已 CONNECTED。取代此前只看
+     * {@code getState()==STATE_CONNECTED} 的判据（那条只覆盖 TCP，HID 下会导致按键不被消费）。
+     */
+    public boolean canSend() {
+        HidLink hid = HidKeepAliveService.link();
+        if (hid != null && hid.isHostConnected()) {
+            return true;
+        }
+        return mState == STATE_CONNECTED;
     }
 
     // ── 内部 ──
