@@ -32,7 +32,7 @@
 ## 对外接口（关键 public API）
 
 - `WeekCardView.setStats(PeriodStats, String note)` / `.setBook(BookStats)` / `.setNote(NoteStats)` / `.setMode(String)` / `.setFullscreen(boolean)` / `.setPadXRatio(float)`
-- `NoteExport.paper(Context)` / `.sizeTier(Context)` / `.showSign(Context)` / `.showDate(Context)`（及对应 setter）/ `.exportAndShare(...)`
+- `NoteExport.paper(Context)` / `.sizeTier(Context)` / `.showSign(Context)` / `.showDate(Context)`（及对应 setter）/ `.renderAndSave(Context, NoteStats)`（**后台**：算版面+绘制+压缩落盘）+ `.presentResult(Activity, ExportResult)`（**主线程**：Toast + 分享）
 - `OverlayWindow.params(int type)` / `.paramsTouch(...)` / `.paramsOpenTouch(...)` / `.paramsPrevTouch(...)` / `.paramsTitleTouch(...)` / `.paramsMenu(...)` / `.typeAccessibility()`
 
 ## 依赖规则

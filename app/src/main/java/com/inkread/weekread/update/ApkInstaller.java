@@ -165,8 +165,12 @@ public final class ApkInstaller {
             }
 
             String sha = hex(md.digest());
-            if (info != null && info.sha256 != null && info.sha256.length() > 0
-                    && !info.sha256.equalsIgnoreCase(sha)) {
+            // 🔴 B3（fail-closed）：sha256 **必填** —— 清单缺字段时**直接拒绝**，不再"缺字段就跳过校验"
+            //（那等于"谁能改清单 ⇒ 谁就能下发任意字节"）。失败方向必须是"不装"，不能是"照装"。
+            if (info == null || info.sha256 == null || info.sha256.length() == 0) {
+                throw new Exception("更新清单缺少 sha256，已拒绝安装");
+            }
+            if (!info.sha256.equalsIgnoreCase(sha)) {
                 throw new Exception("校验失败（包可能被篡改或下载不完整）");
             }
 

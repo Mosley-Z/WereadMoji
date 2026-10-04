@@ -345,14 +345,27 @@ final class OverlayController {
 
             windowAdded = true;
         } catch (Throwable t) {
+            // 🔴 A1：半装配失败时，**已 addView 的窗必须先逐个摘干净，再清引用**。
+            //    原先只 removeSafely 了 todoViews，其余成员直接置 null ⇒ 已经加进
+            //    WindowManager 的窗留在那里（用户表现为"桌面某几处点不动、关掉卡片也不恢复"）。
+            //    与本类 removeWindow() 同一纪律：漏摘一个，下次 ensureWindow 会再 addView 一个。
+            removeSafely(view);
+            removeSafely(hitView);
+            removeSafely(titleView);
+            removeSafely(openView);
+            removeSafely(prevView);
+            removeSafely(expandView);
+            for (int i = 0; i < todoViews.size(); i++) removeSafely(todoViews.get(i));
+            todoViews.clear();
+            removeSafely(menuView);
+            removeSafely(periodMenuView);
+
             view = null;
             hitView = null;
             titleView = null;
             openView = null;
             prevView = null;
             expandView = null;
-            for (int i = 0; i < todoViews.size(); i++) removeSafely(todoViews.get(i));
-            todoViews.clear();
             menuView = null;
             periodMenuView = null;
             cardH = CardSpec.cardHeight();

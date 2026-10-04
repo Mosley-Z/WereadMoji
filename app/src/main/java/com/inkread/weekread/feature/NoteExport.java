@@ -190,65 +190,108 @@ public final class NoteExport {
         return L;
     }
 
+    /** {@link #renderAndSave} 的结果：`uri`（已进相册）或 `fallbackPath`（应用目录）二选一；`err` 非空 = 失败 */
+    public static final class ExportResult {
+        public Uri uri;
+        public String fallbackPath;
+        public int height;
+        public String err;
+    }
+
     /**
-     * 画图并存进相册，成功后呼起分享面板。返回 null = 成功；否则是给 toast 的错误文案。
+     * 🔴 C2：**纯后台**阶段的导出 —— 算版面 + 分配位图 + 绘制 + PNG 压缩落盘。**不碰任何 UI**。
+     *
+     * 为什么拆出来：`Bitmap.createBitmap(480×H)`（H 上限 {@link WeekCardView#EXPORT_H_MAX}=8000，
+     * RGB_565 ⇒ 单次约 7.3MB）+ PNG 压缩都很耗时。原先这些全在调用者（主线程）上 ⇒ 有 ANR /
+     * OOM 风险。现在由调用方丢到工作线程，UI 收尾交给 {@link #presentResult}（主线程）。
+     *
+     * @return 结果对象（内部已回收位图）；`err` 非空表示失败
      */
-    public static String exportAndShare(Context c, NoteStats n) {
+    public static ExportResult renderAndSave(Context c, NoteStats n) {
+        ExportResult r = new ExportResult();
         String q = (n == null || n.markText == null) ? "" : n.markText.trim();
         String idea = (n == null || n.ideaText == null) ? "" : n.ideaText.trim();
-        if (q.length() == 0 && idea.length() == 0) return "没有可导出的内容";
+        if (q.length() == 0 && idea.length() == 0) {
+            r.err = "没有可导出的内容";
+            return r;
+        }
 
         Layout L = layout(c, n);
         Bitmap bmp = Bitmap.createBitmap(W, L.height, Bitmap.Config.RGB_565);
-        draw(c, new Canvas(bmp), n, L);
-
-        Uri uri = null;
         try {
-            ContentValues cv = new ContentValues();
-            cv.put(MediaStore.Images.Media.DISPLAY_NAME,
-                    "benji_" + System.currentTimeMillis() + ".png");
-            cv.put(MediaStore.Images.Media.MIME_TYPE, "image/png");
-            cv.put(MediaStore.Images.Media.RELATIVE_PATH,
-                    Environment.DIRECTORY_PICTURES + "/微读墨记");
-            uri = c.getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv);
-            if (uri != null) {
-                OutputStream os = c.getContentResolver().openOutputStream(uri);
-                bmp.compress(Bitmap.CompressFormat.PNG, 100, os);
-                os.flush();
-                os.close();
+            draw(c, new Canvas(bmp), n, L);
+            r.height = L.height;
+
+            try {
+                ContentValues cv = new ContentValues();
+                cv.put(MediaStore.Images.Media.DISPLAY_NAME,
+                        "benji_" + System.currentTimeMillis() + ".png");
+                cv.put(MediaStore.Images.Media.MIME_TYPE, "image/png");
+                cv.put(MediaStore.Images.Media.RELATIVE_PATH,
+                        Environment.DIRECTORY_PICTURES + "/微读墨记");
+                Uri uri = c.getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv);
+                if (uri != null) {
+                    OutputStream os = c.getContentResolver().openOutputStream(uri);
+                    bmp.compress(Bitmap.CompressFormat.PNG, 100, os);
+                    os.flush();
+                    os.close();
+                    r.uri = uri;
+                }
+            } catch (Throwable t) {
+                r.uri = null;
+            }
+
+            if (r.uri == null) {
+                // 兜底：写进应用自己的外部目录（不用任何权限），至少别让用户白等
+                try {
+                    java.io.File dir = new java.io.File(c.getExternalFilesDir(null), "export");
+                    if (!dir.exists()) dir.mkdirs();
+                    java.io.File f = new java.io.File(dir, "benji_" + System.currentTimeMillis() + ".png");
+                    java.io.FileOutputStream fo = new java.io.FileOutputStream(f);
+                    bmp.compress(Bitmap.CompressFormat.PNG, 100, fo);
+                    fo.flush();
+                    fo.close();
+                    r.fallbackPath = f.getPath();
+                } catch (Throwable t2) {
+                    r.err = "保存失败：" + t2.getClass().getSimpleName();
+                }
             }
         } catch (Throwable t) {
-            uri = null;
+            r.err = "导出失败：" + t.getClass().getSimpleName();
+        } finally {
+            try { bmp.recycle(); } catch (Throwable ignored) { }   // 🔴 长图位图必须显式回收
         }
-        if (uri == null) {
-            // 兜底：写进应用自己的外部目录（不用任何权限），至少别让用户白等
-            try {
-                java.io.File dir = new java.io.File(c.getExternalFilesDir(null), "export");
-                if (!dir.exists()) dir.mkdirs();
-                java.io.File f = new java.io.File(dir, "benji_" + System.currentTimeMillis() + ".png");
-                java.io.FileOutputStream fo = new java.io.FileOutputStream(f);
-                bmp.compress(Bitmap.CompressFormat.PNG, 100, fo);
-                fo.flush();
-                fo.close();
-                Toast.makeText(c, "已保存到应用目录：" + f.getPath(), Toast.LENGTH_LONG).show();
-                return null;
-            } catch (Throwable t2) {
-                return "保存失败：" + t2.getClass().getSimpleName();
-            }
-        }
+        return r;
+    }
 
+    /**
+     * 🔴 C2：**仅主线程**执行的收尾 —— Toast + 呼起分享面板。
+     *
+     * `a` 已经 `isFinishing()/isDestroyed()`（导出期间用户退了界面）时直接不动作，
+     * 避免在垂死的 Activity 上 show Toast / startActivity。
+     */
+    public static void presentResult(android.app.Activity a, ExportResult r) {
+        if (a == null || r == null) return;
+        if (a.isFinishing() || a.isDestroyed()) return;
+        if (r.err != null) {
+            Toast.makeText(a, r.err, Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (r.fallbackPath != null) {
+            Toast.makeText(a, "已保存到应用目录：" + r.fallbackPath, Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (r.uri == null) return;                 // 理论上到不了（两条路都失败会置 err）
         // 告诉用户成品多大 —— 长图的高度是内容决定的，这个数字本身有信息量
-        Toast.makeText(c, "已导出 " + W + "×" + L.height + " 的图片", Toast.LENGTH_SHORT).show();
-
+        Toast.makeText(a, "已导出 " + W + "×" + r.height + " 的图片", Toast.LENGTH_SHORT).show();
         try {
             Intent share = new Intent(Intent.ACTION_SEND);
             share.setType("image/png");
-            share.putExtra(Intent.EXTRA_STREAM, uri);
+            share.putExtra(Intent.EXTRA_STREAM, r.uri);
             share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            c.startActivity(Intent.createChooser(share, "分享本记"));
+            a.startActivity(Intent.createChooser(share, "分享本记"));
         } catch (Throwable ignored) {
         }
-        return null;
     }
 
     // ── 绘制 ──

@@ -565,7 +565,11 @@ public final class NoteStore {
      *
      * @return 毫秒时间戳；两路都没有时间戳（老数据 / 没同步过）→ 0（调用方据此不画「更新于」）
      */
-    public static long noteFetchedAt(Context c, String bookId) {
+    // 🔴 A2：`sNoteAt` 是 accessOrder 的 LinkedHashMap（LRU）。它的 get/put 原先**没有加锁**，
+    //    而 dropBookCache / dropAllCache / dropIndexCache（均为 `static synchronized`，类锁）
+    //    会 remove/clear 同一个表 ⇒ 并发下可能结构损坏（遍历死循环 / 丢条目）。
+    //    本方法改为 `static synchronized`，与那几个方法**同一把锁**（对齐同类 itemsOfBook）。
+    public static synchronized long noteFetchedAt(Context c, String bookId) {
         if (bookId == null || bookId.length() == 0) return 0L;
         Long hit = sNoteAt.get(bookId);
         if (hit != null) return hit;

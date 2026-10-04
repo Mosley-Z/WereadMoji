@@ -93,15 +93,22 @@ public class WereadApi {
                     @Override
                     public void run() {
                         PeriodStats stats = null;
+                        String err = fErr;
                         if (fRaw != null) {
                             try {
                                 stats = PeriodStats.parse(new JSONObject(fRaw),
                                         System.currentTimeMillis(), mode, baseTime);
                                 stats.rawJson = fRaw;
+                                if (stats.incomplete) {
+                                    // 🔴 B6：2xx，但对象里没有任何统计字段（疑似异常 / 中间页响应）
+                                    // ⇒ 按失败处理：既不写回缓存，也不渲染成"0 分钟"。
+                                    err = "回包缺少统计字段（疑似异常响应）";
+                                    stats = null;
+                                }
                             } catch (Exception ignored) {
                             }
                         }
-                        cb.onResult(stats, fRaw, fErr);
+                        cb.onResult(stats, fRaw, err);
                     }
                 });
             }

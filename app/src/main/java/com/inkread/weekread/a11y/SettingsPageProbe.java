@@ -224,12 +224,14 @@ final class SettingsPageProbe {
      * {@code st.settingsGate} 原值 = **维持现状**，绝不在拿不准时改状态。
      */
     private boolean probeOnce() {
+        AccessibilityNodeInfo root = null;
+        List<AccessibilityNodeInfo> hits = null;
         try {
-            AccessibilityNodeInfo root = svc.getRootInActiveWindow();
+            root = svc.getRootInActiveWindow();
             if (root == null) return st.settingsGate;
             CharSequence pkg = root.getPackageName();
             if (pkg == null || !ELA_PKG.equals(pkg.toString())) return st.settingsGate;
-            List<AccessibilityNodeInfo> hits = root.findAccessibilityNodeInfosByViewId(SETTINGS_ID);
+            hits = root.findAccessibilityNodeInfosByViewId(SETTINGS_ID);
             if (hits == null || hits.isEmpty()) return false;
             // 🔴 2026-09-28（验证记录/74 t13）：ELauncher 新版的 **P1 首页也出现了
             // settings_top 同名节点**（真机实测：P1 边界右滑 → sx=480 → 触发本探测 →
@@ -245,6 +247,18 @@ final class SettingsPageProbe {
             return true;
         } catch (Throwable t) {
             return st.settingsGate;
+        } finally {
+            // A7：探测拿到的节点用完即回收（消节点泄漏）。root 必须最后再回收
+            //（hasVisibleNode 还要用它做子树查找）。
+            if (hits != null) {
+                for (AccessibilityNodeInfo n : hits) {
+                    if (n == null) continue;
+                    try { n.recycle(); } catch (Throwable ignored) { }
+                }
+            }
+            if (root != null) {
+                try { root.recycle(); } catch (Throwable ignored) { }
+            }
         }
     }
 
@@ -258,7 +272,9 @@ final class SettingsPageProbe {
     private boolean hasVisibleNode(AccessibilityNodeInfo root, String viewId) {
         List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByViewId(viewId);
         if (nodes == null || nodes.isEmpty()) return false;
+        boolean hit = false;
         for (AccessibilityNodeInfo n : nodes) {
+            if (n == null) continue;
             boolean vis = false;
             try {
                 vis = n.isVisibleToUser();
@@ -272,8 +288,9 @@ final class SettingsPageProbe {
             boolean onScreen = r.intersect(0, 0,
                     com.inkread.weekread.core.CardSpec.SCREEN_W,
                     com.inkread.weekread.core.CardSpec.SCREEN_H);
-            if (vis && onScreen) return true;
+            if (vis && onScreen) hit = true;
+            try { n.recycle(); } catch (Throwable ignored) { }   // A7：消节点泄漏
         }
-        return false;
+        return hit;
     }
 }

@@ -65,6 +65,16 @@ public final class UpdateChecker {
     private static final String CLOUD_BETA   = "https://wereadmoji.app.workbuddy.host/update-beta.json";
 
     /**
+     * 🔴 B4：允许的更新**下载**域名白名单（见 {@link #isAllowedUrl}）。
+     * 覆盖三条分发路径：GitHub raw（主源）/ jsDelivr（回落）/ 自托管（云端兜底）。
+     */
+    private static final String[] ALLOWED_HOSTS = {
+            "raw.githubusercontent.com",
+            "cdn.jsdelivr.net",
+            "wereadmoji.app.workbuddy.host"
+    };
+
+    /**
      * 本机当前通道对应的清单地址列表（channel ∈ {stable, beta}）。
      *
      * <p>🆕 TASK-030：默认在 GitHub 两源之后再追加一个**自托管云端源**作兜底 ——
@@ -344,13 +354,36 @@ public final class UpdateChecker {
             ArrayList<String> list = new ArrayList<String>();
             for (int i = 0; i < arr.length(); i++) {
                 String s = arr.optString(i, "");
-                if (s != null && s.length() > 0) {
+                if (s != null && s.length() > 0 && isAllowedUrl(s)) {   // 🔴 B4：过白名单
                     list.add(s);
                 }
             }
             in.urls = list.toArray(new String[list.size()]);
         }
         return in;
+    }
+
+    /**
+     * 🔴 B4：更新下载地址**白名单** —— 只接受 `https` 且 host 属于 {@link #ALLOWED_HOSTS}。
+     *
+     * 为什么必须：`update.json` 是"外部输入"，可能来自被劫持的 DNS / 中间人 / 伪造响应。
+     * 若不校验，攻击者只要能让清单里出现 `http://evil/…apk`，App 就会下载并**引导安装**。
+     * 这里做**域名级**收敛（不做证书固定，见 ADR 决策），与 B3 的"sha256 必填"一起堵住
+     * "攻击者控清单"的主路径。
+     */
+    private static boolean isAllowedUrl(String s) {
+        try {
+            java.net.URL u = new java.net.URL(s);
+            if (!"https".equalsIgnoreCase(u.getProtocol())) return false;
+            String host = u.getHost();
+            if (host == null) return false;
+            for (String h : ALLOWED_HOSTS) {
+                if (h.equalsIgnoreCase(host)) return true;
+            }
+            return false;
+        } catch (Exception e) {
+            return false;                       // 解析不了 ⇒ 一律不收
+        }
     }
 
     // ────────────────────────── 小工具 ──────────────────────────

@@ -238,7 +238,7 @@ final class A11yEventRouter {
             lastPkg = pkg;
             lastType = type;
             lastCls = clsForLog;
-            CardDebug.note(ctx, "event " + AccessibilityEvent.eventTypeToString(type)
+            CardDebug.noteV(ctx, "event " + AccessibilityEvent.eventTypeToString(type)
                     + " pkg=" + pkg + " cls=" + clsForLog
                     + " ownUi=" + CardA11yService.sOwnUiForeground);
         }
@@ -309,7 +309,7 @@ final class A11yEventRouter {
         // 一旦在这里把 st.onDesktop 置成 false，就再也没有事件能把它改回 true
         // → 卡片永久消失（用户报的 3(b) 就是这个，已实测复现）。
         if (isTransientOverlay(pkg, clsForLog)) {
-            CardDebug.note(ctx, "ignore transient overlay pkg=" + pkg + " cls=" + clsForLog);
+            CardDebug.noteV(ctx, "ignore transient overlay pkg=" + pkg + " cls=" + clsForLog);
             return;
         }
 
@@ -351,7 +351,7 @@ final class A11yEventRouter {
             // 这同时是 noteOwnUiForeground(false) 万一没被调到的兜底。
             CardA11yService.sOwnUiForeground = false;
         }
-        CardDebug.note(ctx, "decide pkg=" + pkg + " cls=" + clsForLog
+        CardDebug.noteV(ctx, "decide pkg=" + pkg + " cls=" + clsForLog
                 + " desk=" + desk + " was=" + st.onDesktop + " page=" + st.desktopPage);
         // 注意第二个条件：从自家界面回到桌面时 st.onDesktop 可能本来就是 true
         // （进自家界面只改了标志、没改 st.onDesktop），这时也必须重算一次，
@@ -407,7 +407,7 @@ final class A11yEventRouter {
         //   图墨小组件容器被穿透点击      cls=android.widget.FrameLayout → 忽略（本修复）
         boolean iconLike = cls.endsWith("ImageView") || cls.endsWith("ImageButton");
         if (!iconLike) {
-            CardDebug.note(ctx, "click cls=" + cls + " → 忽略（非图标，不置闸门）");
+            CardDebug.noteV(ctx, "click cls=" + cls + " → 忽略（非图标，不置闸门）");
             return;
         }
         if (st.iconGate
@@ -479,7 +479,7 @@ final class A11yEventRouter {
 
         boolean closeSig = (cct & CCT_PANE_DISAPPEARED) != 0 || (title && n <= 1);
         boolean openSig = title && n >= 2;
-        CardDebug.note(ctx, "shadeEvt cct=" + cct + " n=" + n + " title=" + title
+        CardDebug.noteV(ctx, "shadeEvt cct=" + cct + " n=" + n + " title=" + title
                 + " → close=" + closeSig + " open=" + openSig + " (cur=" + st.shadeOpen + ")");
 
         if (closeSig) {
@@ -600,7 +600,7 @@ final class A11yEventRouter {
             cct = event.getContentChangeTypes();
         } catch (Throwable ignored) {
         }
-        CardDebug.note(ctx, "pageRaw sx=" + sx + " cct=" + cct + " → page=" + page
+        CardDebug.noteV(ctx, "pageRaw sx=" + sx + " cct=" + cct + " → page=" + page
                 + " (cur=" + st.desktopPage + ")");
         // 拖动过程中会经过中间值，交给去抖窗口决定最终停在哪一页
         if (page != st.pendingPage) {

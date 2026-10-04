@@ -139,65 +139,74 @@ public final class NoteSync {
             @Override
             public void run() {
                 String err = null;
-
-                // ① 索引（v0.5.3：含翻页，见 fetchAllNotebooks）
-                boolean needIndex = !NoteStore.indexFresh(c)
-                        || (force && NoteStore.indexAge(c) > NoteStore.INDEX_MIN_MS);
-                if (needIndex) {
-                    JSONArray all = fetchAllNotebooks(apiKey);
-                    if (all != null && all.length() > 0) {
-                        NoteStore.saveIndex(c, NoteStore.compactIndex(all));
-                    } else if (NoteStore.index(c) == null) {
-                        err = (all == null) ? "笔记本列表拉取失败" : "笔记本列表为空";
-                    }
-                    // 有旧索引就用旧的，离线不至于一片空白
-                }
-
-                // ② 预热想法（v0.4.4）—— 排在划线前面：只有 55 本，一轮就能把
-                //    "最近在记的书"的想法全部拿到，比划线更快见效
-                if (err == null && prefetch > 0) {
-                    int want = force ? IDEA_PREFETCH * 2 : IDEA_PREFETCH;
-                    List<String> iids = NoteStore.unsyncedIdeas(c, want);
-                    for (String id : iids) {
-                        syncIdeas(c, apiKey, id);
-                    }
-                }
-
-                // ③ 预热 / 刷新划线（v0.5.3：不再只挑"从没同步过"的书，见 NoteStore.refreshQueue）
-                if (err == null && prefetch > 0) {
-                    List<String> ids = NoteStore.refreshQueue(c, prefetch);
-                    for (String id : ids) {
-                        JSONObject arg = new JSONObject();
-                        try {
-                            arg.put("bookId", id);
-                        } catch (Exception ignored) {
+                int pool = 0, ideas = 0, total = 0;
+                int state = STATE_ERROR;
+                try {
+                    // ① 索引（v0.5.3：含翻页，见 fetchAllNotebooks）
+                    boolean needIndex = !NoteStore.indexFresh(c)
+                            || (force && NoteStore.indexAge(c) > NoteStore.INDEX_MIN_MS);
+                    if (needIndex) {
+                        JSONArray all = fetchAllNotebooks(apiKey);
+                        if (all != null && all.length() > 0) {
+                            NoteStore.saveIndex(c, NoteStore.compactIndex(all));
+                        } else if (NoteStore.index(c) == null) {
+                            err = (all == null) ? "笔记本列表拉取失败" : "笔记本列表为空";
                         }
-                        WereadApi.Resp r = WereadApi.raw(apiKey,
-                                WereadApi.buildBody("/book/bookmarklist", arg));
-                        if (r.error != null || r.json == null) continue;   // 单本失败不影响别的
-                        JSONArray up = r.json.optJSONArray("updated");
-                        // **全量替换**（R03）：官方文档里本接口只有 bookId 一个参数，
-                        // 回包 updated[] 就是这本书的全部划线 —— 所以新增能进来、删掉的会消失。
-                        NoteStore.replaceMarks(c, id, up == null ? new JSONArray() : up,
-                                r.json.optLong("synckey", 0L));
+                        // 有旧索引就用旧的，离线不至于一片空白
                     }
-                }
 
-                final int pool = NoteStore.poolSize(c);
-                final int ideas = NoteStore.ideaCount(c);
-                final int total = NoteStore.indexTotal(c);
-                final String fErr = err;
-                // 状态判定：出错 = 失败；没错但两档都空 = 空态；否则成功。
-                // 空 / 失败都打退避 —— 这是"回调里再渲染又起同步"那个环的第二道闸门（闸门③）。
-                final int state = (err != null) ? STATE_ERROR
-                        : ((pool + ideas) > 0 ? STATE_OK : STATE_EMPTY);
-                if (state != STATE_OK) {
-                    sBackoffUntil = android.os.SystemClock.elapsedRealtime() + BACKOFF_MS;
+                    // ② 预热想法（v0.4.4）—— 排在划线前面：只有 55 本，一轮就能把
+                    //    "最近在记的书"的想法全部拿到，比划线更快见效
+                    if (err == null && prefetch > 0) {
+                        int want = force ? IDEA_PREFETCH * 2 : IDEA_PREFETCH;
+                        List<String> iids = NoteStore.unsyncedIdeas(c, want);
+                        for (String id : iids) {
+                            syncIdeas(c, apiKey, id);
+                        }
+                    }
+
+                    // ③ 预热 / 刷新划线（v0.5.3：不再只挑"从没同步过"的书，见 NoteStore.refreshQueue）
+                    if (err == null && prefetch > 0) {
+                        List<String> ids = NoteStore.refreshQueue(c, prefetch);
+                        for (String id : ids) {
+                            JSONObject arg = new JSONObject();
+                            try {
+                                arg.put("bookId", id);
+                            } catch (Exception ignored) {
+                            }
+                            WereadApi.Resp r = WereadApi.raw(apiKey,
+                                    WereadApi.buildBody("/book/bookmarklist", arg));
+                            if (r.error != null || r.json == null) continue;   // 单本失败不影响别的
+                            JSONArray up = r.json.optJSONArray("updated");
+                            // **全量替换**（R03）：官方文档里本接口只有 bookId 一个参数，
+                            // 回包 updated[] 就是这本书的全部划线 —— 所以新增能进来、删掉的会消失。
+                            NoteStore.replaceMarks(c, id, up == null ? new JSONArray() : up,
+                                    r.json.optLong("synckey", 0L));
+                        }
+                    }
+
+                    pool = NoteStore.poolSize(c);
+                    ideas = NoteStore.ideaCount(c);
+                    total = NoteStore.indexTotal(c);
+                    // 状态判定：出错 = 失败；没错但两档都空 = 空态；否则成功。
+                    state = (err != null) ? STATE_ERROR
+                            : ((pool + ideas) > 0 ? STATE_OK : STATE_EMPTY);
+                } catch (Throwable t) {
+                    // 🔴 A3：run() 里任何未预期异常（如解析时 OOM）原先会让 sRunning **永久卡在
+                    //    true** ⇒ 此后所有同步一律回 STATE_BUSY，卡片再也同步不了。这里兜成
+                    //    "失败"，并由 finally 保证闸门一定放开。
+                    err = "同步异常：" + t;
+                    state = STATE_ERROR;
+                } finally {
+                    // 空 / 失败都打退避 —— 这是"回调里再渲染又起同步"那个环的第二道闸门（闸门③）。
+                    if (state != STATE_OK) {
+                        sBackoffUntil = android.os.SystemClock.elapsedRealtime() + BACKOFF_MS;
+                    }
+                    synchronized (LOCK) {
+                        sRunning = false;      // 必须先放开闸门，再回调（回调里可能合法地再发起）
+                    }
+                    post(l, pool, ideas, total, err, state);
                 }
-                synchronized (LOCK) {
-                    sRunning = false;          // 必须先放开闸门，再回调（回调里可能合法地再发起）
-                }
-                post(l, pool, ideas, total, fErr, state);
             }
         }).start();
     }
@@ -260,7 +269,10 @@ public final class NoteSync {
             }
             if (r.json.optInt("hasMore", 0) != 1) break;            // 没有下一页了
             if (nextSort == 0 || nextSort == lastSort || added == 0) {
-                break;                                              // ② 游标不前进 / 空页 → 停
+                // ② 🔴 B5：hasMore=1 却拿不到任何新书 / 游标不前进 = **异常回包**（不是"正常翻到底"）。
+                //    原先 break 后把半截索引当完整索引保存 ⇒ 被漏掉的书会从索引里**永久消失**。
+                //    改为整体返回 null（= 失败），调用方保留旧索引（与上面 r.error!=null 同一方向）。
+                return null;
             }
             lastSort = nextSort;
         }

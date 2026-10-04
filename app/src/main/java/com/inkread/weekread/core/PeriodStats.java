@@ -41,6 +41,14 @@ public class PeriodStats {
     public String topBook;
     public int topBookSec;
 
+    /**
+     * 🔴 B6：回包结构上**不像统计数据**（四个统计字段 `totalReadTime` / `readDays` /
+     * `readTimes` / `dayAverageReadTime` **全缺**）。用于把"2xx 但内容不对"的异常响应用
+     * 失败处理 —— **不写回缓存、不渲染成 0 分钟**。
+     * 注意：合法的"这周没读书"会带 `totalReadTime: 0`，字段是**在**的 ⇒ 不会被误判。
+     */
+    public boolean incomplete;
+
     public boolean isMonthly() {
         return PeriodRange.MONTHLY.equals(mode);
     }
@@ -61,6 +69,10 @@ public class PeriodStats {
         s.baseTime = j.optLong("baseTime", 0);
         if (s.baseTime <= 0) s.baseTime = PeriodRange.startOf(s.mode, reqBase);
         s.dayCount = PeriodRange.daysInPeriod(s.mode, s.baseTime);
+
+        // 🔴 B6：结构校验 —— 四个统计字段**全缺** ⇒ 这不是一份统计回包（疑似中间页/异常响应）
+        s.incomplete = !(j.has("totalReadTime") || j.has("readDays")
+                || j.has("readTimes") || j.has("dayAverageReadTime"));
 
         s.totalSec = j.optInt("totalReadTime", 0);
         s.readDays = j.optInt("readDays", 0);

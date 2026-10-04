@@ -588,10 +588,22 @@ public class MainActivity extends Activity {
                     android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
-        String err = NoteExport.exportAndShare(this, n);
-        if (err != null) {
-            android.widget.Toast.makeText(this, err, android.widget.Toast.LENGTH_LONG).show();
-        }
+        // 🔴 C2：导出的重活（480×H 位图分配 + 绘制 + PNG 压缩）挪到工作线程，避免主线程 ANR；
+        // 主线程只做 UI 收尾（Toast / 分享面板），并在界面已结束时不动作（守卫见下）。
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final NoteExport.ExportResult r =
+                        NoteExport.renderAndSave(getApplicationContext(), n);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (isFinishing() || isDestroyed()) return;   // 导出期间用户退了界面
+                        NoteExport.presentResult(MainActivity.this, r);
+                    }
+                });
+            }
+        }).start();
     }
 
     /**

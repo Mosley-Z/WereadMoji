@@ -277,8 +277,12 @@ final class ElaHomeProbe {
     private boolean hasVisibleNode(AccessibilityNodeInfo root, String viewId) {
         List<AccessibilityNodeInfo> hits = root.findAccessibilityNodeInfosByViewId(viewId);
         if (hits == null || hits.isEmpty()) return false;   // 确认不在 P1（静默，高频）
-        // 可见性过滤：保留邻页里的时钟节点 id 相同但不可见/在屏外，不能当"P1 实锤"
+        // 可见性过滤：保留邻页里的时钟节点 id 相同但不可见/在屏外，不能当"P1 实锤"。
+        // 🔴 降噪：命中节点可能有多个（邻页残留），**逐节点打日志会刷屏** ⇒ 合并为循环后一条。
+        boolean hit = false;
+        StringBuilder sb = new StringBuilder("home probe 节点 n=").append(hits.size());
         for (AccessibilityNodeInfo n : hits) {
+            if (n == null) continue;
             boolean vis = false;
             try {
                 vis = n.isVisibleToUser();
@@ -293,11 +297,13 @@ final class ElaHomeProbe {
             boolean onScreen = r.intersect(0, 0,
                     com.inkread.weekread.core.CardSpec.SCREEN_W,
                     com.inkread.weekread.core.CardSpec.SCREEN_H);
-            CardDebug.note(ctx, "home probe 节点 visible=" + vis
-                    + " bounds=" + rb + " onScreen=" + onScreen);
-            if (vis && onScreen) return true;
+            sb.append(" | v=").append(vis).append(" b=").append(rb).append(" on=").append(onScreen);
+            if (vis && onScreen) hit = true;
+            // A7：探测节点用完即回收，消节点泄漏（targetSdk30 下 recycle 仍有效）
+            try { n.recycle(); } catch (Throwable ignored) { }
         }
-        return false;
+        CardDebug.note(ctx, sb.toString());
+        return hit;
     }
 
     /**
@@ -314,31 +320,36 @@ final class ElaHomeProbe {
             CardDebug.note(ctx, "reconnect probe 拿不到根窗口 → 维持原行为（按第 1 页）");
             return CUR_UNKNOWN;
         }
-        CharSequence cs = root.getPackageName();
-        if (cs == null) return CUR_UNKNOWN;
-        String pkg = cs.toString();
-        // systemui 是**浮层**：此刻"当前应用"并没变，但它不是桌面 ⇒ 不能据此判"不在桌面"
-        //（否则下拉通知栏时重连会把 onDesktop 置成 false，而"收起通知栏"不会再发桌面事件
-        //  ⇒ 卡片可能一直回不来）。一律拿不准。
-        if (SYSTEMUI_PKG.equals(pkg)) {
-            CardDebug.note(ctx, "reconnect probe 前台是 systemui 浮层 → 维持原行为");
-            return CUR_UNKNOWN;
+        try {
+            CharSequence cs = root.getPackageName();
+            if (cs == null) return CUR_UNKNOWN;
+            String pkg = cs.toString();
+            // systemui 是**浮层**：此刻"当前应用"并没变，但它不是桌面 ⇒ 不能据此判"不在桌面"
+            //（否则下拉通知栏时重连会把 onDesktop 置成 false，而"收起通知栏"不会再发桌面事件
+            //  ⇒ 卡片可能一直回不来）。一律拿不准。
+            if (SYSTEMUI_PKG.equals(pkg)) {
+                CardDebug.note(ctx, "reconnect probe 前台是 systemui 浮层 → 维持原行为");
+                return CUR_UNKNOWN;
+            }
+            if (st.launchers == null || !st.launchers.contains(pkg)) {
+                CardDebug.note(ctx, "reconnect probe 前台非桌面 pkg=" + pkg + " ⇒ 不该显示卡片");
+                return CUR_NOT_HOME;
+            }
+            String id = firstPageIdOf(pkg);
+            if (id == null) {
+                // 本机只认 Tomo / ELauncher 两套指纹。别家桌面没有 P1 判据 ⇒ 拿不准，
+                // 维持原行为（显示）——对未知桌面"藏"会让卡片再也回不来，方向反了。
+                CardDebug.note(ctx, "reconnect probe 桌面 " + pkg + " 无已知 P1 指纹 → 维持原行为");
+                return CUR_UNKNOWN;
+            }
+            boolean hit = hasVisibleNode(root, id);
+            CardDebug.note(ctx, "reconnect probe pkg=" + pkg + " id=" + id + " hit=" + hit
+                    + " → " + (hit ? "第1页" : "非第1页"));
+            return hit ? CUR_HOME_P1 : CUR_HOME_NOT_P1;
+        } finally {
+            // A7：探测根节点用完即回收，消节点泄漏（targetSdk30 下 recycle 仍有效）
+            try { root.recycle(); } catch (Throwable ignored) { }
         }
-        if (st.launchers == null || !st.launchers.contains(pkg)) {
-            CardDebug.note(ctx, "reconnect probe 前台非桌面 pkg=" + pkg + " ⇒ 不该显示卡片");
-            return CUR_NOT_HOME;
-        }
-        String id = firstPageIdOf(pkg);
-        if (id == null) {
-            // 本机只认 Tomo / ELauncher 两套指纹。别家桌面没有 P1 判据 ⇒ 拿不准，
-            // 维持原行为（显示）——对未知桌面"藏"会让卡片再也回不来，方向反了。
-            CardDebug.note(ctx, "reconnect probe 桌面 " + pkg + " 无已知 P1 指纹 → 维持原行为");
-            return CUR_UNKNOWN;
-        }
-        boolean hit = hasVisibleNode(root, id);
-        CardDebug.note(ctx, "reconnect probe pkg=" + pkg + " id=" + id + " hit=" + hit
-                + " → " + (hit ? "第1页" : "非第1页"));
-        return hit ? CUR_HOME_P1 : CUR_HOME_NOT_P1;
     }
 
     /** 已知桌面 → 它的 P1 特征 id；不认识的桌面返回 null（= 拿不准） */

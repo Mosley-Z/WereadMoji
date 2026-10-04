@@ -230,6 +230,9 @@ public class StatsStore {
 
     public static void save(Context c, PeriodStats s) {
         if (s == null || s.baseTime <= 0) return;
+        // 🔴 B6：结构上不像统计回包（关键字段全缺）⇒ 判无效，**不覆盖**离线缓存
+        //（原先是"缺字段默认 0 + baseTime>0 通过校验" ⇒ 有效的旧缓存被全零数据覆盖）
+        if (s.incomplete) return;
         sp(c).edit()
                 .putString(dataKey(s.mode, s.baseTime), s.rawJson == null ? "" : s.rawJson)
                 .putLong(timeKey(s.mode, s.baseTime), s.fetchedAt)
