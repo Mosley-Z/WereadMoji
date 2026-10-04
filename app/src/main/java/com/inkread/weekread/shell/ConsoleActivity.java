@@ -19,6 +19,7 @@ import com.inkread.weekread.remote.HidKeepAliveService;
 import com.inkread.weekread.remote.HidLink;
 import com.inkread.weekread.remote.RemoteLinkManager;
 import com.inkread.weekread.remote.RemoteProtocol;
+import com.inkread.weekread.ui.ConnectPageView;
 import com.inkread.weekread.ui.FlipKeyView;
 import com.inkread.weekread.ui.InkTheme;
 import com.inkread.weekread.ui.StatusChipView;
@@ -30,6 +31,8 @@ import com.inkread.weekread.ui.StatusChipView;
  * <p>TASK-038 补交互：滑动翻页 / 长按连翻（间隔可调）/ 方向交换 / 上下排布 ——
  *   三项偏好落 {@link CardPrefs#isBtFlipSwap}/{@link CardPrefs#isBtFlipVertical}/{@link CardPrefs#getBtFlipRepeatMs}，
  *   与热点通道的方向设置**命名隔离、互不影响**。
+ * <p>TASK-040 补「连接」页：底部导航在「翻页 / 连接」两页之间切换；连接页 = 自检 + 设备列表 +
+ *   实时日志 + 可被发现 / 电池白名单入口（{@link ConnectPageView}）。
  *
  * <p>🔴 **只服务手机端**（{@code install_role=phone}）；阅读器端不实例化本类、本布局，行为零差异。
  * <p>🔴 发送一律走既有 {@link RemoteLinkManager#sendCommand(int)}（HID 优先分派，一行不改）。
@@ -37,9 +40,18 @@ import com.inkread.weekread.ui.StatusChipView;
  */
 public class ConsoleActivity extends Activity {
 
+    /** 🆕 TASK-040：ACTION_REQUEST_DISCOVERABLE 的请求码（与设置页 TASK-035 同款语义）。 */
+    private static final int REQ_BT_DISCOVERABLE = 3601;
+
     private StatusChipView chip;
     private FlipKeyView flip;
     private TextView gear;
+    private View flipPage;
+    private View connectScroll;
+    private ConnectPageView connectPage;
+    private TextView navFlip;
+    private TextView navConnect;
+    private boolean showingConnect = false;
 
     /**
      * HID 状态订阅（TASK-033 既有回调）。🔴 回调可能在 binder 线程 ⇒ 一律切主线程再改 View。
@@ -64,6 +76,31 @@ public class ConsoleActivity extends Activity {
         chip = (StatusChipView) findViewById(R.id.console_chip);
         flip = (FlipKeyView) findViewById(R.id.console_flip);
         gear = (TextView) findViewById(R.id.console_gear);
+        flipPage = findViewById(R.id.console_flip);
+        connectScroll = findViewById(R.id.console_connect_scroll);
+        connectPage = (ConnectPageView) findViewById(R.id.console_connect);
+        navFlip = (TextView) findViewById(R.id.console_nav_flip);
+        navConnect = (TextView) findViewById(R.id.console_nav_connect);
+
+        // 🆕 TASK-040：连接页——「让本机可被发现」由本 Activity 发 startActivityForResult
+        connectPage.setListener(new ConnectPageView.Listener() {
+            @Override
+            public void onRequestDiscoverable() {
+                requestDiscoverable();
+            }
+        });
+        navFlip.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showPage(false);
+            }
+        });
+        navConnect.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showPage(true);
+            }
+        });
 
         flip.setListener(new FlipKeyView.Listener() {
             @Override
@@ -75,7 +112,8 @@ public class ConsoleActivity extends Activity {
         chip.setListener(new StatusChipView.Listener() {
             @Override
             public void onChipTap() {
-                openConnectOrHint();
+                // 🆕 TASK-040：点胶囊 ⇒ 直接进「连接」页（自助排障），不再只是一句 Toast
+                showPage(true);
             }
 
             @Override
@@ -104,6 +142,12 @@ public class ConsoleActivity extends Activity {
     protected void onResume() {
         super.onResume();
         HidKeepAliveService.addListener(mHidListener);
+        // 🆕 TASK-040「保活自愈」：用户已启用「蓝牙遥控」却发现保活没在跑（进程被系统杀过 / 首次进遥控台）
+        //   ⇒ 在**前台**主动拉起（`start()` 幂等；FGS 必须在 App 前台时发起，见 HidKeepAliveService 注释）。
+        //   🔴 仅在用户开关为「开」时生效，绝不自作主张开启。
+        if (CardPrefs.isBtControlEnabled(this) && !HidKeepAliveService.isRunning()) {
+            HidKeepAliveService.start(this);
+        }
         applyFlipPrefs();      // 设置页可能改过（若将来暴露），回前台重灌一次
         refresh();
     }
@@ -142,6 +186,60 @@ public class ConsoleActivity extends Activity {
         }
         chip.setStatus(st, text);
         flip.setConnected(connected);
+        if (showingConnect && connectPage != null) {
+            connectPage.refresh();     // 🆕 TASK-040：连接页在前台时同步刷新
+        }
+    }
+
+    // ── 🆕 TASK-040：两页切换（翻页 / 连接）──
+
+    /** 在「翻页」页与「连接」页之间切换，并同步底部导航选中态（docs/09 §5.5）。 */
+    private void showPage(boolean connect) {
+        showingConnect = connect;
+        flipPage.setVisibility(connect ? View.GONE : View.VISIBLE);
+        connectScroll.setVisibility(connect ? View.VISIBLE : View.GONE);
+        navFlip.setTextColor(connect ? InkTheme.INK2 : InkTheme.BAMBOO);
+        navConnect.setTextColor(connect ? InkTheme.BAMBOO : InkTheme.INK2);
+        if (connect && connectPage != null) connectPage.refresh();
+    }
+
+    @Override
+    public void onBackPressed() {
+        // 在「连接」页时，返回先回「翻页」页（避免一按就退出遥控台）
+        if (showingConnect) {
+            showPage(false);
+            return;
+        }
+        super.onBackPressed();
+    }
+
+    /**
+     * 🆕 TASK-040：让本机「可被发现」（复用 TASK-035 路径）。
+     *
+     * <p>走系统标准弹窗 {@code ACTION_REQUEST_DISCOVERABLE}（**用户必须自己点「允许」**，第三方 App
+     * 无法静默开启）。⛔ 只让本机可被看见，**不做任何自动配对**。
+     */
+    private void requestDiscoverable() {
+        try {
+            Intent it = new Intent(android.bluetooth.BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE);
+            it.putExtra(android.bluetooth.BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300);
+            startActivityForResult(it, REQ_BT_DISCOVERABLE);
+        } catch (Throwable t) {
+            Toast.makeText(this, R.string.lab_bt_discoverable_fail, Toast.LENGTH_LONG).show();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_BT_DISCOVERABLE) {
+            if (resultCode > 0) {
+                Toast.makeText(this, getString(R.string.lab_bt_discoverable_ok, resultCode),
+                        Toast.LENGTH_LONG).show();
+            } else {
+                Toast.makeText(this, R.string.lab_bt_discoverable_denied, Toast.LENGTH_LONG).show();
+            }
+        }
     }
 
     // ── TASK-038：翻页交互偏好 ──
@@ -280,10 +378,5 @@ public class ConsoleActivity extends Activity {
         if (!ok) {
             Toast.makeText(this, R.string.console_not_connected, Toast.LENGTH_SHORT).show();
         }
-    }
-
-    /** TASK-037 阶段：连接管理尚未进遥控台（→ TASK-040），先给去设置的路标。 */
-    private void openConnectOrHint() {
-        Toast.makeText(this, R.string.console_connect_hint, Toast.LENGTH_LONG).show();
     }
 }

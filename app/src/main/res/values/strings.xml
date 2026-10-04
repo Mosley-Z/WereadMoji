@@ -339,7 +339,6 @@
     <string name="console_st_connected">已连接 %1$s</string>
     <!-- 翻页键：未连接时点了给出路标（不静默失败） -->
     <string name="console_not_connected">还没连上墨水屏：先开启「蓝牙控制」并完成一次性配对</string>
-    <string name="console_connect_hint">连接与配对：设置 → 实验室 → 蓝牙控制</string>
     <!-- 🆕 TASK-038：翻页交互（换向 / 排布 / 连翻间隔） -->
     <string name="console_swap_on">已交换方向：左/上 = 下一页</string>
     <string name="console_swap_off">已恢复方向：右/下 = 下一页</string>
@@ -355,4 +354,43 @@
     <string name="console_opt_volkey">音量键</string>
     <string name="console_volkey_enable">用手机音量键翻页（蓝牙控制开启时生效）</string>
     <string name="console_volkey_note">开启后占用手机音量键：翻页期间本机音量调不了，不用时关掉即可恢复。手机熄屏后能否继续按键翻页，本机尚未实测。</string>
+    <!-- 🆕 TASK-040：连接页（底部导航 + 自检 + 设备列表 + 日志 + 入口 + 引导） -->
+    <string name="console_nav_flip">翻页</string>
+    <string name="console_nav_connect">连接</string>
+    <string name="console_conn_selfcheck">系统自检</string>
+    <string name="console_conn_local">本机蓝牙</string>
+    <string name="console_conn_bonded">已配对设备</string>
+    <string name="console_conn_log">连接日志</string>
+    <string name="console_conn_entries">快捷入口</string>
+    <string name="console_conn_guide">怎么连上</string>
+    <string name="console_conn_refresh">刷新设备列表</string>
+    <string name="console_conn_discoverable">让本机可被发现（配对用）</string>
+    <string name="console_conn_battery">电池优化白名单（保活）</string>
+    <string name="console_conn_battery_tip">打开后，在本机列表里找到「微读墨记」，选「不优化」——可减少系统在后台把蓝牙遥控掐掉。</string>
+    <string name="console_conn_battery_fallback">本机没有直达页，已打开系统设置；请到「应用 → 微读墨记 → 电池」里选择「不优化」。</string>
+    <string name="console_conn_battery_fail">无法打开电池优化设置，请到系统「设置 → 应用 → 微读墨记 → 电池」手动设置。</string>
+    <string name="console_conn_hid_cap">蓝牙键盘能力</string>
+    <string name="console_conn_cap_ok">可用</string>
+    <string name="console_conn_cap_rom_no">本机系统未提供（请改用热点翻页）</string>
+    <string name="console_conn_cap_sdk_no">本机版本过低（需 Android 9 及以上）</string>
+    <string name="console_conn_reg">注册状态</string>
+    <string name="console_conn_reg_yes">已注册</string>
+    <string name="console_conn_reg_no">未注册</string>
+    <string name="console_conn_link">连接状态</string>
+    <string name="console_conn_no_adapter">本机没有蓝牙适配器。</string>
+    <string name="console_conn_bt_name">蓝牙名</string>
+    <string name="console_conn_bt_addr">蓝牙地址</string>
+    <string name="console_conn_bt_state">蓝牙开关</string>
+    <string name="console_conn_bt_on">已开启</string>
+    <string name="console_conn_bt_off">未开启</string>
+    <string name="console_conn_bt_privacy">（以上仅在本机显示，不会上传。）</string>
+    <string name="console_conn_bonded_empty">还没有已配对的设备。请先在系统「设置 · 蓝牙」里与墨水屏配对一次。</string>
+    <string name="console_conn_how_connect">怎么连</string>
+    <string name="console_conn_reconnect_hint">「%1$s」的连接只能由墨水屏一侧发起：请在墨水屏「设置 · 已连接的设备 → 之前连接的设备」里点本机蓝牙名。</string>
+    <string name="console_conn_log_open">— 打开连接页 —</string>
+    <string name="console_conn_log_empty">（暂无事件：注册 / 连接 / 断开时会实时出现在这里）</string>
+    <string name="console_conn_guide_none">已连上，无需处理。翻页页可直接使用。</string>
+    <string name="console_conn_guide_off">🔧 蓝牙遥控尚未启用：点右上角 ⚙ 进入设置，打开「蓝牙遥控」开关即可开始使用。</string>
+    <string name="console_conn_guide_starting">⏳ 蓝牙遥控正在启动，稍候片刻…（若久未就绪，请回设置页重新打开一次开关。）</string>
+    <string name="console_conn_guide_no_profile">⚠ 本机系统未提供蓝牙键盘（HID）能力，无法作遥控器使用；可改用热点通道或换一台手机。</string>
 </resources>

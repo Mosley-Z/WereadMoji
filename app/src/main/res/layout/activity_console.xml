@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  V1.2.0-beta · 手机端「遥控台」布局骨架（TASK-037）。
+  V1.2.0-beta · 手机端「遥控台」布局骨架（TASK-037 基座 + TASK-040 连接页）。
   ⚠️ 仅 install_role=phone 时由 ConsoleActivity 加载；阅读器端不使用本布局（零差异）。
   视觉 token 见 docs/09_手机端遥控台UI规范.md。
 -->
@@ -39,7 +39,7 @@
             android:background="?android:attr/selectableItemBackground" />
     </LinearLayout>
 
-    <!-- 内容区：翻页页（主）② 连接页（TASK-040 追加） -->
+    <!-- 内容区：翻页页（主）/ 连接页（TASK-040）—— 二者互斥显示 -->
     <FrameLayout
         android:id="@+id/console_content"
         android:layout_width="match_parent"
@@ -50,5 +50,47 @@
             android:id="@+id/console_flip"
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
+
+        <ScrollView
+            android:id="@+id/console_connect_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone"
+            android:fillViewport="true">
+
+            <com.inkread.weekread.ui.ConnectPageView
+                android:id="@+id/console_connect"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+        </ScrollView>
     </FrameLayout>
+
+    <!-- 底部导航（docs/09 §5.5）：翻页 / 连接 -->
+    <LinearLayout
+        android:id="@+id/console_nav"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:orientation="horizontal"
+        android:background="@color/ink_paper2">
+
+        <TextView
+            android:id="@+id/console_nav_flip"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="@string/console_nav_flip"
+            android:textColor="@color/ink_bamboo"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/console_nav_connect"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="@string/console_nav_connect"
+            android:textColor="@color/ink_text2"
+            android:textSize="15sp" />
+    </LinearLayout>
 </LinearLayout>
