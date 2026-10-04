@@ -1477,6 +1477,18 @@
                             android:textColor="#FF000000"
                             android:textSize="14sp" />
 
+                        <!-- 🆕 TASK-034：断链恢复引导 —— 只在「已注册但未连接」时显示（refreshBtUi 控制） -->
+                        <TextView
+                            android:id="@+id/tv_bt_reconnect_guide"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/lab_bt_reconnect_guide"
+                            android:textColor="#FFB00020"
+                            android:textSize="13sp"
+                            android:visibility="gone" />
+
                         <!-- 测试翻页：连接成功后立即可验，也兼作"试一下"入口 -->
                         <LinearLayout
                             android:id="@+id/ll_bt_test"

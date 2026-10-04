@@ -5,12 +5,15 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothProfile;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.util.Log;
+
+import com.inkread.weekread.R;
 
 /**
  * TASK-032 · T1 蓝牙 HID 注册保活前台服务。
@@ -63,6 +66,10 @@ public class HidKeepAliveService extends Service {
 
     private HidLink mLink;
     private PowerManager.WakeLock mWake;
+    /** 🆕 TASK-034：当前通知正文（连态变化时更新，A1「在通知给出提示」）。 */
+    private String mNotiText;
+    /** 🆕 TASK-034：服务已销毁标志 —— 阻断 `stop()` 触发的**迟到 HID 回调**再重投通知。 */
+    private volatile boolean mDestroyed;
 
     /** 运行中实例（未运行 = null）。 */
     public static HidKeepAliveService instance() {
@@ -125,14 +132,31 @@ public class HidKeepAliveService extends Service {
         mLink.setListener(new HidLink.Listener() {
             @Override public void onRegistered(boolean registered, BluetoothDevice device) {
                 Log.i(TAG, "registered=" + registered);
+                // 🆕 TASK-034：注册态 → 通知正文（A1）
+                updateNotification(getString(registered
+                        ? R.string.lab_bt_noti_registered : R.string.lab_bt_noti_init));
                 notifyListeners();   // 🆕 TASK-033：驱动设置页状态行
             }
             @Override public void onConnectionState(BluetoothDevice device, int state) {
                 Log.i(TAG, "conn state=" + state);
+                // 🆕 TASK-034：连态变化 → 通知正文（断开时给「去墨水屏点连接」引导，A1/A2）
+                if (state == BluetoothProfile.STATE_CONNECTED) {
+                    String name = (device == null) ? ""
+                            : (device.getName() != null ? device.getName() : device.getAddress());
+                    updateNotification(getString(R.string.lab_bt_noti_connected, name));
+                } else if (state == BluetoothProfile.STATE_DISCONNECTED) {
+                    updateNotification(getString(R.string.lab_bt_noti_disconnected));
+                }
                 notifyListeners();   // 🆕 TASK-033
             }
         });
-        mLink.start();
+        boolean started = mLink.start();
+        if (!started) {
+            // 🆕 TASK-034：ROM 无 HID profile ⇒ start() 返回 false 且不会有任何后续回调
+            //   （onServiceConnected 不会来）⇒ 主动通知 UI 显式提示「本机不支持」，别停在假「等待连接」。
+            Log.w(TAG, "HID start 失败（本机不支持或 ROM 无 HID profile）⇒ 通知 UI");
+            notifyListeners();
+        }
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
@@ -142,8 +166,14 @@ public class HidKeepAliveService extends Service {
 
     @Override public void onDestroy() {
         Log.i(TAG, "onDestroy");
+        // 🆕 TASK-034（关键）：**先**置销毁位 + 摘监听，再 stop()。
+        //   🔴 真机铁证：`unregisterApp()` 触发的 `onAppStatusChanged(registered=false)` 会**晚于 onDestroy**
+        //   到达（实测 +16ms）⇒ 若清完通知才收到该回调，会被 `updateNotification()` **重新投递**，
+        //   导致停用后通知栏仍常驻、且用户划不掉（ongoing）。
+        mDestroyed = true;
         sInstance = null;
         if (mLink != null) {
+            mLink.setListener(null);
             mLink.stop();
             mLink = null;
         }
@@ -151,6 +181,12 @@ public class HidKeepAliveService extends Service {
             try { mWake.release(); } catch (Throwable ignored) {}
         }
         mWake = null;
+        // 🆕 TASK-034：停用即清除常驻通知（`stopForeground(remove)` + 显式 cancel）。
+        try { stopForeground(true); } catch (Throwable ignored) {}
+        try {
+            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (nm != null) nm.cancel(NOTI_ID);
+        } catch (Throwable ignored) {}
         notifyListeners();   // 🆕 TASK-033：服务已停 ⇒ 设置页状态行回「未启用」
         super.onDestroy();
     }
@@ -158,31 +194,52 @@ public class HidKeepAliveService extends Service {
     /** 起前台 + 通知（API 26+ 需 channel）。targetSdk=30 ⇒ FGS 通知走 legacy 行为。 */
     private void startForegroundCompat() {
         try {
-            Notification n;
             if (Build.VERSION.SDK_INT >= 26) {
                 NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
                 if (nm != null && nm.getNotificationChannel(CHANNEL_ID) == null) {
                     nm.createNotificationChannel(new NotificationChannel(
                             CHANNEL_ID, "蓝牙遥控（保活）", NotificationManager.IMPORTANCE_LOW));
                 }
-                n = new Notification.Builder(this, CHANNEL_ID)
-                        .setContentTitle("蓝牙遥控运行中")
-                        .setContentText("保持手机蓝牙键盘注册（息屏可用）")
-                        .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
-                        .setOngoing(true)
-                        .build();
-            } else {
-                n = new Notification.Builder(this)
-                        .setContentTitle("蓝牙遥控运行中")
-                        .setContentText("保持手机蓝牙键盘注册（息屏可用）")
-                        .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
-                        .setOngoing(true)
-                        .build();
             }
-            startForeground(NOTI_ID, n);
+            mNotiText = getString(R.string.lab_bt_noti_init);
+            startForeground(NOTI_ID, buildNotification(mNotiText));
         } catch (Throwable t) {
             Log.w(TAG, "startForeground 异常 " + t);
         }
+    }
+
+    /**
+     * 🆕 TASK-034：更新前台通知正文（连态变化时调用）。
+     *
+     * <p>NotificationManager 线程安全 ⇒ 可直接在 HID 的 binder 回调线程调用，无需切主线程。
+     */
+    private void updateNotification(String text) {
+        if (text == null || mDestroyed) return;   // 🆕 TASK-034：已销毁 ⇒ 不再投递（防迟到回调重投）
+        mNotiText = text;
+        try {
+            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (nm != null) nm.notify(NOTI_ID, buildNotification(text));
+        } catch (Throwable t) {
+            Log.w(TAG, "updateNotification 异常 " + t);
+        }
+    }
+
+    /** 构造常驻通知（标题固定，正文按连态变）。 */
+    private Notification buildNotification(String text) {
+        if (Build.VERSION.SDK_INT >= 26) {
+            return new Notification.Builder(this, CHANNEL_ID)
+                    .setContentTitle("蓝牙遥控运行中")
+                    .setContentText(text)
+                    .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+                    .setOngoing(true)
+                    .build();
+        }
+        return new Notification.Builder(this)
+                .setContentTitle("蓝牙遥控运行中")
+                .setContentText(text)
+                .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+                .setOngoing(true)
+                .build();
     }
 
     private void acquireWakeLock() {

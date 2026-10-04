@@ -18,9 +18,9 @@
 | `RemoteInjector` | 注入层：`dispatchGesture` **点击边界热区**（下一页=点右 `x=425`、上一页=点左 `x=55`，y=400；左右各 55px 边界**不受正文划线影响**，方案 D 真机标定 `验证记录/118`）；派发走**方案 S = 串行队列**（有手势在飞则入队，等 `onCompleted` 再派发下一条，不丢指令，见 `验证记录/110` §10、`验证记录/111`）。⚠️ 旧「滑动」几何 `380↔100` 因墨水屏把 `dispatchGesture` 判成 tap ⇒ 弹划线面板，已弃用（`验证记录/117`） |
 | `RemoteKeyService` | 独立无障碍服务（配置 `res/xml/a11y_remote_service.xml`）：phone 捕获音量键 / eink 收到指令注入 |
 | `ShakeDetector` | 🆕 TASK-029：phone 的**第二条捕获路径** —— 50Hz 加速度计 → 去重力 → 双峰反转 → 发翻页指令（**零新增权限**） |
-| `HidLink` | 🆕 TASK-032：**T1 蓝牙 HID 外设链路**（第 3 种模型，见 `ADR-012`）—— 手机注册 `BluetoothHidDevice` 直接给墨水屏 OS 发按键。🆕 TASK-033 起对外暴露 `isHostConnected()` / `pagePrev()` / `pageNext()`（供 `RemoteLinkManager` 通道分派）。⚠️ `SDK_INT<28` 或不支持 ⇒ `supported()=false`，fail-closed |
+| `HidLink` | 🆕 TASK-032：**T1 蓝牙 HID 外设链路**（第 3 种模型，见 `ADR-012`）—— 手机注册 `BluetoothHidDevice` 直接给墨水屏 OS 发按键。🆕 TASK-033 起对外暴露 `isHostConnected()` / `pagePrev()` / `pageNext()`（供 `RemoteLinkManager` 通道分派）。🆕 TASK-034 加 `profileUnavailable()`（ROM 无 HID profile 显式上抛）/ `everConnected()`（区分「首次待连」与「连过又断」）。⚠️ `SDK_INT<28` 或不支持 ⇒ `supported()=false`，fail-closed |
 | `HidConst` | 🆕 TASK-033：**HID 常量唯一来源**（`PROFILE_HID_DEVICE=19` / `SUBCLASS1_COMBO=0xC0` / `REPORT_ID_KEYBOARD=1` / `KEY_PAGE_UP=0x4B` / `KEY_PAGE_DOWN=0x4E` / 消费者音量键 `0xE9`/`0xEA`）—— 避免 `HidLink` 与调用方各写一份魔数 |
-| `HidKeepAliveService` | 🆕 TASK-032：**HID 注册保活前台服务**（`foregroundServiceType=connectedDevice` + `PARTIAL_WAKE_LOCK`）—— 官方明文 + 真机铁证：注册在退后台/息屏时被自动注销 ⇒ 必须前台服务保活。只在手机端启用「蓝牙控制」时启动（默认零差异）。🆕 TASK-033 加静态入口 `instance()`/`link()`/`isRunning()`/`start()`/`stop()` + `StateListener`（设置页订阅刷状态行） |
+| `HidKeepAliveService` | 🆕 TASK-032：**HID 注册保活前台服务**（`foregroundServiceType=connectedDevice` + `PARTIAL_WAKE_LOCK`）—— 官方明文 + 真机铁证：注册在退后台/息屏时被自动注销 ⇒ 必须前台服务保活。只在手机端启用「蓝牙控制」时启动（默认零差异）。🆕 TASK-033 加静态入口 `instance()`/`link()`/`isRunning()`/`start()`/`stop()` + `StateListener`（设置页订阅刷状态行）。🆕 TASK-034 通知正文随连态更新（等待连接 / 已连接 X / 已断开·请在墨水屏点「连接」） |
 
 ## 🆕 TASK-029：手机端晃动翻页（V1.0.4-beta）
 
@@ -70,6 +70,29 @@
 - **互斥**：开「蓝牙控制」时先 `stopSession()` 结束 TCP 会话（两条通道不并存）。
 - **默认零差异**：`bt_control_enabled` 默认 `false` ⇒ 不启服务、无通知、行为与旧版一致。
 - **子标签**：`lab_tab_remote` 改名「热点翻页」+ 新增 `lab_tab_bt`「蓝牙控制」（手机端与阅读器端都装配）。
+
+## 🆕 TASK-034：连接生命周期与恢复（断链探测 + ≤2 步引导）
+
+**一句话**：HID 链路断开时，设置页状态行 + 常驻通知**双双变化**给出提示，并给出**≤2 步**的恢复引导
+（🔴 **墨水屏「设置 · 已连接的设备」→「之前连接的设备」→ 点本机蓝牙名**）—— 因为**重连只能由墨水屏
+一侧发起**（手机 `connect()` 恒 PAGE_TIMEOUT）。
+
+- **断链探测**（`HidLink`）：现有 `onConnectionStateChanged(state→0)` 回调 ⇒ 经 `HidKeepAliveService`
+  的 `StateListener` 推到设置页 `refreshBtUi()`，**不轮询、不常驻探测**。
+- **状态四态**（手机端状态行）：未启用 / 等待墨水屏连接（从未连过）/ **已断开（连过又断）** / 已连接 X。
+  「连过又断」由 `HidLink.everConnected()` 区分。
+- **恢复引导**：`tv_bt_reconnect_guide`（红字）**仅**在「已注册但未连接」时亮出；常驻通知正文同步为
+  「已断开 · 请在墨水屏点「连接」」。
+- 🔴 **恢复入口经真机标定（2026-10-04）**：S4 的**「蓝牙」设置页不列已配对设备**（该 ROM 精简）⇒
+  入口不在那里，而在**「已连接的设备」→「之前连接的设备」**（点设备名即重连，已实测 `state=2` 恢复）。
+  文案已按此订正（原写「蓝牙设置里点连接」= 误导）。
+- 🆕 **A5 缺口修复**：`HidLink.profileUnavailable()` —— ROM 虽为 API 28+ 却无 HID profile 时
+  （`getProfileProxy` 返回 false）⇒ 显式提示「本机不支持」+ 开关置灰，不再永远停在「等待连接」。
+- 🆕 **通知生命周期修复**：`nm.notify()` 重投的 ongoing 通知，**仅靠服务销毁不会撤掉**
+  （真机实测：停用后通知栏仍常驻且划不掉）⇒ `onDestroy` 显式 `stopForeground(true)` + `nm.cancel()`。
+- **默认零差异**：仅「蓝牙控制」启用时才启服务；未启用 ⇒ 无通知、无提示、无常驻探测。
+- 🔴 **已知缺口（转 TASK-035）**：首次配对需**手机进入「可被发现」**（`ACTION_REQUEST_DISCOVERABLE`），
+  本卡**未实现**（原 `lab_bt_pair_tip` 曾写"打开开关即进入可被发现"= 与代码不符，已改为如实表述）。
 
 ## 关键约束（🔴 硬约束）
 

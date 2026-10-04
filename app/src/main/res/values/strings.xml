@@ -193,10 +193,18 @@
     <string name="lab_bt_test_prev">上一页</string>
     <string name="lab_bt_test_next">下一页</string>
     <string name="lab_bt_test_tip">连接成功后，点上面的「上一页 / 下一页」可立即验证：墨水屏上的微信读书应跟着翻页（不会弹划线/想法页）。</string>
-    <string name="lab_bt_pair_tip">首次使用要配对一次：① 先打开上面的开关（本机进入「可被发现」）；② 在墨水屏的系统「设置 · 蓝牙」里选「与新设备配对」，扫描并点本机的蓝牙名；③ 两边确认配对码。配对一次后，以后打开开关会由墨水屏自动连回。</string>
-    <string name="lab_bt_reconnect_tip">若一直连不上：请在墨水屏的蓝牙设置里，点本机名字旁的「连接」（重连由墨水屏一侧发起）。</string>
+    <string name="lab_bt_pair_tip">首次使用要配对一次：① 先打开上面的开关（本机注册为蓝牙键盘）；② 在墨水屏的系统「设置 · 蓝牙」里选「与新设备配对」，扫描并点本机的蓝牙名；③ 两边确认配对码。配对一次后，以后打开开关，多数情况下墨水屏会自动连回。</string>
+    <string name="lab_bt_reconnect_tip">若一直连不上：请在墨水屏的「设置 · 已连接的设备」→「之前连接的设备」里，点本机蓝牙名即可连回（重连由墨水屏一侧发起）。</string>
     <string name="lab_bt_not_conflict_tip">「蓝牙控制」与「热点翻页」是两条独立通道。开启「蓝牙控制」时，本机原有的热点遥控会话会自动结束，避免两个通道打架。</string>
     <string name="lab_bt_eink_note">本机 = 墨水屏端：无需开启「蓝牙控制」，也不影响被手机端的蓝牙控制（翻页键由系统直接接收，不经本 App）。这一页只是说明，不开启本项就没有任何后台行为。</string>
+    <!-- 🆕 TASK-034：断链探测 + 恢复引导（含 ROM 无 HID profile 的显式提示） -->
+    <string name="lab_bt_status_lost">已断开（等待墨水屏重连）</string>
+    <string name="lab_bt_reconnect_guide">👉 恢复方法：墨水屏上打开「设置 · 已连接的设备」，在「之前连接的设备」里点本机蓝牙名，即可连回。重连只能由墨水屏一侧发起，手机这边点不动。</string>
+    <string name="lab_bt_noprofile">⚠ 本机系统未提供「蓝牙控制」所需的蓝牙键盘能力，开关不可用。翻页请改用「热点翻页」。</string>
+    <string name="lab_bt_noti_init">保持手机蓝牙键盘注册（息屏可用）</string>
+    <string name="lab_bt_noti_registered">等待墨水屏连接…</string>
+    <string name="lab_bt_noti_connected">已连接 %1$s</string>
+    <string name="lab_bt_noti_disconnected">已断开 · 请在墨水屏点「连接」</string>
     <string name="main_remote_notice">本机已设为「手机端遥控器」，桌面卡片功能已隐藏。\n要查看阅读数据或改回设置，请点下面的「设置」，到「实验室」里调整角色。</string>
 
     <!-- 🆕 TASK-022（V1.0.1-beta）：实验室 · 锁屏密码（应用级软锁）。

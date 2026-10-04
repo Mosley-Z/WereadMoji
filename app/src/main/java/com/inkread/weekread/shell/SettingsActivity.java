@@ -165,6 +165,7 @@ public class SettingsActivity extends Activity {
     private CheckBox cbBtEnabled;        // 启用开关
     private TextView tvBtUnsupported;    // 「本机不支持」红字（SDK<28 或 ROM 无 HID profile）
     private TextView tvBtStatus;         // 「状态：…」
+    private TextView tvBtReconnectGuide; // 🆕 TASK-034：断链恢复引导（仅「已注册未连接」时显示）
     private View llBtTest;               // 测试翻页行（连接后才显示）
     private Button btnBtTestPrev;
     private Button btnBtTestNext;
@@ -290,6 +291,7 @@ public class SettingsActivity extends Activity {
         cbBtEnabled = (CheckBox) findViewById(R.id.cb_bt_enabled);
         tvBtUnsupported = (TextView) findViewById(R.id.tv_bt_unsupported);
         tvBtStatus = (TextView) findViewById(R.id.tv_bt_status);
+        tvBtReconnectGuide = (TextView) findViewById(R.id.tv_bt_reconnect_guide);
         llBtTest = findViewById(R.id.ll_bt_test);
         btnBtTestPrev = (Button) findViewById(R.id.btn_bt_test_prev);
         btnBtTestNext = (Button) findViewById(R.id.btn_bt_test_next);
@@ -1136,19 +1138,27 @@ public class SettingsActivity extends Activity {
         cbBtEnabled.setChecked(CardPrefs.isBtControlEnabled(this));
         mBtUiSyncing = false;
 
-        // 不支持（SDK<28 ⇒ 无 BluetoothHidDevice 类）：红字提示 + 开关置灰
-        tvBtUnsupported.setVisibility(supported ? View.GONE : View.VISIBLE);
-        cbBtEnabled.setEnabled(supported);
-
-        // 状态行：以「服务是否运行 + HID 主机是否连接」为准（真值，不读偏好）
+        // 状态判定：以「服务是否运行 + HID 主机是否连接」为准（真值，不读偏好）
         HidLink hid = HidKeepAliveService.link();
         boolean running = HidKeepAliveService.isRunning() && hid != null;
         boolean connected = running && hid.isHostConnected();
+        // 🆕 TASK-034（A5 缺口修复）：SDK 够但 ROM 裁掉了 HID profile ⇒ 显式提示「本机不支持」，
+        //    否则开关打开后会永远停在「等待连接」，是假象。
+        boolean noProfile = supported && running && hid != null && hid.profileUnavailable();
+        boolean usable = supported && !noProfile;
+
+        // 不可用（SDK<28 或 ROM 无 HID profile）：红字提示 + 开关置灰
+        tvBtUnsupported.setText(noProfile ? R.string.lab_bt_noprofile : R.string.lab_bt_unsupported);
+        tvBtUnsupported.setVisibility(usable ? View.GONE : View.VISIBLE);
+        cbBtEnabled.setEnabled(usable);
+
         String status;
-        if (!running) {
-            status = getString(R.string.lab_bt_status_off);
+        if (!running || noProfile) {
+            status = getString(R.string.lab_bt_status_off);          // 未启用（或本机不可用）
         } else if (!connected) {
-            status = getString(R.string.lab_bt_status_registered);
+            // 🆕 TASK-034：连过又断 ⇒「已断开」；从未连过 ⇒「等待连接」——两者引导语不同
+            status = getString(hid.everConnected()
+                    ? R.string.lab_bt_status_lost : R.string.lab_bt_status_registered);
         } else {
             android.bluetooth.BluetoothDevice host = hid.host();
             String name = (host == null) ? ""
@@ -1156,6 +1166,9 @@ public class SettingsActivity extends Activity {
             status = getString(R.string.lab_bt_status_connected, name);
         }
         tvBtStatus.setText(getString(R.string.lab_bt_status_prefix) + status);
+
+        // 🆕 TASK-034：断链恢复引导 —— 仅「已注册但未连接（且本机可用）」时亮出（A1/A2，≤2 步恢复）
+        tvBtReconnectGuide.setVisibility((usable && running && !connected) ? View.VISIBLE : View.GONE);
 
         // 测试翻页行：仅"已连接"才露（未连无意义）
         llBtTest.setVisibility(connected ? View.VISIBLE : View.GONE);

@@ -64,6 +64,11 @@ public class HidLink {
     private volatile boolean mRunning;
     private Listener mListener;
 
+    /** 🆕 TASK-034：ROM 无 HID Device profile（{@code getProfileProxy} 返回 false）⇒ 显式上抛「本机不支持」。 */
+    private volatile boolean mProfileUnavailable;
+    /** 🆕 TASK-034：本次运行周期内是否成功连接过主机（区分「首次待连」与「连过又断」）。 */
+    private volatile boolean mEverConnected;
+
     /** registerApp 需要一个 Executor：直接同步执行即可（回调本身在 binder 线程）。 */
     private final Executor mExec = new Executor() {
         @Override public void execute(Runnable r) { r.run(); }
@@ -100,6 +105,27 @@ public class HidLink {
         return mHid != null && mHost != null;
     }
 
+    /**
+     * 🆕 TASK-034：本机 ROM **无 HID Device profile**（{@code getProfileProxy} 返回 false）。
+     *
+     * <p>与 {@link #supported()}（只查 SDK 版本）互补：个别 ROM 虽为 API 28+，却裁掉了 HID profile，
+     * 此时 {@code start()} 会返回 false。UI 据此显式提示「本机不支持」，避免开关打开却永远停在
+     * 「等待连接」的假象（本卡 A5 缺口修复）。
+     */
+    public boolean profileUnavailable() {
+        return mProfileUnavailable;
+    }
+
+    /**
+     * 🆕 TASK-034：本次运行周期内是否**曾连上**主机。
+     *
+     * <p>用于断链提示：区分「还没连过（首次待连）」与「连过又断了（需恢复）」——两者给用户的
+     * 引导语不同（本卡 A1/A2）。
+     */
+    public boolean everConnected() {
+        return mEverConnected;
+    }
+
     /** 发送一次「上一页」（键盘 PageUp）。@return true = down 已受理。 */
     public boolean pagePrev() {
         return sendKey(HidConst.KEY_PAGE_UP);
@@ -131,6 +157,9 @@ public class HidLink {
         Log.i(TAG, "getProfileProxy(HID_DEVICE) returned " + ok);
         if (!ok) {
             Log.w(TAG, "ROM 无 HID Device profile（fail-closed）");
+            mProfileUnavailable = true;   // 🆕 TASK-034：显式上抛（A5 缺口修复）
+        } else {
+            mProfileUnavailable = false;
         }
         return ok;
     }
@@ -146,6 +175,8 @@ public class HidLink {
         }
         mHid = null;
         mHost = null;
+        mProfileUnavailable = false;   // 🆕 TASK-034：停用后复位，下次启动重新探测
+        mEverConnected = false;        // 🆕 TASK-034
     }
 
     private final BluetoothProfile.ServiceListener mProxy = new BluetoothProfile.ServiceListener() {
@@ -153,6 +184,7 @@ public class HidLink {
             Log.i(TAG, "proxyConnected profile=" + profile);
             if (profile == PROFILE_HID_DEVICE && proxy instanceof BluetoothHidDevice) {
                 mHid = (BluetoothHidDevice) proxy;
+                mProfileUnavailable = false;   // 🆕 TASK-034：proxy 到了 ⇒ profile 确实可用
                 register();
             }
         }
@@ -181,6 +213,7 @@ public class HidLink {
                         + (d == null ? "null" : d.getAddress()) + " state=" + state);
                 if (state == BluetoothProfile.STATE_CONNECTED) {
                     mHost = d;
+                    mEverConnected = true;   // 🆕 TASK-034：断链提示据此区分「首次待连」与「连过又断」
                 } else if (state == BluetoothProfile.STATE_DISCONNECTED) {
                     mHost = null;
                 }
