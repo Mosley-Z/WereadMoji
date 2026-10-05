@@ -17,6 +17,7 @@ import com.inkread.weekread.remote.RemoteKeyService;
 import com.inkread.weekread.remote.RemoteLinkManager;
 import com.inkread.weekread.remote.RemoteRole;
 import com.inkread.weekread.remote.ShakeDetector;
+import com.inkread.weekread.ui.InkTheme;
 import com.inkread.weekread.ui.SegTabView;
 import com.inkread.weekread.update.ApkInstaller;
 
@@ -218,6 +219,12 @@ public class SettingsActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // 🆕 TASK-041：手机端 + 深色 ⇒ 换深色主题（顶栏/系统装饰一并转深）。
+        //   🔴 必须在 setContentView 之前调用，否则不生效。reader 端不满足条件 ⇒ 主题不变（零差异）。
+        if (CardPrefs.getInstallRole(this) == CardPrefs.INSTALL_ROLE_PHONE
+                && CardPrefs.isPhoneDarkMode(this)) {
+            setTheme(R.style.Theme_WereadMoji_Settings_Dark);
+        }
         setContentView(R.layout.settings_layout);
 
         etKey = (EditText) findViewById(R.id.et_key);
@@ -1021,6 +1028,7 @@ public class SettingsActivity extends Activity {
                 CardPrefs.setInstallRole(SettingsActivity.this, role);
                 bindLabTabs();        // 实验室可见子标签随之变化
                 refreshBtUi();        // 🆕 TASK-033：蓝牙控制页按新角色重刷（手机端控件块 ↔ 墨水屏端说明）
+                applyDarkTheme();     // 🆕 TASK-041：角色变化影响深色适用范围（phone 才可能深色）
                 Toast.makeText(SettingsActivity.this, R.string.install_role_changed,
                         Toast.LENGTH_LONG).show();
             }
@@ -1028,6 +1036,9 @@ public class SettingsActivity extends Activity {
 
         // 首次进页即按角色定一次显隐（phone 角色要立刻隐藏「桌面卡片」分区）
         refreshRoleUi();
+
+        // 🆕 TASK-041：进页按偏好着色（仅 phone + phone_dark_mode 生效；否则整段不动 ⇒ 零差异）
+        applyDarkTheme();
 
         // ── 🆕 TASK-031：从主入口以「手机端」路由进来时，直接定位到「实验室」页 ──
         // 🔴 SegTabView.setSelected 同值早退、不回调 listener ⇒ 必须手动走一次 showTopPage()。
@@ -1053,6 +1064,196 @@ public class SettingsActivity extends Activity {
         ((ScrollView) findViewById(R.id.sv_settings)).scrollTo(0, 0);
         // 进实验室页时刷一次角色/状态显示 —— 不轮询、不常驻（会话状态由 Listener 推）
         if (index == 2) refreshRoleUi();
+    }
+
+    /**
+     * 🆕 TASK-041：按 {@code install_role=phone + phone_dark_mode} **运行时递归染色**整个设置页。
+     *
+     * <p>为什么不用 {@code setTheme()} / {@code values-night}：本页是**原生 XML**，颜色是**硬编码
+     * 十六进制**（如 {@code #FF000000}），主题属性无法覆盖硬编码值。故采用**递归遍历视图树 +
+     * 颜色映射**：把已知的"亮色键"替换为对应深色值，其余颜色不动。
+     *
+     * <p>映射（亮 → 深，来源 docs/09 §2.1）：
+     * <ul>
+     *   <li>{@code #FF000000}（正文/标题/控件文字 · buttonTint） → {@code #E9E4D8}</li>
+     *   <li>{@code #FF3C3C3C}（说明文字） → {@code #B3ADA1}</li>
+     *   <li>{@code #FF6A6A6A}（次要说明） → {@code #B3ADA1}</li>
+     *   <li>{@code #FF9A9A9A}（占位/灰字） → {@code #7E8894}</li>
+     *   <li>{@code #FFFFFFFF}（页底） → {@code #070A0F}；仅对"容器背景"生效</li>
+     *   <li>{@code #FFD8D8D8} / {@code #FFE0E0E0}（分隔线） → {@code #1CE9E4D8}</li>
+     * </ul>
+     *
+     * <p>🔴 **只对 phone + 深色启用**；reader 分支**一行不改**（验收 A6）。深色关闭时本方法直接返回，
+     * 不改动任何颜色 —— 保证亮色下与改造前**逐像素一致**。
+     */
+    private void applyDarkTheme() {
+        boolean dark = CardPrefs.getInstallRole(this) == CardPrefs.INSTALL_ROLE_PHONE
+                && CardPrefs.isPhoneDarkMode(this);
+        // 顶部两枚页签控件（自绘）——总是显式同步（dark=false 时回到亮色，避免从深色切回残留）
+        View segTop = findViewById(R.id.seg);
+        View segLab = findViewById(R.id.seg_lab);
+        if (segTop instanceof SegTabView) ((SegTabView) segTop).setDark(dark);
+        if (segLab instanceof SegTabView) ((SegTabView) segLab).setDark(dark);
+        if (!dark) return;            // 🔴 亮色：到此为止，不碰任何原生控件 ⇒ 零差异
+
+        View root = findViewById(R.id.sv_settings);
+        // 顶层 LinearLayout（settings_layout 根）也要染 —— 它是 ScrollView 的父
+        if (root != null && root.getParent() instanceof View) {
+            recolorTree((View) root.getParent(), true);
+        }
+        if (root != null) recolorTree(root, false);
+    }
+
+    /** 亮→深 颜色映射；返回 {@code -1} 表示"无需替换"。 */
+    private static int darkOf(int color) {
+        switch (color) {
+            case 0xFF000000: return InkTheme.DARK_INK;
+            case 0xFF3C3C3C: return InkTheme.DARK_INK2;
+            case 0xFF6A6A6A: return InkTheme.DARK_INK2;
+            case 0xFF9A9A9A: return InkTheme.DARK_INK3;
+            case 0xFFFFFFFF: return InkTheme.DARK_PAPER;
+            case 0xFFD8D8D8: return InkTheme.DARK_LINE;
+            case 0xFFE0E0E0: return InkTheme.DARK_LINE;
+            default: return -1;
+        }
+    }
+
+    /**
+     * 递归染色：对 TextView 系控件改 textColor / buttonTint；对容器改 background。
+     *
+     * @param isContainerChain true = 这条子树里的 {@code #FFFFFFFF} 视为"页面/容器背景"（染成墨底）
+     */
+    private void recolorTree(View v, boolean isContainerChain) {
+        if (v == null) return;
+        try {
+            if (v instanceof TextView) {
+                TextView tv = (TextView) v;
+                int next = darkOf(tv.getCurrentTextColor());
+                if (next != -1) tv.setTextColor(next);
+                // 单选/复选框的按钮着色（XML 用 buttonTint；仅 CompoundButton 有该 API）
+                try {
+                    if (tv instanceof android.widget.CompoundButton) {
+                        android.content.res.ColorStateList tint =
+                                ((android.widget.CompoundButton) tv).getButtonTintList();
+                        if (tint != null && !tint.isStateful()) {
+                            int cur = tint.getDefaultColor();
+                            int tc = darkOf(cur);
+                            if (tc != -1) {
+                                ((android.widget.CompoundButton) tv)
+                                        .setButtonTintList(android.content.res.ColorStateList.valueOf(tc));
+                            }
+                        }
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+            // 背景：递归处理纯色 / StateListDrawable / LayerDrawable，命中映射才替换
+            if (v.getBackground() != null) darkenDrawable(v.getBackground());
+
+            // XML 里 many 按钮用 @color/btn_ink_text（ColorStateList：按下白 / 常态黑）作文字色。
+            // getCurrentTextColor() 拿到的是解析后的"黑"，可以映射；但按下态仍是白 —— 一并把
+            // 该 ColorStateList 的两个档都换掉，保证按下也不刺眼。
+            if (v instanceof TextView) {
+                android.content.res.ColorStateList tsl = tvTextColors((TextView) v);
+                if (tsl != null && tsl.isStateful()) darkenTextStateList((TextView) v, tsl);
+            }
+
+            if (v instanceof android.view.ViewGroup) {
+                android.view.ViewGroup g = (android.view.ViewGroup) v;
+                for (int i = 0; i < g.getChildCount(); i++) recolorTree(g.getChildAt(i), false);
+            }
+        } catch (Throwable ignored) {
+            // 染色是纯视觉增强：任何单个控件失败都不应中断整页
+        }
+    }
+
+    /** 取 TextView 当前 textColor；Android 无公开 getter 时返回 null。 */
+    private static android.content.res.ColorStateList tvTextColors(TextView tv) {
+        try {
+            return tv.getTextColors();
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * 把 {@code ColorStateList} 文字色里的"亮色档"换成暗色档。
+     *
+     * <p>规则：常态档（default）命中映射即替换；"按下态白"也顺势换成暗底亮字（用 DARK_PAPER），
+     * 避免深色页面上按下出现一块白字。
+     */
+    private static void darkenTextStateList(TextView tv, android.content.res.ColorStateList src) {
+        try {
+            int pressed = src.getColorForState(new int[]{android.R.attr.state_pressed}, 0);
+            int normal = src.getColorForState(new int[]{}, 0);
+            int np = darkOf(pressed);
+            int nn = darkOf(normal);
+            if (np == -1 && nn == -1) return;
+            // 按下态白 → 暗底亮字（用纸白 DARK_INK，视觉上"按下去字变亮"）
+            int newPressed = (np != -1)
+                    ? (pressed == 0xFFFFFFFF ? InkTheme.DARK_INK : np)
+                    : (pressed == 0xFFFFFFFF ? InkTheme.DARK_INK : pressed);
+            int newNormal = (nn != -1) ? nn : normal;
+            tv.setTextColor(new android.content.res.ColorStateList(
+                    new int[][]{{android.R.attr.state_pressed}, {}},
+                    new int[]{newPressed, newNormal}));
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
+     * 递归把 Drawable 树里的"亮色"换成暗色：支持 ColorDrawable / StateListDrawable / LayerDrawable / GradientDrawable。
+     *
+     * <p>设置页按钮底是 {@code @drawable/btn_ink}（selector：常态白底黑边、按下黑底）—— 只有逐个 item 拆开
+     * 才能把"白底"换掉；{@link GradientDrawable} 还能改描边色。
+     */
+    private static void darkenDrawable(android.graphics.drawable.Drawable d) {
+        if (d == null) return;
+        try {
+            if (d instanceof android.graphics.drawable.ColorDrawable) {
+                int cur = ((android.graphics.drawable.ColorDrawable) d).getColor();
+                int bc = darkOf(cur);
+                if (bc != -1) ((android.graphics.drawable.ColorDrawable) d).setColor(bc);
+            } else if (d instanceof android.graphics.drawable.GradientDrawable) {
+                // 裸 GradientDrawable（非 selector 包装）：按其"填充色是否亮"处理不可靠，
+                // 统一按描边按钮形态处理（常态墨底界线）。
+                applyInkButtonShape((android.graphics.drawable.GradientDrawable) d, null);
+            } else if (d instanceof android.graphics.drawable.StateListDrawable) {
+                android.graphics.drawable.StateListDrawable s = (android.graphics.drawable.StateListDrawable) d;
+                int n = s.getStateCount();
+                for (int i = 0; i < n; i++) {
+                    android.graphics.drawable.Drawable item = s.getStateDrawable(i);
+                    if (item instanceof android.graphics.drawable.GradientDrawable) {
+                        applyInkButtonShape((android.graphics.drawable.GradientDrawable) item, s.getStateSet(i));
+                    } else {
+                        darkenDrawable(item);
+                    }
+                }
+            } else if (d instanceof android.graphics.drawable.LayerDrawable) {
+                android.graphics.drawable.LayerDrawable l = (android.graphics.drawable.LayerDrawable) d;
+                for (int i = 0; i < l.getNumberOfLayers(); i++) darkenDrawable(l.getDrawable(i));
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
+     * btn_ink 这类"描边按钮"：亮色 = 白底 + 黑边；深色 = 墨-2 底 + 界线边（按下 = 青玉底 + 青玉边）。
+     *
+     * @param stateSet 该 item 的 state（含 {@code state_pressed} 视作按下态）
+     */
+    private static void applyInkButtonShape(android.graphics.drawable.GradientDrawable g, int[] stateSet) {
+        try {
+            boolean pressed = false;
+            if (stateSet != null) {
+                for (int st : stateSet) if (st == android.R.attr.state_pressed) pressed = true;
+            }
+            int fill = pressed ? InkTheme.DARK_BAMBOO : InkTheme.DARK_PAPER2;
+            int edge = pressed ? InkTheme.DARK_BAMBOO : InkTheme.DARK_LINE;
+            g.setColor(fill);
+            g.setStroke(Math.max(1, g.getIntrinsicHeight() > 0 ? 1 : 1), edge);
+        } catch (Throwable ignored) {
+        }
     }
 
     /**
@@ -1250,6 +1451,7 @@ public class SettingsActivity extends Activity {
         // 和主页一样：告诉服务"用户在自家界面"，桌面卡片要让位
         CardA11yService.noteOwnUiForeground(true);
         refreshRoleUi();          // 按角色重算显隐（phone 角色隐藏「桌面卡片」分区）
+        applyDarkTheme();         // 🆕 TASK-041：深色偏好可能在遥控台改过，回前台重染
         refreshStatus();
         refreshChannelTip();       // TASK-020：说明行按当前通道刷新（无弹窗）
         refreshUpdateUi();

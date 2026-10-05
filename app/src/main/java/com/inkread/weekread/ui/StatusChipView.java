@@ -81,17 +81,17 @@ public class StatusChipView extends View {
     private int dotColor() {
         switch (state) {
             case ST_CONNECTED:
-                return InkTheme.BAMBOO;
+                return InkTheme.bamboo(getContext());
             case ST_WAITING:
             case ST_LOST:
-                return InkTheme.CLAY;
+                return InkTheme.clay(getContext());
             default:
-                return InkTheme.INK3;
+                return InkTheme.ink3(getContext());
         }
     }
 
     private int textColor() {
-        return state == ST_OFF ? InkTheme.INK3 : InkTheme.INK;
+        return state == ST_OFF ? InkTheme.ink3(getContext()) : InkTheme.ink(getContext());
     }
 
     @Override
@@ -102,12 +102,12 @@ public class StatusChipView extends View {
         // 胶囊底：paper2 + 0.5dp 界线 + 999dp 圆角
         r.set(0.5f, 0.5f, w - 0.5f, h - 0.5f);
         p.setStyle(Paint.Style.FILL);
-        p.setColor(InkTheme.PAPER2);
+        p.setColor(InkTheme.paper2(getContext()));
         float rad = h / 2f;
         c.drawRoundRect(r, rad, rad, p);
         p.setStyle(Paint.Style.STROKE);
         p.setStrokeWidth(InkTheme.dp(getContext(), 0.5f));
-        p.setColor(InkTheme.LINE);
+        p.setColor(InkTheme.line(getContext()));
         c.drawRoundRect(r, rad, rad, p);
         p.setStyle(Paint.Style.FILL);
 
@@ -144,9 +144,9 @@ public class StatusChipView extends View {
         p.setTextSize(InkTheme.sp(getContext(), 15f));
         float moreCx = w - pad - InkTheme.dp(getContext(), ICON_W / 2f);
         float swapCx = moreCx - InkTheme.dp(getContext(), ICON_W);
-        p.setColor(swapChecked ? InkTheme.BAMBOO : InkTheme.INK2);
+        p.setColor(swapChecked ? InkTheme.bamboo(getContext()) : InkTheme.ink2(getContext()));
         c.drawText("⇄", swapCx, baseline, p);
-        p.setColor(InkTheme.INK2);
+        p.setColor(InkTheme.ink2(getContext()));
         c.drawText("⋯", moreCx, baseline, p);
 
         p.setTextAlign(Paint.Align.LEFT);

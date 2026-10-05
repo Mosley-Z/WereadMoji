@@ -46,8 +46,12 @@ public class ConsoleActivity extends Activity {
     private StatusChipView chip;
     private FlipKeyView flip;
     private TextView gear;
+    private TextView darkBtn;
     private View flipPage;
     private View connectScroll;
+    private View nav;
+    private View topbar;
+    private View root;
     private ConnectPageView connectPage;
     private TextView navFlip;
     private TextView navConnect;
@@ -76,6 +80,10 @@ public class ConsoleActivity extends Activity {
         chip = (StatusChipView) findViewById(R.id.console_chip);
         flip = (FlipKeyView) findViewById(R.id.console_flip);
         gear = (TextView) findViewById(R.id.console_gear);
+        darkBtn = (TextView) findViewById(R.id.console_dark);
+        root = findViewById(R.id.console_root);
+        topbar = findViewById(R.id.console_topbar);
+        nav = findViewById(R.id.console_nav);
         flipPage = findViewById(R.id.console_flip);
         connectScroll = findViewById(R.id.console_connect_scroll);
         connectPage = (ConnectPageView) findViewById(R.id.console_connect);
@@ -134,6 +142,20 @@ public class ConsoleActivity extends Activity {
             }
         });
 
+        // 🆕 TASK-041：状态栏深色模式一键切 —— 写偏好 + **立即重绘**（不 recreate、不闪烁）。
+        darkBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                boolean next = !CardPrefs.isPhoneDarkMode(ConsoleActivity.this);
+                CardPrefs.setPhoneDarkMode(ConsoleActivity.this, next);
+                applyTheme();
+                Toast.makeText(ConsoleActivity.this,
+                        next ? R.string.console_dark_on : R.string.console_dark_off,
+                        Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        applyTheme();          // TASK-041：进页先按偏好着色（先于渲染）
         applyFlipPrefs();      // TASK-038：把换向/排布/间隔灌进翻页键（先于渲染）
         refresh();
     }
@@ -148,6 +170,7 @@ public class ConsoleActivity extends Activity {
         if (CardPrefs.isBtControlEnabled(this) && !HidKeepAliveService.isRunning()) {
             HidKeepAliveService.start(this);
         }
+        applyTheme();          // TASK-041：设置页可能改过深色偏好，回前台重着色
         applyFlipPrefs();      // 设置页可能改过（若将来暴露），回前台重灌一次
         refresh();
     }
@@ -191,6 +214,49 @@ public class ConsoleActivity extends Activity {
         }
     }
 
+    /**
+     * 🆕 TASK-041：按当前深色偏好**重新着色整屏**（幂等，可反复调）。
+     *
+     * <p>两条路径：
+     * <ul>
+     *   <li><b>自绘 View</b>（{@link StatusChipView}/{@link FlipKeyView}）每次 onDraw 都从
+     *       {@link InkTheme} 语义 getter 取色 ⇒ 只需 {@code invalidate()}；</li>
+     *   <li><b>原生 View</b>（根布局 / 顶栏 / 底栏 / 齿轮·月亮图标 / 连接页）着色在 XML/构造时定死
+     *       ⇒ 需显式重设；连接页内部子视图多，直接 {@link ConnectPageView#rebuild()} 重建。</li>
+     * </ul>
+     * 🔴 **只服务手机端**（本 Activity 只在 phone 形态实例化）⇒ 阅读器端零影响。
+     */
+    private void applyTheme() {
+        boolean dark = InkTheme.isDark(this);
+
+        if (root != null) root.setBackgroundColor(InkTheme.paper(this));
+        if (topbar != null) topbar.setBackgroundColor(InkTheme.paper(this));
+        if (nav != null) nav.setBackgroundColor(InkTheme.paper2(this));
+
+        // 顶栏两枚图标：月亮（亮色下显示"点了会变暗"）/ 太阳（深色下显示"点了会变亮"）
+        if (darkBtn != null) {
+            darkBtn.setText(dark ? "☀" : "☾");
+            darkBtn.setTextColor(InkTheme.ink2(this));
+        }
+        if (gear != null) gear.setTextColor(InkTheme.ink2(this));
+
+        // 连接页：子视图着色定死在 buildUi ⇒ 重建（未构建过则跳过）
+        if (connectPage != null) connectPage.rebuild();
+
+        // 自绘 View 重画
+        if (chip != null) chip.invalidate();
+        if (flip != null) flip.invalidate();
+
+        applyNavColors();
+    }
+
+    /** 底部导航选中态着色（供 {@link #showPage} 与 {@link #applyTheme} 共用）。 */
+    private void applyNavColors() {
+        if (navFlip == null || navConnect == null) return;
+        navFlip.setTextColor(showingConnect ? InkTheme.ink2(this) : InkTheme.bamboo(this));
+        navConnect.setTextColor(showingConnect ? InkTheme.bamboo(this) : InkTheme.ink2(this));
+    }
+
     // ── 🆕 TASK-040：两页切换（翻页 / 连接）──
 
     /** 在「翻页」页与「连接」页之间切换，并同步底部导航选中态（docs/09 §5.5）。 */
@@ -198,8 +264,7 @@ public class ConsoleActivity extends Activity {
         showingConnect = connect;
         flipPage.setVisibility(connect ? View.GONE : View.VISIBLE);
         connectScroll.setVisibility(connect ? View.VISIBLE : View.GONE);
-        navFlip.setTextColor(connect ? InkTheme.INK2 : InkTheme.BAMBOO);
-        navConnect.setTextColor(connect ? InkTheme.BAMBOO : InkTheme.INK2);
+        applyNavColors();
         if (connect && connectPage != null) connectPage.refresh();
     }
 
@@ -327,7 +392,7 @@ public class ConsoleActivity extends Activity {
         box.addView(sectionLabel(R.string.console_opt_volkey));
         final CheckBox cbVol = new CheckBox(this);
         cbVol.setText(R.string.console_volkey_enable);
-        cbVol.setTextColor(InkTheme.INK);
+        cbVol.setTextColor(InkTheme.ink(this));
         cbVol.setChecked(CardPrefs.isBtVolkeyEnabled(this));
         cbVol.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
@@ -349,7 +414,7 @@ public class ConsoleActivity extends Activity {
         TextView tv = new TextView(this);
         tv.setText(strId);
         tv.setTextSize(13f);
-        tv.setTextColor(InkTheme.INK2);
+        tv.setTextColor(InkTheme.ink2(this));
         tv.setPadding(0, (int) InkTheme.dp(this, 14f), 0, (int) InkTheme.dp(this, 4f));
         return tv;
     }
@@ -357,7 +422,7 @@ public class ConsoleActivity extends Activity {
     private RadioButton radio(int strId) {
         RadioButton rb = new RadioButton(this);
         rb.setText(strId);
-        rb.setTextColor(InkTheme.INK);
+        rb.setTextColor(InkTheme.ink(this));
         return rb;
     }
 
@@ -366,7 +431,7 @@ public class ConsoleActivity extends Activity {
         TextView tv = new TextView(this);
         tv.setText(strId);
         tv.setTextSize(12f);
-        tv.setTextColor(InkTheme.INK3);
+        tv.setTextColor(InkTheme.ink3(this));
         tv.setLineSpacing(0f, 1.3f);
         tv.setPadding(0, (int) InkTheme.dp(this, 2f), 0, 0);
         return tv;

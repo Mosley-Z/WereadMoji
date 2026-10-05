@@ -22,4 +22,19 @@
         <item name="android:actionBarSize">45dp</item>
     </style>
 
+    <!--
+      🆕 TASK-041（V1.2.0-beta）：设置页**深色**变体。
+
+      用途：仅手机端（install_role=phone）且用户开了深色模式时，在 onCreate **setContentView 之前**
+      用 {@code setTheme(R.style.Theme_WereadMoji_Settings_Dark)} 应用 —— 这样顶栏（ActionBar）
+      与系统装饰一并转深；页内原生控件的硬编码色由 SettingsActivity#applyDarkTheme 运行时染色补足。
+
+      parent 用 `Theme.Material`（暗底），actionBarSize 与亮色版一致（45dp，保持版式不变）。
+    -->
+    <style name="Theme.WereadMoji.Settings.Dark" parent="@android:style/Theme.Material">
+        <item name="android:actionBarSize">45dp</item>
+        <item name="android:colorBackground">@color/ink_d_paper</item>
+        <item name="android:windowBackground">@color/ink_d_paper</item>
+    </style>
+
 </resources>

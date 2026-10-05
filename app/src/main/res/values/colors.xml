@@ -16,4 +16,20 @@
     <color name="ink_bamboo_weak">#E4EDE8</color>
     <color name="ink_clay">#B0763C</color>
     <color name="ink_clay_weak">#F3E7D6</color>
+
+    <!-- ══════════ 🆕 TASK-041（V1.2.0-beta）：深色 token ══════════
+         逐值对齐本产品网页应用（wereadmoji-site）暗色语言；真源 = docs/09 §2.1。
+         🔴 仅手机端（install_role=phone + phone_dark_mode=true）使用；Java 侧同名常量见 ui/InkTheme.java。 -->
+    <color name="ink_d_paper">#070A0F</color>        <!-- 墨：主背景 -->
+    <color name="ink_d_paper2">#111A23</color>       <!-- 墨-2：卡片/分组底 -->
+    <color name="ink_d_dim">#0C1117</color>          <!-- 墨-1：次级面/凹陷底 -->
+    <color name="ink_d_text">#E9E4D8</color>         <!-- 纸：主文字 -->
+    <color name="ink_d_text2">#B3ADA1</color>        <!-- 纸-2：次要文字 -->
+    <color name="ink_d_hint">#7E8894</color>         <!-- 淡：占位/禁用 -->
+    <color name="ink_d_line">#1CE9E4D8</color>       <!-- 界线：rgba(233,228,216,.11) -->
+    <color name="ink_d_bamboo">#4ECDC4</color>       <!-- 青玉：唯一强调色 -->
+    <color name="ink_d_bamboo_weak">#1A4ECDC4</color><!-- 青玉浅底：rgba(78,205,196,.10) -->
+    <color name="ink_d_clay">#C2604F</color>         <!-- 朱砂：警示 -->
+    <color name="ink_d_clay_weak">#21C2604F</color>  <!-- 朱砂浅底：rgba(194,96,79,.13) -->
+    <color name="ink_d_gold">#C9A76A</color>         <!-- 鎏金：刻度/次要强调 -->
 </resources>

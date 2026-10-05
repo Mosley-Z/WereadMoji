@@ -94,6 +94,19 @@ public class ConnectPageView extends LinearLayout {
         this.listener = l;
     }
 
+    /**
+     * 🆕 TASK-041：色板切换后**重建内部视图树**（本类所有子 View 的着色在 {@link #buildUi()} 时定死，
+     * 不像自绘 View 那样每次 onDraw 重读 token）⇒ 要换色只能重建。
+     *
+     * <p>调用方：{@code ConsoleActivity} 切换深色模式后（重建后自动 {@link #refresh()}）。
+     */
+    public void rebuild() {
+        removeAllViews();
+        int pad = (int) InkTheme.dp(getContext(), 16f);
+        setPadding(pad, pad, pad, pad);
+        buildUi();
+    }
+
     // ── 构建（一次性）──
 
     private void buildUi() {
@@ -299,7 +312,7 @@ public class ConnectPageView extends LinearLayout {
 
             TextView t = new TextView(c);
             t.setText(HidLink.safeName(d));
-            t.setTextColor(InkTheme.INK);
+            t.setTextColor(InkTheme.ink(c));
             t.setTextSize(14f);
             LayoutParams lp = new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f);
             row.addView(t, lp);
@@ -307,7 +320,7 @@ public class ConnectPageView extends LinearLayout {
             final String name = HidLink.safeName(d);
             TextView btn = new TextView(c);
             btn.setText(R.string.console_conn_how_connect);
-            btn.setTextColor(InkTheme.BAMBOO);
+            btn.setTextColor(InkTheme.bamboo(c));
             btn.setTextSize(13f);
             btn.setPadding((int) InkTheme.dp(c, 10f), (int) InkTheme.dp(c, 6f),
                     (int) InkTheme.dp(c, 10f), (int) InkTheme.dp(c, 6f));
@@ -379,9 +392,9 @@ public class ConnectPageView extends LinearLayout {
         LinearLayout box = new LinearLayout(c);
         box.setOrientation(VERTICAL);
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(InkTheme.PAPER2);
+        bg.setColor(InkTheme.paper2(c));
         bg.setCornerRadius(InkTheme.dp(c, 14f));
-        bg.setStroke(Math.max(1, (int) InkTheme.dp(c, 0.5f)), InkTheme.LINE);
+        bg.setStroke(Math.max(1, (int) InkTheme.dp(c, 0.5f)), InkTheme.line(c));
         box.setBackground(bg);
         int p = (int) InkTheme.dp(c, 16f);
         box.setPadding(p, p, p, p);
@@ -391,7 +404,7 @@ public class ConnectPageView extends LinearLayout {
 
         TextView title = new TextView(c);
         title.setText(titleRes);
-        title.setTextColor(InkTheme.INK);
+        title.setTextColor(InkTheme.ink(c));
         title.setTextSize(16f);
         title.setTypeface(InkTheme.serif());
         title.setPadding(0, 0, 0, (int) InkTheme.dp(c, 8f));
@@ -401,26 +414,29 @@ public class ConnectPageView extends LinearLayout {
     }
 
     private TextView body() {
-        TextView tv = new TextView(getContext());
-        tv.setTextColor(InkTheme.INK2);
+        Context c = getContext();
+        TextView tv = new TextView(c);
+        tv.setTextColor(InkTheme.ink2(c));
         tv.setTextSize(14f);
         tv.setLineSpacing(0f, 1.5f);
         return tv;
     }
 
     private TextView readonly(String s) {
-        TextView tv = new TextView(getContext());
+        Context c = getContext();
+        TextView tv = new TextView(c);
         tv.setText(s);
-        tv.setTextColor(InkTheme.INK3);
+        tv.setTextColor(InkTheme.ink3(c));
         tv.setTextSize(13f);
         tv.setLineSpacing(0f, 1.4f);
         return tv;
     }
 
     private TextView note(int res) {
-        TextView tv = new TextView(getContext());
+        Context c = getContext();
+        TextView tv = new TextView(c);
         tv.setText(res);
-        tv.setTextColor(InkTheme.INK3);
+        tv.setTextColor(InkTheme.ink3(c));
         tv.setTextSize(12f);
         tv.setLineSpacing(0f, 1.3f);
         tv.setPadding(0, (int) InkTheme.dp(getContext(), 2f), 0, (int) InkTheme.dp(getContext(), 6f));
@@ -432,13 +448,13 @@ public class ConnectPageView extends LinearLayout {
         Context c = getContext();
         TextView tv = new TextView(c);
         tv.setText(res);
-        tv.setTextColor(InkTheme.INK);
+        tv.setTextColor(InkTheme.ink(c));
         tv.setTextSize(14f);
         tv.setGravity(android.view.Gravity.CENTER);
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(InkTheme.PAPER);
+        bg.setColor(InkTheme.paper(c));
         bg.setCornerRadius(InkTheme.dp(c, 14f));
-        bg.setStroke(Math.max(1, (int) InkTheme.dp(c, 1f)), InkTheme.LINE);
+        bg.setStroke(Math.max(1, (int) InkTheme.dp(c, 1f)), InkTheme.line(c));
         tv.setBackground(bg);
         int vp = (int) InkTheme.dp(c, 12f);
         tv.setPadding(vp, vp, vp, vp);

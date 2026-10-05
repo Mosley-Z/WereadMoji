@@ -43,8 +43,6 @@ public class FlipKeyView extends View {
 
     /** 未连接时的整体透明度（"按了没用"一眼可见）。 */
     private static final int ALPHA_DISCONNECTED = 102;   // 255 * 0.4
-    private static final int COLOR_KEY = InkTheme.PAPER2;
-    private static final int COLOR_KEY_PRESSED = 0xFFE7E0D0;
 
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF r = new RectF();
@@ -141,14 +139,14 @@ public class FlipKeyView extends View {
     private void drawKey(Canvas c, float l, float t, float rr, float b, boolean which, boolean pressed, int a) {
         r.set(l, t, rr, b);
         p.setStyle(Paint.Style.FILL);
-        p.setColor(pressed ? COLOR_KEY_PRESSED : COLOR_KEY);
+        p.setColor(pressed ? InkTheme.keyPressed(getContext()) : InkTheme.paper2(getContext()));
         p.setAlpha(a);
         c.drawRect(r, p);
 
         // 两半之间的细界线
         p.setStyle(Paint.Style.STROKE);
         p.setStrokeWidth(InkTheme.dp(getContext(), 0.5f));
-        p.setColor(InkTheme.LINE);
+        p.setColor(InkTheme.line(getContext()));
         p.setAlpha(a);
         c.drawRect(r, p);
         p.setStyle(Paint.Style.FILL);
@@ -164,7 +162,7 @@ public class FlipKeyView extends View {
         // 超大方向符号
         String sym = hz ? (which ? "›" : "‹") : (which ? "⌄" : "⌃");
         p.setTypeface(InkTheme.serif());
-        p.setColor(InkTheme.BAMBOO);
+        p.setColor(InkTheme.bamboo(getContext()));
         p.setAlpha(a);                       // 🔴 setColor 会重置 alpha ⇒ 必须 setColor 后再 setAlpha
         p.setTextAlign(Paint.Align.CENTER);
         float symSize = Math.min(hz ? (b - t) * 0.42f : (rr - l) * 0.30f,
@@ -176,7 +174,7 @@ public class FlipKeyView extends View {
         // 主字
         p.setTypeface(InkTheme.serif());
         p.setTextSize(InkTheme.sp(getContext(), 20f));
-        p.setColor(InkTheme.INK);
+        p.setColor(InkTheme.ink(getContext()));
         p.setAlpha(a);                       // 🔴 同上：setColor 后再 setAlpha
         c.drawText(halfNext ? "下一页" : "上一页", cx,
                 cy + symSize * 0.24f + InkTheme.sp(getContext(), 34f), p);

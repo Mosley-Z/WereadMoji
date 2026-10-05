@@ -332,6 +332,10 @@
          🔴 仅 install_role=phone 使用；阅读器端零差异。
          🔴 文案红线：只写已验证能力；不出现「读取屏幕内容」；不承诺未验证项。 -->
     <string name="console_gear">设置</string>
+    <!-- 🆕 TASK-041：状态栏深色模式一键切（仅手机端；图标随态在 ☾/☀ 之间切） -->
+    <string name="console_dark">深色模式</string>
+    <string name="console_dark_on">已开启深色模式</string>
+    <string name="console_dark_off">已恢复亮色模式</string>
     <!-- 状态胶囊四态（与设置页 lab_bt_status_* 同源语义） -->
     <string name="console_st_off">未启用</string>
     <string name="console_st_waiting">等待连接</string>

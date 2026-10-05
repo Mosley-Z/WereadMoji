@@ -28,6 +28,17 @@
             android:layout_weight="1" />
 
         <TextView
+            android:id="@+id/console_dark"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:gravity="center"
+            android:text="&#9789;"
+            android:textColor="@color/ink_text2"
+            android:textSize="20sp"
+            android:contentDescription="@string/console_dark"
+            android:background="?android:attr/selectableItemBackground" />
+
+        <TextView
             android:id="@+id/console_gear"
             android:layout_width="48dp"
             android:layout_height="48dp"
