@@ -17,6 +17,24 @@
     <string name="btn_refresh">刷新</string>
     <string name="btn_settings">设置</string>
 
+    <!-- 🆕 TASK-044（V1.2.0-beta）：App 内导航重构 —— 大标签栏 / 阅读页下拉行 / 占位容器 -->
+    <string name="main_tab_reader">阅读</string>
+    <string name="main_tab_settings">设置</string>
+    <string name="main_tab_lab">实验室</string>
+    <string name="main_tab_todo">待办</string>
+    <string name="nav_week">本周</string>
+    <string name="nav_month">本月</string>
+    <string name="nav_book">本书</string>
+    <string name="nav_note">本记</string>
+    <string name="nav_insight">洞察</string>
+    <string name="insight_placeholder">洞察页（开发中）\n\n兴趣雷达 · 年度 · 累计 · 排行 · 画像\n将随阅读统计升级陆续加入</string>
+    <string name="ph_settings">设置页内容将在下一版迁入本页（TASK-045）</string>
+    <string name="ph_lab">实验室内容将在下一版迁入本页（TASK-045）</string>
+    <string name="ph_todo">待办内容将在下一版迁入本页（TASK-045）</string>
+    <string name="btn_open_settings_tmp">打开设置（临时）</string>
+    <string name="btn_open_lab_tmp">打开实验室（临时）</string>
+    <string name="btn_open_todo_tmp">打开待办（临时）</string>
+
     <string name="help_title">微读墨记 · 怎么用</string>
 
     <string name="label_card">桌面卡片</string>

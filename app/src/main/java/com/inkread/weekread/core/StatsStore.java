@@ -165,7 +165,7 @@ public class StatsStore {
 
     /**
      * 形态的**短名**（两个字）—— 卡片抬头下拉框 / 设置页多选框共用。
-     * 与「页签」的叫法一致（见 TabBarView），别在这里另起一套名字。
+     * 与「界面名」的叫法一致（见 `NavDropView` 的标签），别在这里另起一套名字。
      */
     public static String modeShortLabel(String mode) {
         if (PeriodRange.MONTHLY.equals(mode)) return "本月";

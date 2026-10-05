@@ -1,14 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 主页（TASK-044 / V1.2.0-beta · App 内导航重构 v1）
+     结构 = 顶部「大标签栏」（阅读/设置/实验室/待办）+ 内容区（四大标签各一个容器，只切 visibility）。
+     大标签①「阅读」内：下拉行（NavDropView，本周/本月/本书/本记/洞察）→ 周期选择器 → 卡片区 → 按钮行。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#FFFFFFFF"
     android:orientation="vertical">
 
-    <!-- 页面选项卡：本周 / 本月 / 本书 / 本记。
-         v0.4.1：50dp → 44dp，把厚度让给中间的内容区 -->
-    <com.inkread.weekread.ui.TabBarView
-        android:id="@+id/tabbar"
+    <!-- 大标签栏：4 等分（复用通用 SegTabView，宽度自动 = w/labels.length）。
+         S4 480px 屏 ⇒ 每段 ~120px；「实验室」3 字在大字号下 ~65px，宽裕。 -->
+    <com.inkread.weekread.ui.SegTabView
+        android:id="@+id/tab_main"
         android:layout_width="match_parent"
         android:layout_height="44dp" />
 
@@ -18,89 +21,208 @@
         android:layout_height="1dp"
         android:background="#FF000000" />
 
-    <!-- 周期步进选择器：周 ← 2026年9月15日–9月21日 → ；月 ←← ← 2026年9月 → →→
-         按拍板 ④ 只在 App 内出现（桌面卡片塞不下）。48dp ≈ 66px，够手指按。 -->
-    <com.inkread.weekread.ui.PeriodPickerView
-        android:id="@+id/picker"
-        android:layout_width="match_parent"
-        android:layout_height="44dp" />
-
-    <!-- 本记页的「全部 / 只看想法」原本是这里的一条 44dp 页签（v0.4.4），
-         v0.4.5 起并进卡片内的按钮行（卡片最左那一格「筛选」），这一条整条撤掉，
-         把 60px 全部让给正文。 -->
-
-    <View
-        android:id="@+id/sep_mid"
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="#FFD8D8D8" />
-
-    <!-- 卡片主体（App 内走 setFullscreen(true) 的大版排版） -->
-    <com.inkread.weekread.feature.WeekCardView
-        android:id="@+id/card"
+    <!-- 内容区：四大标签的容器都放这里，切可见性即可（不跳 Activity） -->
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1" />
+        android:layout_weight="1">
 
-    <View
-        android:id="@+id/sep_card"
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="#FFD8D8D8" />
+        <!-- ══════════ ① 阅读（大标签①）══════════ -->
+        <FrameLayout
+            android:id="@+id/page_reader"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
 
-    <!-- TASK-018：phone 角色（手机端遥控器）时替代卡片区显示；其余卡片 UI 整块隐藏 -->
-    <TextView
-        android:id="@+id/tv_remote_notice"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:lineSpacingExtra="4dp"
-        android:paddingLeft="24dp"
-        android:paddingRight="24dp"
-        android:text="@string/main_remote_notice"
-        android:textColor="#FF3C3C3C"
-        android:textSize="15sp"
-        android:visibility="gone" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical">
 
-    <!-- 两个独立按钮：刷新 / 设置。
-         v0.4.1：「导出」搬进本记页内（只对那一页有意义），三个按钮变两个；
-         同时整条瘦身（按钮 46→40dp，上下 padding 10/12 → 8/8），把高度让给中间的内容区。 -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:paddingLeft="12dp"
-        android:paddingRight="12dp"
-        android:paddingTop="8dp"
-        android:paddingBottom="8dp">
+                <!-- 下拉行占位：40dp，给叠加的 NavDropView 留出位置（本身透明不可见） -->
+                <View
+                    android:id="@+id/nav_drop_slot"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp" />
 
-        <Button
-            android:id="@+id/btn_refresh"
-            android:layout_width="0dp"
-            android:layout_height="40dp"
-            android:layout_weight="1"
-            android:background="@drawable/btn_ink"
-            android:minWidth="0dp"
-            android:minHeight="0dp"
-            android:stateListAnimator="@null"
-            android:text="@string/btn_refresh"
-            android:textColor="@color/btn_ink_text"
-            android:textSize="17sp" />
+                <!-- 周期步进选择器：仅本周/本月可见（本书/本记/洞察由代码置 GONE） -->
+                <com.inkread.weekread.ui.PeriodPickerView
+                    android:id="@+id/picker"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp" />
 
-        <Button
-            android:id="@+id/btn_settings"
-            android:layout_width="0dp"
-            android:layout_height="40dp"
-            android:layout_marginLeft="12dp"
-            android:layout_weight="1"
-            android:background="@drawable/btn_ink"
-            android:minWidth="0dp"
-            android:minHeight="0dp"
-            android:stateListAnimator="@null"
-            android:text="@string/btn_settings"
-            android:textColor="@color/btn_ink_text"
-            android:textSize="17sp" />
-    </LinearLayout>
+                <View
+                    android:id="@+id/sep_mid"
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="#FFD8D8D8" />
+
+                <!-- 卡片主体（App 内走 setFullscreen(true) 的大版排版） -->
+                <com.inkread.weekread.feature.WeekCardView
+                    android:id="@+id/card"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1" />
+
+                <!-- 洞察页占位（TASK-048 填真实内容；本卡只保证「可选中 + 不崩」） -->
+                <TextView
+                    android:id="@+id/tv_insight_ph"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:lineSpacingExtra="6dp"
+                    android:paddingLeft="24dp"
+                    android:paddingRight="24dp"
+                    android:text="@string/insight_placeholder"
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="15sp"
+                    android:visibility="gone" />
+
+                <View
+                    android:id="@+id/sep_card"
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="#FFD8D8D8" />
+
+                <!-- phone 角色（手机端遥控器）时替代卡片区显示；其余卡片 UI 整块隐藏 -->
+                <TextView
+                    android:id="@+id/tv_remote_notice"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:lineSpacingExtra="4dp"
+                    android:paddingLeft="24dp"
+                    android:paddingRight="24dp"
+                    android:text="@string/main_remote_notice"
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="15sp"
+                    android:visibility="gone" />
+
+                <!-- 两个独立按钮：刷新 / 设置。
+                     🔴 TASK-044：底部「设置」按钮**本卡保留**（`t11` 回归仍点它）；
+                     —— TASK-045 视觉定稿后再统一改脚本 + 删按钮（同批）。 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:paddingLeft="12dp"
+                    android:paddingRight="12dp"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp">
+
+                    <Button
+                        android:id="@+id/btn_refresh"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/btn_ink"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:stateListAnimator="@null"
+                        android:text="@string/btn_refresh"
+                        android:textColor="@color/btn_ink_text"
+                        android:textSize="17sp" />
+
+                    <Button
+                        android:id="@+id/btn_settings"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_marginLeft="12dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/btn_ink"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:stateListAnimator="@null"
+                        android:text="@string/btn_settings"
+                        android:textColor="@color/btn_ink_text"
+                        android:textSize="17sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- 下拉叠加层：收起 40dp（与 nav_drop_slot 同高同位）；展开时自身高度改 MATCH_PARENT，
+                 覆盖下方且不推挤（详见 NavDropView 类注释）。 -->
+            <com.inkread.weekread.ui.NavDropView
+                android:id="@+id/nav_drop"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:layout_gravity="top" />
+        </FrameLayout>
+
+        <!-- ══════════ ② 设置（大标签②；占位，TASK-045 灌入真实内容）══════════ -->
+        <LinearLayout
+            android:id="@+id/page_settings"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingBottom="16dp"
+                android:text="@string/ph_settings"
+                android:textColor="#FF3C3C3C"
+                android:textSize="15sp" />
+
+            <Button
+                android:id="@+id/btn_open_settings_tmp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minWidth="200dp"
+                android:text="@string/btn_open_settings_tmp" />
+        </LinearLayout>
+
+        <!-- ══════════ ③ 实验室（大标签③；占位）══════════ -->
+        <LinearLayout
+            android:id="@+id/page_lab"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingBottom="16dp"
+                android:text="@string/ph_lab"
+                android:textColor="#FF3C3C3C"
+                android:textSize="15sp" />
+
+            <Button
+                android:id="@+id/btn_open_lab_tmp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minWidth="200dp"
+                android:text="@string/btn_open_lab_tmp" />
+        </LinearLayout>
+
+        <!-- ══════════ ④ 待办（大标签④；占位）══════════ -->
+        <LinearLayout
+            android:id="@+id/page_todo"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingBottom="16dp"
+                android:text="@string/ph_todo"
+                android:textColor="#FF3C3C3C"
+                android:textSize="15sp" />
+
+            <Button
+                android:id="@+id/btn_open_todo_tmp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minWidth="200dp"
+                android:text="@string/btn_open_todo_tmp" />
+        </LinearLayout>
+    </FrameLayout>
 
 </LinearLayout>

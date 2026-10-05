@@ -18,8 +18,9 @@ import com.inkread.weekread.net.NoteSync;
 import com.inkread.weekread.net.UpdateChecker;
 import com.inkread.weekread.net.WereadApi;
 import com.inkread.weekread.remote.RemoteRole;
+import com.inkread.weekread.ui.NavDropView;
 import com.inkread.weekread.ui.PeriodPickerView;
-import com.inkread.weekread.ui.TabBarView;
+import com.inkread.weekread.ui.SegTabView;
 import com.inkread.weekread.update.ApkInstaller;
 
 import android.app.Activity;
@@ -31,37 +32,77 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
+import android.widget.TextView;
 
 /**
- * 「微读墨记」主页：页面选项卡（**本周 / 本月 / 本书 / 本记**） + 周期步进选择器 + 统计卡片 + 刷新/设置按钮。
+ * 「微读墨记」主页。
  *
- * v0.3.3 起两件事一起做完：
- * ① 「本月」不再是占位页，而且是**全屏大版**（{@link WeekCardView#setFullscreen}：
- *    上方信息块、下方大号日历，格边长目标 52px，设计方案 §2.3 / §3.2）；
- * ② 选项卡下面多一条 {@link PeriodPickerView} —— 周选择器 / 年月选择器（含 `◀◀ ▶▶` 年快跳），
- *    按拍板 ④ 这**只在 App 内**出现，桌面卡片上不放。
+ * <p>🆕 v1.2（TASK-044）**App 内导航重构**：从「5 段页签」改为**四大标签壳 + 阅读页内下拉**两层：
  *
- * ── 周期状态怎么存 ──
- * 两个选项卡**各记一个锚点**（{@link #anchorWeek} / {@link #anchorMonth}），
+ * <pre>
+ * ┌──────────────────────────────────────────────┐
+ * │ 阅读   │  设置   │  实验室   │  待办          │  大标签栏 44dp（SegTabView 复用，4 等分）
+ * ├──────────────────────────────────────────────┤
+ * │  本周  ▽                                     │  下拉行 40dp（NavDropView）
+ * ├──────────────────────────────────────────────┤   ← 点击原地展开 5 项
+ * │  ← 2026年9月14日–9月20日 →                    │  周期选择器 44dp（仅本周/本月可见）
+ * ├──────────────────────────────────────────────┤
+ * │              卡片内容区                       │  WeekCardView weight=1
+ * └──────────────────────────────────────────────┘
+ * </pre>
+ *
+ * 🔴 **两层解耦**（本卡最高风险点）：
+ * <ul>
+ *   <li><b>大标签层</b> = {@link #showMainPage(int)} —— 只切 {@code page_reader/settings/lab/todo}
+ *       四个容器的 {@code visibility}，**不碰 {@link #tabMode}**；</li>
+ *   <li><b>下拉层</b> = {@link #showReaderPage()} —— 只切 {@link #tabMode} 并渲染卡片，
+ *       **不碰页面容器**；</li>
+ *   <li>两层互不干扰：切大标签不重置下拉选择，切下拉不重置大标签。</li>
+ * </ul>
+ *
+ * <p>手机端形态（{@code install_role=phone}）**不走本导航**：{@link #enterApp()} 早退直达
+ * {@link ConsoleActivity}（TASK-043 起的现状，本次一行不改）。
+ *
+ * <p>── 周期状态怎么存 ──
+ * 两个形态**各记一个锚点**（{@link #anchorWeek} / {@link #anchorMonth}），
  * 这样在"本月"里翻到 3 月、切到"本周"看一眼、再切回来，仍然停在 3 月。
  * 锚点是 {@code periodStart} 时间戳（秒），一律由 {@link PeriodRange} 算，不手写月份天数。
  * 锚点只活在内存里 —— 进程重启就回到"当前周期"，因为"打开 App 总是先看当下"才是默认预期。
  *
- * ── 取数 ──
+ * <p>── 取数 ──
  * 当前周期仍按**实测跑通**的 `baseTime=0` 走；只有翻到历史周期才把锚点时间戳传下去
- * （`baseTime` 传周期内任意时刻，服务端会归一化到周期起点，接口零改动，见设计方案 §4.1）。
+ * （`baseTime` 传周期内任意时刻，服务端会归一化到周期起点，接口零改动）。
  */
 public class MainActivity extends Activity {
 
+    // ── 🆕 TASK-044：大标签下标（阅读 / 设置 / 实验室 / 待办）──
+    private static final int MP_READER = 0;
+    private static final int MP_SETTINGS = 1;
+    private static final int MP_LAB = 2;
+    private static final int MP_TODO = 3;
+
     private WeekCardView card;
-    private TabBarView tabbar;
+    /** 🆕 TASK-044：大标签栏（4 段，复用通用 {@link SegTabView}）。 */
+    private SegTabView segMain;
+    /** 🆕 TASK-044：阅读页顶部下拉（本周/本月/本书/本记/洞察）。 */
+    private NavDropView navDrop;
     private PeriodPickerView picker;
+
+    /** 🆕 TASK-044：四大标签的页面容器（只切 visibility）。 */
+    private View pageReader;
+    private View pageSettings;
+    private View pageLab;
+    private View pageTodo;
+    /** 🆕 TASK-044：洞察页占位（真实内容 → TASK-048）。 */
+    private TextView tvInsightPh;
+    /** 🆕 TASK-044：当前大标签下标（阅读/设置/实验室/待办）。 */
+    private int mainPage = MP_READER;
 
     /**
      * 当前选项卡对应的形态：weekly（第 0 屏）/ monthly（第 1 屏）/ book（第 2 屏）。
      *
      * 「本书」不是周期 —— 它没有"上一个月"这种概念，所以下面的 {@link PeriodPickerView}
-     * 在它这一屏会整条隐藏（{@link #show()}）。
+     * 在它这一屏会整条隐藏（{@link #showReaderPage()}）。
      */
     private String tabMode = PeriodRange.WEEKLY;
     /** 两个选项卡各自的周期锚点（periodStart，秒）。≤0 视为"当前周期" */
@@ -91,7 +132,7 @@ public class MainActivity extends Activity {
      * 阅读器端卡片 UI 是否已装配（{@link #setupReaderUi()} 跑完才置 true）。
      *
      * <p>用于保护生命周期回调：首装弹窗期间 / 手机端形态下 UI 未建，`onResume` 若照常执行
-     * 会对 null 的 tabbar/card 抛 NPE（TASK-031 真机复现过）。
+     * 会对 null 的 navDrop/card 抛 NPE（TASK-031 真机复现过）。
      */
     private boolean readerUiReady;
 
@@ -115,7 +156,7 @@ public class MainActivity extends Activity {
         if (firstRun) {
             // 🔴 首装：**先把阅读器 UI 建好**，二选一弹窗叠在其上。
             //    为什么不能在弹窗定案后再建：onStart/onResume 会在 onCreate 返回后**立刻**跑
-            //    （弹窗不阻塞生命周期），那时若 UI 未建，show() 会对 null 的 tabbar 抛 NPE。
+            //    （弹窗不阻塞生命周期），那时若 UI 未建，showReaderPage() 会对 null 的 navDrop 抛 NPE。
             //    先建好 ⇒ 选「阅读器」即刻可用；选「手机端」⇒ enterApp() 里立即转设置-实验室并 finish，
             //    那一瞬的阅读器 UI 无副作用（全新安装还没有 Key，refresh() 直接空转）。
             setupReaderUi();
@@ -189,8 +230,14 @@ public class MainActivity extends Activity {
      */
     private void setupReaderUi() {
         card = (WeekCardView) findViewById(R.id.card);
-        tabbar = (TabBarView) findViewById(R.id.tabbar);
+        segMain = (SegTabView) findViewById(R.id.tab_main);
+        navDrop = (NavDropView) findViewById(R.id.nav_drop);
         picker = (PeriodPickerView) findViewById(R.id.picker);
+        tvInsightPh = (TextView) findViewById(R.id.tv_insight_ph);
+        pageReader = findViewById(R.id.page_reader);
+        pageSettings = findViewById(R.id.page_settings);
+        pageLab = findViewById(R.id.page_lab);
+        pageTodo = findViewById(R.id.page_todo);
 
         // ── TASK-018：手机端遥控器角色（remote_role=phone）⇒ 隐藏卡片相关 UI（A7）──
         // 手机上这个 App 只当遥控器用，统计卡片没有使用场景（ADR-010 决定 4：
@@ -273,24 +320,35 @@ public class MainActivity extends Activity {
         String k = getIntent() == null ? null : getIntent().getStringExtra("api_key");
         if (k != null && k.length() > 0 && isDebuggableBuild()) StatsStore.setKey(this, k);
 
-        tabbar.setListener(new TabBarView.Listener() {
+        // ── 🆕 TASK-044：大标签栏（阅读 / 设置 / 实验室 / 待办）—— **只切页面容器**，不碰 tabMode ──
+        segMain.setLabels(new String[]{
+                getString(R.string.main_tab_reader), getString(R.string.main_tab_settings),
+                getString(R.string.main_tab_lab), getString(R.string.main_tab_todo)});
+        segMain.setListener(new SegTabView.Listener() {
             @Override
-            public void onTabSelected(int index) {
-                // 🆕 TASK-024：第 5 段「待办」= 独立管理页（增删改/勾选/排序都在那一页做），
-                // 点了直接跳转；本页 tabMode 不动 ⇒ 选中态自然停在原页签（TabBarView 的
-                // setSelected 由 show() 按 tabMode 调，这里直接 return 就不会切走）。
-                if (index == 4) {
-                    startActivity(new Intent(MainActivity.this, TodoActivity.class));
-                    return;
-                }
+            public void onSegSelected(int index) {
+                showMainPage(index);
+            }
+        });
+
+        // ── 🆕 TASK-044：阅读页下拉（本周 / 本月 / 本书 / 本记 / 洞察）—— **只切 tabMode**，不碰页面容器 ──
+        navDrop.setLabels(new String[]{
+                getString(R.string.nav_week), getString(R.string.nav_month),
+                getString(R.string.nav_book), getString(R.string.nav_note),
+                getString(R.string.nav_insight)});
+        navDrop.setListener(new NavDropView.Listener() {
+            @Override
+            public void onPicked(int index) {
                 tabMode = modeOf(index);
-                show();
+                showReaderPage();
                 // 该形态本地还没有缓存（第一次点开本月 / 第一次点开本书 / 翻到没看过的历史周期）→ 顺手拉一次
                 if (PeriodRange.BOOK.equals(tabMode)) {
                     if (BookStore.load(MainActivity.this) == null) refresh();
                 } else if (PeriodRange.NOTE.equals(tabMode)) {
                     // 渲染落空才起同步 —— 绝不在渲染函数里发请求（v0.5.3，R02）
                     if (!showNote(false)) noteSync(false);
+                } else if (PeriodRange.INSIGHT.equals(tabMode)) {
+                    // 洞察页本卡是占位（内容由 TASK-048 填）⇒ 不取数
                 } else if (StatsStore.load(MainActivity.this, tabMode, anchor()) == null) {
                     refresh();
                 }
@@ -304,7 +362,7 @@ public class MainActivity extends Activity {
                 long cur = PeriodRange.startOf(tabMode, 0);
                 if (next > cur) next = cur;      // 不看未来（选择器那边也已把 ▶ 画成浅灰）
                 setAnchor(next);
-                show();
+                showReaderPage();
                 if (StatsStore.load(MainActivity.this, tabMode, next) == null) refresh();
             }
         });
@@ -323,22 +381,50 @@ public class MainActivity extends Activity {
             }
         });
 
+        // ── 🆕 TASK-044：大标签②③④ 的**占位容器**跳转按钮（真实内容 → TASK-045）──
+        // 本卡只做骨架，先把「设置 / 实验室 / 待办」三个入口用跳转按钮过渡，保证功能不丢；
+        // TASK-045 把三个布局灌进 page_* 容器后，这几个按钮随占位容器一起删除。
+        ((Button) findViewById(R.id.btn_open_settings_tmp)).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startActivity(new Intent(MainActivity.this, SettingsActivity.class));
+            }
+        });
+        ((Button) findViewById(R.id.btn_open_lab_tmp)).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startActivity(new Intent(MainActivity.this, SettingsActivity.class));   // 实验室在设置页内
+            }
+        });
+        ((Button) findViewById(R.id.btn_open_todo_tmp)).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startActivity(new Intent(MainActivity.this, TodoActivity.class));
+            }
+        });
+
         readerUiReady = true;      // TASK-031：UI 装配完成，生命周期回调自此可安全跑 show()/refresh()
     }
 
-    /** 选项卡下标 → 形态 */
+    /**
+     * 下拉下标 → 形态（🆕 TASK-044：扩到 6 个界面）。
+     * 0=本周 1=本月 2=本书 3=本记 4=洞察。
+     * ⚠️「待办」不再是阅读页形态 —— 它已独立为大标签④（见 {@link #showMainPage(int)}）。
+     */
     private static String modeOf(int index) {
         if (index == 1) return PeriodRange.MONTHLY;
         if (index == 2) return PeriodRange.BOOK;
         if (index == 3) return PeriodRange.NOTE;
+        if (index == 4) return PeriodRange.INSIGHT;
         return PeriodRange.WEEKLY;
     }
 
-    /** 形态 → 选项卡下标 */
+    /** 形态 → 下拉下标（🔴 被 {@link #showReaderPage()} 调用，改错会白屏）。 */
     private static int indexOf(String mode) {
         if (PeriodRange.MONTHLY.equals(mode)) return 1;
         if (PeriodRange.BOOK.equals(mode)) return 2;
         if (PeriodRange.NOTE.equals(mode)) return 3;
+        if (PeriodRange.INSIGHT.equals(mode)) return 4;
         return 0;
     }
 
@@ -394,9 +480,47 @@ public class MainActivity extends Activity {
                 CardPrefs.getMonthStyle(this) == CardPrefs.MONTH_STYLE_HEATMAP);
     }
 
-    /** 按当前选项卡 + 锚点渲染一帧（缓存里没有就走空态，不会画错数据） */
-    private void show() {
-        tabbar.setSelected(indexOf(tabMode));
+    /**
+     * 🆕 TASK-044：**大标签层** —— 切页面容器 visibility，**不碰 {@link #tabMode}**。
+     *
+     * <p>进入「阅读」时按当前 {@code tabMode} 重放一帧；离开阅读页时收起并隐藏下拉浮层
+     * （下拉只在阅读页有意义）。两层互不干扰：切大标签不会重置下拉选择。
+     */
+    private void showMainPage(int index) {
+        if (index < 0 || index > MP_TODO) index = MP_READER;
+        mainPage = index;
+        segMain.setSelected(index);
+        pageReader.setVisibility(index == MP_READER ? View.VISIBLE : View.GONE);
+        pageSettings.setVisibility(index == MP_SETTINGS ? View.VISIBLE : View.GONE);
+        pageLab.setVisibility(index == MP_LAB ? View.VISIBLE : View.GONE);
+        pageTodo.setVisibility(index == MP_TODO ? View.VISIBLE : View.GONE);
+        if (index == MP_READER) {
+            navDrop.setVisibility(View.VISIBLE);
+            showReaderPage();              // 回到阅读页 ⇒ 按当前 tabMode 重放一帧
+        } else {
+            navDrop.collapse();
+            navDrop.setVisibility(View.GONE);
+        }
+    }
+
+    /**
+     * 🆕 TASK-044：**下拉层** —— 按当前 {@link #tabMode} + 锚点渲染阅读页一帧
+     * （缓存里没有就走空态，不会画错数据）。内容即改造前的 {@code show()}，
+     * **只把 {@code tabbar.setSelected} 换成 {@code navDrop.setSelected}**，其余取数/渲染零改动。
+     */
+    private void showReaderPage() {
+        navDrop.setSelected(indexOf(tabMode));
+
+        // 洞察页（TASK-044 占位）：没有周期、不画卡片 —— 只显示占位文字（内容 → TASK-048）
+        if (PeriodRange.INSIGHT.equals(tabMode)) {
+            picker.setVisibility(View.GONE);
+            card.setVisibility(View.GONE);
+            tvInsightPh.setVisibility(View.VISIBLE);
+            return;
+        }
+        card.setVisibility(View.VISIBLE);
+        tvInsightPh.setVisibility(View.GONE);
+
         card.setMode(tabMode);
         applyMonthStyle();       // 本月呈现（打卡/热力图）随偏好刷新（TASK-014）
 
@@ -450,11 +574,13 @@ public class MainActivity extends Activity {
      * 不需要打开卡片服务（卡片分区在设置页也被隐藏，见 {@code SettingsActivity#refreshRoleUi}）。
      */
     private void applyPhoneMode() {
-        findViewById(R.id.tabbar).setVisibility(View.GONE);
+        findViewById(R.id.tab_main).setVisibility(View.GONE);
         findViewById(R.id.sep_top).setVisibility(View.GONE);
+        findViewById(R.id.nav_drop).setVisibility(View.GONE);
         findViewById(R.id.picker).setVisibility(View.GONE);
         findViewById(R.id.sep_mid).setVisibility(View.GONE);
         findViewById(R.id.card).setVisibility(View.GONE);
+        findViewById(R.id.tv_insight_ph).setVisibility(View.GONE);
         findViewById(R.id.sep_card).setVisibility(View.GONE);
         findViewById(R.id.btn_refresh).setVisibility(View.GONE);
         findViewById(R.id.tv_remote_notice).setVisibility(View.VISIBLE);
@@ -471,7 +597,7 @@ public class MainActivity extends Activity {
         // 而服务自己无法从无障碍事件里知道"当前前台是本 App"
         // （TYPE_WINDOW_STATE_CHANGED 只在窗口变化时发，服务重连时不补发）。
         CardA11yService.noteOwnUiForeground(true);
-        show();
+        showMainPage(mainPage);     // 🆕 TASK-044：按当前大标签重放一帧（阅读页则渲染卡片）
         // 回到前台时把桌面卡片对齐一次（可能刚在设置页开关/改过周期）
         CardA11yService.sync();
         refresh();
@@ -490,6 +616,8 @@ public class MainActivity extends Activity {
 
     /** @param force true = 用户手动点刷新（本书的书架缓存可按更短的间隔重拉） */
     private void refresh(boolean force) {
+        // 🆕 TASK-044：洞察页本卡只做占位（内容 → TASK-048）⇒ 无数据可取，直接跳过（不触发绑定补发）
+        if (PeriodRange.INSIGHT.equals(tabMode)) return;
         final String key = StatsStore.getKey(this);
         if (key.length() == 0) {
             card.setStats(null, null);

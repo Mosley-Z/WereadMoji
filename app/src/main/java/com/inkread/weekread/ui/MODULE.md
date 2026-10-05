@@ -6,14 +6,16 @@
 
 | 类 | 一句话 |
 |---|---|
-| `SegTabView` | 顶部分段页签（v0.7 起支持 3 段；设置页用它切「初始化/自定义/实验室」） |
-| `TabBarView` | 主页底部/顶部页面选项卡 |
+| `SegTabView` | 通用分段页签（N 段，标签代码可改）。设置页切「初始化/自定义/实验室」；**v1.2 起兼作主页大标签栏**（阅读/设置/实验室/待办，4 等分） |
+| `NavDropView` | 🆕 v1.2（TASK-044）**阅读页顶部下拉**：收起一行（当前界面名 + ▽），点击原地展开 5 项浮层（本周/本月/本书/本记/洞察）；展开时自身高度改 MATCH_PARENT 覆盖下方、不推挤 |
+| `TabBarView` | 主页页面选项卡（5 段）。⚠️ v1.2 起 `MainActivity` **不再使用**（改用 `SegTabView` + `NavDropView`），类保留待其它引用 |
 | `PeriodPickerView` | 周期步进选择器（上下周/月） |
 | `CardMenuView` | 卡片上的弹出菜单 |
 
 ## 对外接口（关键 public API）
 
 - `SegTabView.setLabels(String[])` / `.setSelected(int)` / 回调 `onSegSelected(int)`
+- `NavDropView.setLabels(String[])` / `.setSelected(int)` / `.collapse()` / 回调 `onPicked(int)`
 - `TabBarView.setSelected(int)`
 - `PeriodPickerView.setPeriod(String mode, long anchorStart)`
 - `CardMenuView.setItems(String[])`
