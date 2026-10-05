@@ -1076,7 +1076,7 @@ public class SettingsActivity extends Activity {
 
         // ── 🆕 TASK-031：从主入口以「手机端」路由进来时，直接定位到「实验室」页 ──
         // 🔴 SegTabView.setSelected 同值早退、不回调 listener ⇒ 必须手动走一次 showTopPage()。
-        // 🆕 TASK-043：手机端顶部只剩「实验室」一页 ⇒ 可见表下标 0（reader 端仍是 2）。
+        // 🆕 TASK-043-R1：手机端顶部为「初始化 + 实验室」两页 ⇒ 实验室可见表下标 = 1（reader 端仍是 2）。
         if (getIntent() != null && getIntent().getBooleanExtra(EXTRA_OPEN_LAB, false)) {
             int labIdx = labTabIndex();
             seg.setSelected(labIdx);
@@ -1102,8 +1102,10 @@ public class SettingsActivity extends Activity {
         findViewById(R.id.page_lab).setVisibility(orig == 2 ? View.VISIBLE : View.GONE);
         // 切页回到顶部：各页高度不同，留着旧滚动位置会看着像"卡住了"
         ((ScrollView) findViewById(R.id.sv_settings)).scrollTo(0, 0);
-        // 进实验室页时刷一次角色/状态显示 —— 不轮询、不常驻（会话状态由 Listener 推）
-        if (orig == 2) refreshRoleUi();
+        // 🆕 TASK-043-R1：切页后统一刷一次角色/状态显示。
+        //   原实现只在进实验室页（orig==2）刷；R1 后手机端「初始化」页也承载「本机角色」，
+        //   故任何一页切过来都要刷，避免本机角色/晃动块显隐停留在上一次状态。
+        refreshRoleUi();
     }
 
     /**
@@ -1112,7 +1114,9 @@ public class SettingsActivity extends Activity {
      * <p>可扩展表 {@code {label, page 下标}} + 可见判定：
      * <ul>
      *   <li><b>阅读器端</b> ⇒ 三段全装（与改造前逐项一致，A6）；</li>
-     *   <li><b>手机端</b> ⇒ 只装「实验室」（自定义整页 + 初始化里的 Key/卡片模块都对手机端无效）。</li>
+     *   <li><b>手机端</b> ⇒ 装「初始化」+「实验室」两段（🆕 TASK-043-R1 调整）：
+     *       初始化页保留「本机角色 + 检查更新」（隐藏其中的 API Key / 桌面卡片块），
+     *       自定义整页仍对手机端无效 ⇒ 不装。</li>
      * </ul>
      * 结果写回 {@link #mTopPageKeep}（可见表）供 {@link #showTopPage(int)} 反查页容器。
      */
@@ -1120,8 +1124,9 @@ public class SettingsActivity extends Activity {
         final boolean phone = CardPrefs.getInstallRole(this) == CardPrefs.INSTALL_ROLE_PHONE;
         //  下标 0=初始化 / 1=自定义 / 2=实验室（与 showTopPage 的容器一一对应）
         final int[] labelRes = {R.string.tab_init, R.string.tab_custom, R.string.tab_lab};
-        // 🔴 手机端只留「实验室」；新增"手机端也要看"的页时把此处对应项置 true 即可。
-        final boolean[] show = {!phone, !phone, true};
+        // 🔴 TASK-043-R1：手机端保留「初始化」（本机角色 + 检查更新）与「实验室」（蓝牙控制等）；
+        //   「自定义」整页对手机端无意义 ⇒ 仍隐藏。新增"手机端也要看"的页时把此处对应项置 true 即可。
+        final boolean[] show = {true, !phone, true};
         final int[] keep = new int[labelRes.length];
         int n = 0;
         for (int i = 0; i < labelRes.length; i++) {
@@ -1151,22 +1156,21 @@ public class SettingsActivity extends Activity {
     }
 
     /**
-     * 🆕 TASK-043：「本机角色」整块的**归属页**随角色切换。
+     * 🆕 TASK-043-R1：「本机角色」整块**恒留在「初始化」页**（index 0）。
      *
-     * <ul>
-     *   <li>手机端 ⇒ 搬进「实验室 · 热点翻页」子页**顶部**（page_init 对手机端不可达，
-     *       但切回阅读器端的能力必须保留，A5）；</li>
-     *   <li>阅读器端 ⇒ 搬回 page_init 原位（index 0，恢复与改造前一致的页首位置，A6）。</li>
-     * </ul>
-     * 用「整块搬运」而非「复制一份」：只有一个 {@code rg_install_role} 实例、一份监听器，
+     * <p>043 初版曾把手机端的本机角色搬到「实验室·热点翻页」页顶（因当时手机端 page_init 不可达）；
+     * R1 后手机端「初始化」页**重新可达**（保留了本机角色 + 检查更新），故本块**不再需要搬运** ——
+     * 手机端与阅读器端都回 {@code page_init} 原位。本方法保留为幂等「确保归位」动作，
+     * 以防历史布局或未来改动把它挪走。
+     *
+     * <p>用「整块搬运」而非「复制一份」：只有一个 {@code rg_install_role} 实例、一份监听器，
      * 避免同 id 双控件导致 `findViewById` 取错 / 勾选串台。
      */
     private void relocateInstallRoleBlock() {
         View block = findViewById(R.id.section_install_role_init);
         if (block == null) return;
-        final boolean phone = CardPrefs.getInstallRole(this) == CardPrefs.INSTALL_ROLE_PHONE;
-        ViewGroup wantParent = (ViewGroup) findViewById(
-                phone ? R.id.page_lab_remote : R.id.page_init);
+        // 🆕 TASK-043-R1：恒回「初始化」页顶部（手机端 / 阅读器端一致）。
+        ViewGroup wantParent = (ViewGroup) findViewById(R.id.page_init);
         if (wantParent == null) return;
         if (block.getParent() == wantParent) return;     // 已在位：不动（避免每帧重排）
         if (block.getParent() instanceof ViewGroup) {
@@ -1873,16 +1877,17 @@ public class SettingsActivity extends Activity {
         int cardVis = (role == RemoteRole.PHONE) ? View.GONE : View.VISIBLE;
         if (sectionCardInit != null) sectionCardInit.setVisibility(cardVis);
         if (sectionCardCustom != null) sectionCardCustom.setVisibility(cardVis);
-        // 🆕 TASK-043：手机端（install_role=phone）另隐藏「初始化 · API Key」整块
+        // 🆕 TASK-043：手机端（install_role=phone）隐藏「初始化 · API Key」整块
         //   —— 手机不取数，Key 对其无用；reader 端一字不改（A6）。
+        //   （TASK-043-R1 后手机端「初始化」页仍可见，但只留「本机角色 + 检查更新」，
+        //     API Key 与桌面卡片块继续隐藏。）
         if (sectionApiKeyInit != null) {
             sectionApiKeyInit.setVisibility(
                     CardPrefs.getInstallRole(this) == CardPrefs.INSTALL_ROLE_PHONE
                             ? View.GONE : View.VISIBLE);
         }
-        // 🆕 TASK-043：手机端「本机角色」整块**搬到「实验室」页顶部**（手机端 page_init 不可达，
-        //   但必须保留切回阅读器端的能力）。reader 端搬回 page_init 原位 —— 单一控件、单份监听器，
-        //   不做复制（复制会引出两个 rg_install_role 同 id 的坑）。
+        // 🆕 TASK-043-R1：手机端「本机角色」恒留在「初始化」页顶部（两端一致，不再随角色搬运）——
+        //   保留切回阅读器端的能力；单一控件、单份监听器，不做复制。
         relocateInstallRoleBlock();
         // 🆕 TASK-029：晃动翻页块**仅手机角色**可见（A2 —— 墨水屏 / 关闭角色下不可见且零响应）
         if (llShakeBlock != null) {
