@@ -400,6 +400,12 @@ public final class ShakeDetector implements SensorEventListener {
         }
 
         void push(long t, float v) {
+            // 🆕 TASK-042：未使能的轴**直接不进检测**（连半周切分都不做）⇒
+            //   它既不产生候选、也不影响判轴能量（judge 侧另有独立屏蔽）。
+            //   🔴 每次 push 实时读偏好：用户在设置页勾完立刻生效，不必重开会话。
+            if (!isAxisEnabled(mIdx)) {
+                return;
+            }
             final int s = (v > 0f) ? 1 : (v < 0f ? -1 : 0);
             if (s == 0) {
                 return;                       // 恰为 0：不打断半周
@@ -481,6 +487,25 @@ public final class ShakeDetector implements SensorEventListener {
     // ── 🆕 方向判决（TASK-029 修复）──
 
     /**
+     * 🆕 TASK-042：某条轴通道**当前是否响应**。
+     *
+     * <p>分组：{@code x} = 左右；{@code y}/{@code z} = 上下（两条一起开关，见 {@code TASK-029} 的判轴结论）。
+     * 偏好存放于 {@code CardPrefs.shake_axis_lr_enabled} / {@code shake_axis_ud_enabled}（默认都 true
+     * ⇒ 未改设置时行为与 TASK-041 前完全一致）。
+     *
+     * <p>🔴 读失败一律**返回 true**（放行）—— 宁可多响应，也不用一个异常把晃动整个静掉。
+     * <p>🔴 实时读（不缓存）⇒ 设置页勾选后立即生效，无需重开会话。
+     */
+    private boolean isAxisEnabled(int idx) {
+        try {
+            return (idx == IDX_X) ? CardPrefs.isShakeAxisLrEnabled(mApp)
+                                  : CardPrefs.isShakeAxisUdEnabled(mApp);
+        } catch (Throwable t) {
+            return true;
+        }
+    }
+
+    /**
      * 一次「甩动候选」的方向判决，三步：
      * <ol>
      *   <li><b>判轴</b> —— 最近 {@link #PROBE_N} 帧（≈800ms）内三轴 {@code Σ|v|} 最大者为<b>主导轴</b>
@@ -519,11 +544,29 @@ public final class ShakeDetector implements SensorEventListener {
             if (vz > maxPos[IDX_Z]) maxPos[IDX_Z] = vz;
             if (vz < maxNeg[IDX_Z]) maxNeg[IDX_Z] = vz;
         }
+        // 🆕 TASK-042：未使能的轴**不进判轴**。理由：判轴取「能量最大者」——
+        //   若只勾「左右」但恰好上下抖得厉害，未屏蔽时主导轴会落到 z ⇒ 要么误判上下、要么比例
+        //   门槛不过而弃权（表现为"左右晃没反应"）。把未使能轴的能量清零 ⇒ 主导轴必落在使能组内。
+        if (!isAxisEnabled(IDX_X)) {
+            energy[IDX_X] = 0f;
+        }
+        if (!isAxisEnabled(IDX_Y)) {
+            energy[IDX_Y] = 0f;
+        }
+        if (!isAxisEnabled(IDX_Z)) {
+            energy[IDX_Z] = 0f;
+        }
         int dom = IDX_X;
         for (int a = 1; a < 3; a++) {
             if (energy[a] > energy[dom]) {
                 dom = a;
             }
+        }
+        // 双不勾（脏值/异常）兜底：仍以 x 为准，至少不让 judge 崩（CardPrefs 的联合兜底已保证
+        // 正常读入时至少一组为 true；此处只防"两条都 false"的极端脏数据）。
+        if (energy[dom] <= 0f && !isAxisEnabled(dom)) {
+            Log.i(TAG, "JUDGE trig=" + trig + " → 弃权(全部轴未使能)");
+            return null;
         }
         final float ampPos = maxPos[dom];
         final float ampNeg = -maxNeg[dom];                 // 负峰转成正幅度

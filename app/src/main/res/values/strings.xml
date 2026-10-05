@@ -172,7 +172,15 @@
     <string name="lab_shake_sens_high">高</string>
     <string name="lab_shake_rev_lr">左右晃方向反转</string>
     <string name="lab_shake_rev_ud">上下晃方向反转</string>
+    <!-- 🆕 TASK-042（V1.2.0-beta）：晃动方向自选（响应哪几组轴）。
+         🔴 「响应」与「反转」是两回事：本组管"晃它响不响应"，下面两个"反转"管"翻哪一页"。
+         默认双勾 = 现模式；禁止双不勾（UI 弹回 + Preferences 联合兜底）。 -->
+    <string name="lab_shake_axis_label">响应方向：</string>
+    <string name="lab_shake_axis_lr">左右晃</string>
+    <string name="lab_shake_axis_ud">上下晃</string>
+    <string name="lab_shake_axis_need_one">至少保留一组：左右晃 / 上下晃，不能都关。</string>
     <string name="lab_shake_map_now">当前映射：左晃→%1$s · 右晃→%2$s · 上晃→%3$s · 下晃→%4$s</string>
+    <string name="lab_shake_map_axis_off">（%1$s晃不响应）</string>
     <string name="lab_shake_hint">开启后晃动本机即可翻页。与音量键可同时使用。灵敏度分低/中/高三档（默认中）：太容易误触就调低，要甩很用力才响应就调高。⚠ 本应用需停在最前，切走后不生效。</string>
     <string name="lab_shake_page_prev">上一页</string>
     <string name="lab_shake_page_next">下一页</string>

@@ -156,6 +156,9 @@ public class SettingsActivity extends Activity {
     private RadioButton rbShakeSensHigh;
     private CheckBox cbShakeLrRev;       // ③ 左右晃方向反转
     private CheckBox cbShakeUdRev;       // ④ 上下晃方向反转
+    private View llShakeAxis;            // 🆕 TASK-042：响应方向行（左右 / 上下 多选）
+    private CheckBox cbShakeAxisLr;      //   左右晃是否响应
+    private CheckBox cbShakeAxisUd;      //   上下晃是否响应
     private TextView tvShakeMap;         // ⑤ 动态「当前映射」自证行
     /** 防回环：refreshShakeUi() 回填控件时会触发监听，置位期间忽略回调。 */
     private boolean mShakeUiSyncing;
@@ -293,6 +296,9 @@ public class SettingsActivity extends Activity {
         rbShakeSensHigh = (RadioButton) findViewById(R.id.rb_shake_sens_high);
         cbShakeLrRev = (CheckBox) findViewById(R.id.cb_shake_lr_rev);
         cbShakeUdRev = (CheckBox) findViewById(R.id.cb_shake_ud_rev);
+        llShakeAxis = findViewById(R.id.ll_shake_axis);               // 🆕 TASK-042
+        cbShakeAxisLr = (CheckBox) findViewById(R.id.cb_shake_axis_lr);
+        cbShakeAxisUd = (CheckBox) findViewById(R.id.cb_shake_axis_ud);
         tvShakeMap = (TextView) findViewById(R.id.tv_shake_map);
 
         // ── 🆕 TASK-033 实验室 · 蓝牙控制 ──
@@ -946,6 +952,23 @@ public class SettingsActivity extends Activity {
                     CardPrefs.setShakeEnabled(SettingsActivity.this, checked);
                 } else if (id == R.id.cb_shake_lr_rev) {
                     CardPrefs.setShakeLrRev(SettingsActivity.this, checked);
+                } else if (id == R.id.cb_shake_axis_lr) {
+                    // 🆕 TASK-042：禁止双不勾 —— 若这次取消会同时关掉两组，则弹回。
+                    if (!checked && !CardPrefs.isShakeAxisUdEnabled(SettingsActivity.this)) {
+                        mShakeUiSyncing = true;
+                        try { cbShakeAxisLr.setChecked(true); } finally { mShakeUiSyncing = false; }
+                        toast(getString(R.string.lab_shake_axis_need_one));
+                        return;
+                    }
+                    CardPrefs.setShakeAxisLrEnabled(SettingsActivity.this, checked);
+                } else if (id == R.id.cb_shake_axis_ud) {
+                    if (!checked && !CardPrefs.isShakeAxisLrEnabled(SettingsActivity.this)) {
+                        mShakeUiSyncing = true;
+                        try { cbShakeAxisUd.setChecked(true); } finally { mShakeUiSyncing = false; }
+                        toast(getString(R.string.lab_shake_axis_need_one));
+                        return;
+                    }
+                    CardPrefs.setShakeAxisUdEnabled(SettingsActivity.this, checked);
                 } else {
                     CardPrefs.setShakeUdRev(SettingsActivity.this, checked);
                 }
@@ -956,6 +979,8 @@ public class SettingsActivity extends Activity {
         cbShakeEnabled.setOnCheckedChangeListener(shakeL);
         cbShakeLrRev.setOnCheckedChangeListener(shakeL);
         cbShakeUdRev.setOnCheckedChangeListener(shakeL);
+        cbShakeAxisLr.setOnCheckedChangeListener(shakeL);   // 🆕 TASK-042
+        cbShakeAxisUd.setOnCheckedChangeListener(shakeL);
 
         // 🆕 TASK-029 手感优化：灵敏度三档（低/中/高，默认中）——
         //   改档立即落盘 + 通知捕获层**用新参数重建采样**（reload：正在跑才重建）。
@@ -1793,12 +1818,16 @@ public class SettingsActivity extends Activity {
         boolean on = CardPrefs.isShakeEnabled(this);
         boolean lrRev = CardPrefs.isShakeLrRev(this);
         boolean udRev = CardPrefs.isShakeUdRev(this);
+        boolean axLr = CardPrefs.isShakeAxisLrEnabled(this);   // 🆕 TASK-042
+        boolean axUd = CardPrefs.isShakeAxisUdEnabled(this);
         int sens = CardPrefs.getShakeSens(this);
         mShakeUiSyncing = true;
         try {
             cbShakeEnabled.setChecked(on);
             cbShakeLrRev.setChecked(lrRev);
             cbShakeUdRev.setChecked(udRev);
+            cbShakeAxisLr.setChecked(axLr);
+            cbShakeAxisUd.setChecked(axUd);
             rgShakeSens.check(sens == CardPrefs.SHAKE_SENS_LOW ? R.id.rb_shake_sens_low
                     : sens == CardPrefs.SHAKE_SENS_HIGH ? R.id.rb_shake_sens_high
                     : R.id.rb_shake_sens_mid);
@@ -1807,6 +1836,9 @@ public class SettingsActivity extends Activity {
         }
         cbShakeLrRev.setEnabled(on);      // 总开关关 ⇒ 置灰（可见）
         cbShakeUdRev.setEnabled(on);
+        // 🆕 TASK-042：响应方向多选同样随总开关置灰
+        cbShakeAxisLr.setEnabled(on);
+        cbShakeAxisUd.setEnabled(on);
         // 🆕 灵敏度三档：总开关关时置灰（与两个反转开关同规则；文字色硬编码黑故文字不变灰，同 A13 已知口径）
         rbShakeSensLow.setEnabled(on);
         rbShakeSensMid.setEnabled(on);
@@ -1814,11 +1846,20 @@ public class SettingsActivity extends Activity {
         if (tvShakeMap != null) {
             String prev = getString(R.string.lab_shake_page_prev);
             String next = getString(R.string.lab_shake_page_next);
-            tvShakeMap.setText(getString(R.string.lab_shake_map_now,
-                    lrRev ? next : prev,      // 左晃
-                    lrRev ? prev : next,      // 右晃
-                    udRev ? next : prev,      // 上晃
-                    udRev ? prev : next));    // 下晃
+            String lrCol = lrRev ? next : prev;    // 左晃
+            String rrCol = lrRev ? prev : next;    // 右晃
+            String udCol = udRev ? next : prev;    // 上晃
+            String ddCol = udRev ? prev : next;    // 下晃
+            // 🆕 TASK-042：未使能的组在映射行里显式标注「不响应」，用户一眼看出为何甩了没反应
+            if (!axLr) {
+                String off = getString(R.string.lab_shake_map_axis_off, getString(R.string.lab_shake_axis_lr));
+                lrCol = off; rrCol = off;
+            }
+            if (!axUd) {
+                String off = getString(R.string.lab_shake_map_axis_off, getString(R.string.lab_shake_axis_ud));
+                udCol = off; ddCol = off;
+            }
+            tvShakeMap.setText(getString(R.string.lab_shake_map_now, lrCol, rrCol, udCol, ddCol));
         }
     }
 
