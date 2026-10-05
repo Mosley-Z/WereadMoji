@@ -107,13 +107,41 @@ public final class NoteStore {
     /** 手动刷新索引的最小间隔 */
     public static final long INDEX_MIN_MS = 10L * 60L * 1000L;
 
+    /**
+     * 索引格式版本（TASK-056 起记录）。
+     *
+     * v2 = 每本书多两个字段 `charCount` / `ideaChars`（字数）。
+     *
+     * ⚠️ **读到老版本（无 `v` / `v<2`）不强制重建** —— 缺字段按 0 读，功能不受影响；
+     * 下次正常的索引刷新（{@link #saveIndex}）会把 `charCount` 字段给每本书补齐，
+     * 已算出的字数由 {@link #carryCharCounts} 搬过来，不会清零。
+     * 这样避免"升级即多发一次 `/user/notebooks`"（卡面「零新请求」的红利）。
+     */
+    public static final int INDEX_VERSION = 2;
+
     // ══════════════════════ ① 索引（内存缓存 + 文件指纹）══════════════════════
 
     private static JSONArray sIdx;
     private static String sIdxStamp = "";
+    /**
+     * 已解析索引里的 `savedAt`（**索引从服务端刷新的时刻**）。
+     *
+     * ⚠️ TASK-056：`writeIndexKeepCache` 只回填字数，**不是**一次索引刷新，
+     * 所以写回时必须**沿用**这个值 —— 否则 `savedAt` 被顶成"现在"，
+     * {@link #indexAge}/{@link #indexFresh} 会误判"索引刚刷过"，导致长期不再去拉笔记本列表。
+     */
+    private static long sIdxSavedAt;
     /** 全库总数（{@link #total}）的内存缓存，跟着索引走 */
     private static JSONArray sTotKey;
     private static int sTotMarks = -1, sTotIdeas = -1;
+    /**
+     * 全库**字数**缓存（TASK-056，K10b）—— 与 {@link #sTotKey} 同一份索引快照，
+     * 一次遍历同时算出四个量。`-1` = 未算。
+     *
+     * · {@link #sTotChars} = 全库**笔记字数**（划线原文 + 想法正文）
+     * · {@link #sTotIdeaChars} = 全库**想法正文字数**（用户自己写的那部分，`sTotChars` 的子集）
+     */
+    private static int sTotChars = -1, sTotIdeaChars = -1;
 
     /**
      * 文件指纹（长度:修改时间）—— 判断"这份文件换了没有"的最便宜办法。
@@ -141,7 +169,8 @@ public final class NoteStore {
         String s = read(c, F_INDEX);
         if (s == null) return null;
         try {
-            JSONArray a = new JSONObject(s).optJSONArray("books");
+            JSONObject o = new JSONObject(s);          // TASK-056：顺手把 savedAt 记下来
+            JSONArray a = o.optJSONArray("books");
             if (a == null || a.length() == 0) {
                 sIdx = null;
                 sIdxStamp = "";
@@ -149,6 +178,7 @@ public final class NoteStore {
             }
             sIdx = a;
             sIdxStamp = st;
+            sIdxSavedAt = o.optLong("savedAt", 0L);
             return a;
         } catch (Exception e) {
             return null;
@@ -172,11 +202,21 @@ public final class NoteStore {
         return index(c) != null && indexAge(c) <= INDEX_TTL_MS;
     }
 
-    /** 存索引（传进来的已是精简数组） */
+    /**
+     * 存索引（传进来的已是精简数组）。
+     *
+     * ⚠️ TASK-056：`compactIndex` 出来的数组字数是**占位 0**（接口没给正文），
+     * 真正算出来的字数记在**旧索引**里。若直接覆盖，每次索引刷新都会把已算的字数清零。
+     * 所以这里先把**旧索引里已算出的字数搬过来**（{@link #carryCharCounts}），再落盘。
+     */
     public static void saveIndex(Context c, JSONArray books) {
+        // 读旧索引必须是**落盘前**：index() 拿的是当前文件（尚未被本次覆盖）
+        JSONArray prev = index(c);
+        carryCharCounts(prev, books);
         JSONObject o = new JSONObject();
         try {
             o.put("savedAt", System.currentTimeMillis());
+            o.put("v", INDEX_VERSION);
             o.put("books", books == null ? new JSONArray() : books);
         } catch (Exception ignored) {
         }
@@ -184,13 +224,49 @@ public final class NoteStore {
         dropIndexCache();
     }
 
+    /**
+     * 把旧索引里已算出的字数搬到新索引（TASK-056）。
+     *
+     * 按 bookId 对齐：新索引里出现的、旧索引里算过的书 ⇒ 沿用旧值；
+     * 新出现的书（旧索引没有 / 旧索引是没字数字段的**老格式**）⇒ 保持占位 0，
+     * 等它被 {@link #poolOfBook} 读到正文时再回填。**老索引不报错、不崩**（A3）。
+     */
+    private static void carryCharCounts(JSONArray prev, JSONArray next) {
+        if (prev == null || next == null) return;
+        java.util.HashMap<String, int[]> m = new java.util.HashMap<String, int[]>();
+        for (int i = 0; i < prev.length(); i++) {
+            JSONObject b = prev.optJSONObject(i);
+            if (b == null) continue;
+            String id = b.optString("bookId", "");
+            if (id.length() == 0) continue;
+            int cc = b.optInt("charCount", 0);
+            int ic = b.optInt("ideaChars", 0);
+            if (cc > 0 || ic > 0) m.put(id, new int[]{cc, ic});
+        }
+        if (m.isEmpty()) return;
+        for (int i = 0; i < next.length(); i++) {
+            JSONObject b = next.optJSONObject(i);
+            if (b == null) continue;
+            int[] v = m.get(b.optString("bookId", ""));
+            if (v == null) continue;
+            try {
+                b.put("charCount", v[0]);
+                b.put("ideaChars", v[1]);
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
     /** 索引换了：索引缓存、总数缓存、按书缓存一起作废（**不动当前这一把**） */
     private static synchronized void dropIndexCache() {
         sIdx = null;
         sIdxStamp = "";
+        sIdxSavedAt = 0L;
         sTotKey = null;
         sTotMarks = -1;
         sTotIdeas = -1;
+        sTotChars = -1;
+        sTotIdeaChars = -1;
         sBooks.clear();
         sNoteAt.clear();
     }
@@ -249,6 +325,13 @@ public final class NoteStore {
                 o.put("author", book == null ? "" : book.optString("author", ""));
                 o.put("cover", book == null ? "" : book.optString("cover", ""));
                 o.put("sort", b.optLong("sort", 0L));
+                // ── 字数（TASK-056，K10b）──
+                // `/user/notebooks` 只给条数、不给正文，所以这里**只能先占 0**：
+                // 真实字数在 {@link #poolOfBook} 读到这本书的正文时**顺手累加**后回填
+                // （{@link #setCharCount}）。索引刷新时由 {@link #saveIndex} 把旧值搬过来，
+                // 保证"重建索引"不会把已算出的字数清零。
+                o.put("charCount", 0);      // 笔记字数 = 划线原文 + 想法正文
+                o.put("ideaChars", 0);      // 其中的想法正文（用户自撰）
             } catch (Exception e) {
                 continue;
             }
@@ -693,18 +776,61 @@ public final class NoteStore {
     public static int total(Context c, boolean ideasSlot) {
         JSONArray idx = index(c);
         if (idx == null) return 0;
-        if (sTotKey == idx) return ideasSlot ? sTotIdeas : sTotMarks;
-        int m = 0, iv = 0;
+        ensureTotals(idx);
+        return ideasSlot ? sTotIdeas : sTotMarks;
+    }
+
+    /**
+     * 一次遍历把四个全库汇总算齐（条数两档 + 字数两档，TASK-056）。
+     * 同一份索引数组只算一次（`sTotKey` 身份判等，索引换了/字数回填后会被置空重算）。
+     */
+    private static void ensureTotals(JSONArray idx) {
+        if (sTotKey == idx) return;
+        int m = 0, iv = 0, cc = 0, ic = 0;
         for (int i = 0; i < idx.length(); i++) {
             JSONObject b = idx.optJSONObject(i);
             if (b == null) continue;
             m += b.optInt("noteCount", 0);
             iv += b.optInt("reviewCount", 0);
+            cc += b.optInt("charCount", 0);
+            ic += b.optInt("ideaChars", 0);
         }
         sTotKey = idx;
         sTotMarks = m;
         sTotIdeas = iv;
-        return ideasSlot ? iv : m;
+        sTotChars = cc;
+        sTotIdeaChars = ic;
+    }
+
+    /**
+     * 全库**笔记字数**（TASK-056，K10b）：把索引里每本书的 `charCount` 求和。
+     *
+     * 口径 = **划线原文 + 想法正文**（见 {@link #poolOfBook} 的累加点）。
+     * 单位是 Java `String.length()`（UTF-16 code unit）—— 🔴 与「汉字个数」的直觉口径
+     * 在**非 BMP 字符**（emoji、部分生僻字）上会有差异，留档见验证记录 T056 的 A5。
+     *
+     * **零文件读**：只读索引里的整数，跟 {@link #total} 一样便宜。
+     * ⚠️ 只有**被读过正文**的书才有字数（老索引/没预热到的书是 0）—— 随预热逐步补齐。
+     */
+    public static int totalCharCount(Context c) {
+        JSONArray idx = index(c);
+        if (idx == null) return 0;
+        ensureTotals(idx);
+        return sTotChars;
+    }
+
+    /**
+     * 全库**想法正文**字数（TASK-056）：`charCount` 的子集 —— 只算**用户自己写的那段**。
+     *
+     * 供 K10（`TASK-055`）「思考沉淀型（≥8000 字）」判定。之所以单列一档：划线原文是
+     * **作者的话**，而「思考沉淀」指的是**用户自己的思考**；8000 字若按"原文+想法"算，
+     * 多数人几本书就过线、失去区分度。K10 落码时二选一，本卡把两档都备好 ⇒ 免二次改本文件。
+     */
+    public static int totalIdeaChars(Context c) {
+        JSONArray idx = index(c);
+        if (idx == null) return 0;
+        ensureTotals(idx);
+        return sTotIdeaChars;
     }
 
     /** 池子里有多少条（= 全库划线数，供 UI 显示"已就绪 N 条"） */
@@ -780,6 +906,10 @@ public final class NoteStore {
         String author = b.optString("author", "");
         String cover = b.optString("cover", "");
 
+        // ── 字数累加器（TASK-056，K10b）── 正文接下来本来就要逐条读过，顺手 length() 不花额外成本
+        int markChars = 0;   // 划线原文
+        int ideaChars = 0;   // 想法正文（用户自撰）
+
         JSONArray ms = marks(c, id);
         if (ms != null) {
             for (int j = 0; j < ms.length(); j++) {
@@ -787,6 +917,7 @@ public final class NoteStore {
                 if (m == null) continue;
                 String text = m.optString("markText", "").trim();
                 if (text.length() == 0) continue;
+                markChars += text.length();                 // TASK-056：划线原文字数
                 NoteStats n = new NoteStats();
                 n.kind = NoteStats.KIND_MARK;
                 n.bookId = id;
@@ -812,6 +943,7 @@ public final class NoteStore {
                 String content = it.optString("content", "").trim();
                 String abs = it.optString("abstract", "").trim();
                 if (content.length() == 0 && abs.length() == 0) continue;
+                ideaChars += content.length();              // TASK-056：想法正文字数（原文不重复计）
                 NoteStats n = new NoteStats();
                 n.kind = NoteStats.KIND_IDEA;
                 n.bookId = id;
@@ -872,7 +1004,65 @@ public final class NoteStore {
 
         List<NoteStats> out = marks;
         out.addAll(lone);
+
+        // ── 回填字数到索引（TASK-056，K10b）──
+        // 只有**真的读到了文件**才回填（否则 0 会被误当"这本书没字"而覆盖掉旧值）。
+        // setCharCount 内部"值没变就不写"，所以同一本书重复读取不会反复写索引。
+        if (ms != null || is != null) {
+            setCharCount(c, id, markChars + ideaChars, ideaChars);
+        }
         return out;
+    }
+
+    /**
+     * 把一本书的字数写回索引并落盘（TASK-056，K10b）。
+     *
+     * ⚠️ **不用 {@link #saveIndex}**：那个会把索引缓存、总数缓存、按书缓存全清掉
+     * （{@link #dropIndexCache}）—— 而我们此刻正在 {@link #poolOfBook} 里，
+     * 清掉缓存等于把刚解析出来的这本书又扔了。这里用 {@link #writeIndexKeepCache}：
+     * 落盘后把**文件指纹对齐**，索引缓存原地保持有效。
+     *
+     * @param chars     笔记字数 = 划线原文 + 想法正文
+     * @param ideaChars 其中的想法正文字数
+     */
+    private static synchronized void setCharCount(Context c, String bookId, int chars, int ideaChars) {
+        if (bookId == null || bookId.length() == 0) return;
+        JSONArray idx = index(c);
+        if (idx == null) return;
+        for (int i = 0; i < idx.length(); i++) {
+            JSONObject b = idx.optJSONObject(i);
+            if (b == null || !bookId.equals(b.optString("bookId", ""))) continue;
+            if (b.optInt("charCount", -1) == chars && b.optInt("ideaChars", -1) == ideaChars) return;
+            try {
+                b.put("charCount", chars);
+                b.put("ideaChars", ideaChars);
+            } catch (Exception e) {
+                return;
+            }
+            writeIndexKeepCache(c, idx);
+            sTotKey = null;          // 汇总变了，下次 total/字数重算（一笔遍历，很便宜）
+            return;
+        }
+    }
+
+    /**
+     * 覆盖写索引但**保住内存缓存**（TASK-056）：落盘后把指纹对齐到新文件，避免下次误判"换了"而重读重解析。
+     *
+     * 🔴 `savedAt` **沿用原值**（{@link #sIdxSavedAt}）—— 这里只是回填字数，不是索引刷新；
+     * 若改成 `now`，{@link #indexFresh} 会一直为真、索引再也不刷新。
+     */
+    private static void writeIndexKeepCache(Context c, JSONArray idx) {
+        JSONObject o = new JSONObject();
+        try {
+            o.put("savedAt", sIdxSavedAt > 0L ? sIdxSavedAt : System.currentTimeMillis());
+            o.put("v", INDEX_VERSION);
+            o.put("books", idx);
+        } catch (Exception ignored) {
+            return;
+        }
+        write(c, F_INDEX, o.toString());
+        String st = stamp(c, F_INDEX);
+        sIdxStamp = (st == null) ? "" : st;
     }
 
     /**
