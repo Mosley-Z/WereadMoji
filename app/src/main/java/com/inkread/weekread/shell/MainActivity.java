@@ -265,6 +265,10 @@ public class MainActivity extends Activity {
             //   把角色改回来，该按钮已删 ⇒ 现在唯一入口就是大标签②，不装配就等于把用户锁死。
             wireMainTabs();
             setupMainPages();
+            // 🆕 postreview（F-11）：对齐字段语义 —— 本分支 UI 确已装配完毕（走的是 phone 版）。
+            //    当前无副作用（onResume/onPause 的 remotePhone 守卫先早退），防将来新增
+            //    「仅当 readerUiReady 才做某事」的逻辑踩坑。
+            readerUiReady = true;
             return;
         }
 
@@ -632,6 +636,13 @@ public class MainActivity extends Activity {
      * **只把 {@code tabbar.setSelected} 换成 {@code navDrop.setSelected}**，其余取数/渲染零改动。
      */
     private void showReaderPage() {
+        // 🔴 postreview-TASK-044/045（审查 F-1）：`remote_role=phone` 形态下**本方法一律空转**。
+        //    phone 形态的阅读页只剩「遥控提示行」（`applyPhoneMode()` 已把 card/picker/btn_refresh
+        //    置 GONE）；若放行，下面 `card`/`picker` 的 `setVisibility(VISIBLE)` 会把它们**重新显示**
+        //    （审查复现的回归：点大标签① 或设置页存 Key 都会走到这里）。
+        //    修法取审查首选：在此一刀切早退 —— 它是本方法**所有**调用点的公共入口。
+        if (remotePhone) return;
+
         navDrop.setSelected(indexOf(tabMode));
         refreshMainTabLabels();     // 🆕 TASK-044-R1：大标签① 文案跟随形态（「本周▽」→「本月▽」…）
 
@@ -640,8 +651,12 @@ public class MainActivity extends Activity {
             picker.setVisibility(View.GONE);
             card.setVisibility(View.GONE);
             tvInsightPh.setVisibility(View.VISIBLE);
+            // 🆕 postreview（F-2）：洞察页无数据可取 ⇒ 刷新键是「可见但无反应」的死键，一并隐藏。
+            findViewById(R.id.btn_refresh).setVisibility(View.GONE);
             return;
         }
+        // 🆕 postreview（F-2）：非洞察形态恢复刷新键（原先从不被本方法触碰 ⇒ 等价于恒 VISIBLE）。
+        findViewById(R.id.btn_refresh).setVisibility(View.VISIBLE);
         card.setVisibility(View.VISIBLE);
         tvInsightPh.setVisibility(View.GONE);
 
@@ -780,6 +795,9 @@ public class MainActivity extends Activity {
 
     /** @param force true = 用户手动点刷新（本书的书架缓存可按更短的间隔重拉） */
     private void refresh(boolean force) {
+        // 🆕 postreview-TASK-044/045（审查 F-1 附带，用户拍板「按推荐」）：`remote_role=phone`
+        //    形态没有卡片可填 ⇒ 一律空转（否则 `onKeySaved` 会往已 GONE 的卡片空跑一次取数）。
+        if (remotePhone) return;
         // 🆕 TASK-044：洞察页本卡只做占位（内容 → TASK-048）⇒ 无数据可取，直接跳过（不触发绑定补发）
         if (PeriodRange.INSIGHT.equals(tabMode)) return;
         final String key = StatsStore.getKey(this);
