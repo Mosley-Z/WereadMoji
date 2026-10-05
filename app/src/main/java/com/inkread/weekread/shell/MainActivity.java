@@ -658,7 +658,7 @@ public class MainActivity extends Activity {
             insightPage.setVisibility(View.VISIBLE);
             bindInsightAnnual();             // 🆕 TASK-051 K6：把「年度视图」的缓存喂进去
             bindInsightOverall();            // 🆕 TASK-052 K7：把「累计视图」的缓存喂进去
-            bindInsightInterest();           // 🆕 TASK-049 K4：把「兴趣雷达」的料喂进去
+            bindInsightProfile();            // 🆕 TASK-049 K4 / TASK-050 K5：把「画像」三件套的料喂进去
             ensureAnnualLoaded();            // 🆕 TASK-051 K6：年度缓存缺 ⇒ 触发一次拉取
             ensureOverallLoaded();           // 🆕 TASK-052 K7：累计缓存缺 ⇒ 触发一次拉取
             insightPage.resetScroll();       // 每次进入都从顶部看起
@@ -701,37 +701,51 @@ public class MainActivity extends Activity {
         picker.setPeriod(tabMode, a);
     }
 
-    // ══════════════ 🆕 TASK-049（K4）：洞察页「画像」兴趣雷达的取数 ══════════════
+    // ══════════════ 🆕 TASK-049（K4）+ TASK-050（K5）：洞察页「画像」三件套的取数 ══════════════
 
     /**
-     * 口径链：**累计 → 年度 → 本月 → 本周**，取第一个「收拢过滤后有料」的档。
+     * 口径链：**累计 → 年度 → 本月 → 本周**，取第一个「画像三件套里有任一料」的档
+     * （判据 {@link InsightPageView#hasProfile}）。
      *
-     * <p>为什么是这个顺序（实测依据，见 `验证记录/159`）：
-     * `preferCategory` 按 `parentCategoryTitle` 收拢后，本账号各档分别只有
-     * **累计 5 类 / 年度 4 类 / 本月 2 类 / 本周 0 类**（上游周回包根本没有该字段）。
-     * ⇒ 单用周/月这一格常年近乎空白，所以**优先用最全的档**。
+     * <p>为什么是这个顺序（实测依据，见 `验证记录/159`、`验证记录/161`）：
+     * · `preferCategory` 按 `parentCategoryTitle` 收拢后，本账号各档分别只有
+     *   **累计 5 类 / 年度 4 类 / 本月 2 类 / 本周 0 类**（上游周回包根本没有该字段）；
+     * · `preferAuthor` **仅年度/累计**有；`preferTime` **仅累计**有（周/月都没有）。
+     * ⇒ 单用周/月这一格常年近乎空白，所以**优先用最全的档**（累计最全）。
      *
      * <p>🔴 **只读缓存，零新增网络请求** —— 年度/累计的**首次拉取**归
      * {@code TASK-051} / {@code TASK-052}（本卡不越界）。它们落码后本方法**无需改动**
      * 就自动变丰富（链路取到的档自然前移）。
      */
-    private void bindInsightInterest() {
+    private void bindInsightProfile() {
         String[] chain = { PeriodRange.OVERALL, PeriodRange.ANNUALLY,
                            PeriodRange.MONTHLY, PeriodRange.WEEKLY };
         for (int i = 0; i < chain.length; i++) {
-            PeriodStats st = loadInsightInterest(chain[i]);
-            if (InsightPageView.hasInterest(st)) {
-                insightPage.setInterest(st.preferCategory, scopeWordOf(chain[i]));
-                CardDebug.note(this, "insight interest: scope=" + chain[i]);
+            PeriodStats st = loadProfileScope(chain[i]);
+            if (InsightPageView.hasProfile(st)) {
+                insightPage.setProfile(st.preferCategory, st.preferAuthor,
+                        st.preferTime, scopeWordOf(chain[i]));
+                CardDebug.note(this, "insight profile: scope=" + chain[i]
+                        + " cats=" + (st.preferCategory == null ? 0 : st.preferCategory.size())
+                        + " authors=" + (st.preferAuthor == null ? 0 : st.preferAuthor.size())
+                        + " timeMax=" + maxSec(st.preferTime));
                 return;
             }
         }
-        insightPage.setInterest(null, null);          // 全档都无料 ⇒ 空态
-        CardDebug.note(this, "insight interest: 空态（四档缓存都没有可统计的分类）");
+        insightPage.setProfile(null, null, null, null);   // 全档都无料 ⇒ 空态
+        CardDebug.note(this, "insight profile: 空态（四档缓存都没有偏好数据）");
+    }
+
+    /** 24 桶里的最大秒数（0 = 无时段数据）—— 仅用于日志。 */
+    private static int maxSec(int[] a) {
+        int mx = 0;
+        if (a == null) return 0;
+        for (int i = 0; i < a.length; i++) if (a[i] > mx) mx = a[i];
+        return mx;
     }
 
     /** 读某一档的缓存：累计 → `loadOverall`；年度 → `loadAnnual(今年)`；其余 → 当前周期缓存。 */
-    private PeriodStats loadInsightInterest(String mode) {
+    private PeriodStats loadProfileScope(String mode) {
         if (PeriodRange.OVERALL.equals(mode)) return StatsStore.loadOverall(this);
         if (PeriodRange.ANNUALLY.equals(mode)) {
             // 🔴 `PeriodRange.startOf` 只认周/月 ⇒ 年度必须走 `yearOf`（0 = 现在所在年）
@@ -791,7 +805,7 @@ public class MainActivity extends Activity {
                         }
                         StatsStore.saveAnnual(MainActivity.this, stats);
                         bindInsightAnnual();          // 年度分区换真实数据
-                        bindInsightInterest();        // 兴趣雷达口径可能前移（见方法注释）
+                        bindInsightProfile();         // 画像口径可能前移（见方法注释）
                         CardDebug.note(MainActivity.this, "insight annual: fetched OK total="
                                 + stats.totalSec);
                     }
@@ -840,7 +854,7 @@ public class MainActivity extends Activity {
                         }
                         StatsStore.saveOverall(MainActivity.this, stats);
                         bindInsightOverall();         // 累计分区换真实数据
-                        bindInsightInterest();        // 兴趣雷达口径前移到累计档（见方法注释）
+                        bindInsightProfile();         // 画像口径前移到累计档（见方法注释）
                         CardDebug.note(MainActivity.this, "insight overall: fetched OK total="
                                 + stats.totalSec);
                     }

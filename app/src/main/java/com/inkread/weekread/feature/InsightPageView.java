@@ -45,8 +45,10 @@ public final class InsightPageView extends View {
     private float lastTouchY = 0f;
     private boolean dragging = false;
 
-    // ── K4（TASK-049）：兴趣雷达的料（由 shell 层喂入；null/空 ⇒ 分区画空态）──
+    // ── K4（TASK-049）+/ K5（TASK-050）：兴趣雷达 / 偏好作者 / 偏好时段的料（shell 层喂入）──
     private List<PeriodStats.PreferCat> interestCats;
+    private List<PeriodStats.PreferCat> interestAuthors;
+    private int[] interestTimes;
     private String interestScope;
 
     // ── K6（TASK-051）：年度视图的料（null ⇒ 分区画空态）──
@@ -67,21 +69,27 @@ public final class InsightPageView extends View {
     // ══════════════════════ 料入口（后序卡按分区继续加） ══════════════════════
 
     /**
-     * 🆕 K4（TASK-049）：设定「画像」分区**兴趣雷达**的料。
+     * 🆕 K4（TASK-049）+ K5（TASK-050）：设定「画像」分区**三件套**的料。
      *
-     * @param cats  某一档的 `preferCategory` 原始列表（**未收拢、未过滤** —— 那些在
-     *              {@link InsightRenderer#aggregateCategories} 里做）；null/空 ⇒ 画空态
-     * @param scope 口径范围词（累计 / 今年 / 本月 / 本周），拼进子块标题
+     * @param cats    某一档的 `preferCategory` 原始列表（**未收拢、未过滤** —— 收拢过滤在
+     *                {@link InsightRenderer#aggregateCategories} 里做）；null/空 ⇒ 不画雷达子块
+     * @param authors 同一档的 `preferAuthor` 原始列表；null/空 ⇒ 不画作者子块
+     * @param times   同一档的 `preferTime`（24 桶原序）；全 0/null ⇒ 不画时段子块
+     * @param scope   口径范围词（累计 / 今年 / 本月 / 本周），拼进各子块标题
      */
-    public void setInterest(List<PeriodStats.PreferCat> cats, String scope) {
+    public void setProfile(List<PeriodStats.PreferCat> cats,
+                           List<PeriodStats.PreferCat> authors,
+                           int[] times, String scope) {
         interestCats = cats;
+        interestAuthors = authors;
+        interestTimes = times;
         interestScope = scope;
         rebuildSections();
         invalidate();
     }
 
     /**
-     * 🆕 K4：给「取数方」（{@code MainActivity}）判断**某一档有没有料**用。
+     * 🆕 K4：给「取数方」（{@code MainActivity}）判断**某一档有没有兴趣雷达料**用。
      *
      * 为什么要这个静态口：`InsightRenderer` 是**包内可见**的，shell 层引用不到它的类型；
      * 而"有没有料"必须用**收拢过滤后**的判据（`preferCategory` 可能整列表全是 `readingTime=0`，
@@ -90,6 +98,19 @@ public final class InsightPageView extends View {
     public static boolean hasInterest(PeriodStats st) {
         return st != null
                 && !InsightRenderer.aggregateCategories(st.preferCategory, 1).isEmpty();
+    }
+
+    /**
+     * 🆕 K5（TASK-050）：判断**某一档有没有"画像三件套"里的任一料**（雷达 / 作者 / 时段）。
+     *
+     * 口径链（累计→年度→本月→本周）用它选档：只要该档**任一件**有料就用它，
+     * 比只看雷达（{@link #hasInterest}）更全 —— 时段只有累计档有，作者年度/累计都有。
+     */
+    public static boolean hasProfile(PeriodStats st) {
+        if (st == null) return false;
+        if (!InsightRenderer.aggregateCategories(st.preferCategory, 1).isEmpty()) return true;
+        if (!InsightRenderer.aggregateAuthors(st.preferAuthor, 1).isEmpty()) return true;
+        return InsightRenderer.hasTime(st.preferTime);
     }
 
     /**
@@ -136,10 +157,12 @@ public final class InsightPageView extends View {
         renderer.add(InsightRenderer.overallSection(overallStats, "暂无累计数据"));
         // ④ 排行（→ TASK-053 K8）── 🔴 高度按视口百分比预留（40~45%），避免后序卡返工（卡面 R3）
         renderer.add(InsightRenderer.placeholderRatio("读书排行", "暂无阅读排行", RANK_VIEWPORT_RATIO));
-        // ⑤ 画像（🆕 TASK-049 K4：**兴趣雷达已落地**；K5 偏好三件套 / K10 画像判定继续往这一格加）
-        renderer.add(InsightRenderer.interestRadar(
+        // ⑤ 画像（🆕 TASK-049 K4 兴趣雷达 + TASK-050 K5 偏好作者/时段：**三件套已落地**；
+        //         K10 画像判定继续往这一格加）
+        renderer.add(InsightRenderer.profileSection(
                 InsightRenderer.aggregateCategories(interestCats, InsightRenderer.RADAR_TOP_N),
-                interestScope, "暂无阅读画像"));
+                InsightRenderer.aggregateAuthors(interestAuthors, InsightRenderer.AUTHOR_TOP_N),
+                interestTimes, interestScope, "暂无阅读画像"));
     }
 
     // ══════════════════════ 量高 / 钳位 ══════════════════════

@@ -280,73 +280,127 @@ final class InsightRenderer {
     }
 
     /**
-     * 分区⑤「阅读画像」—— **K4 兴趣雷达**（真实实现，顶替 `TASK-048` 的占位）。
+     * 分区⑤「阅读画像」—— **K4 兴趣雷达 + K5 偏好作者 / 偏好时段**（三件套，同一口径）。
      *
-     * @param bars  聚合后的 Top-N；null / 空 ⇒ 画 {@code empty} 空态
-     * @param scope 口径范围词（累计 / 今年 / 本月 / 本周），拼进子块标题
+     * 子块依次（各自「有料才画」）：
+     *   ① 兴趣雷达（`preferCategory` 收拢 Top-N）—— K4（`TASK-049`）；
+     *   ② 偏好作者（`preferAuthor` Top-6）—— K5（`TASK-050`）；
+     *   ③ 偏好时段（`preferTime` 24 桶，🔴 从 6 点起）—— K5。
+     * 三个子块**全无料** ⇒ 只画 {@code empty} 空态（卡面 A5：周/月形态无作者/时段数据时也不崩）。
+     *
+     * @param cats    聚合后的分类 Top-N（K4 产出）；null/空 ⇒ 不画雷达子块
+     * @param authors 聚合后的作者 Top-6（{@link #aggregateAuthors}）；null/空 ⇒ 不画作者子块
+     * @param times   24 时段（{@code preferTime} 原序）；全 0/null ⇒ 不画时段子块
+     * @param scope   口径范围词（累计 / 今年 / 本月 / 本周），拼进各子块标题
      */
-    static Section interestRadar(final List<Bar> bars, final String scope, final String empty) {
+    static Section profileSection(final List<Bar> cats, final List<AuthorBar> authors,
+                                  final int[] times, final String scope, final String empty) {
         final String title = "阅读画像";
         return new Section() {
             public String title() { return title; }
 
             public float height(float w, float vh, float unit) {
                 float head = secHeadH(unit);
-                if (bars == null || bars.isEmpty()) {
-                    return head + SZ_BODY * unit * 1.9f * 2f;             // 与 draw 的空态盒同高
-                }
-                return head + (RADAR_CAP_SZ + RADAR_CAP_GAP) * unit
-                        + RADAR_ROW_H * unit * bars.size() + unit * 4f;
+                int nc = (cats == null) ? 0 : cats.size();
+                int na = (authors == null) ? 0 : authors.size();
+                boolean ht = hasTime(times);
+                if (nc == 0 && na == 0 && !ht) return head + emptyBox2(unit);   // 与 draw 的空态盒同高
+                float h = head;
+                if (nc > 0) h += barBlockH(unit, nc);
+                if (na > 0) h += barBlockH(unit, na);
+                if (ht) h += timeBlockH(unit);
+                return h + unit * 4f;
             }
 
             public void draw(Canvas c, float w, float vh, float top, float unit, Paint p) {
-                drawInterestRadar(c, w, top, unit, p, bars, scope, empty);
+                drawProfile(c, w, top, unit, p, cats, authors, times, scope, empty);
             }
         };
     }
 
     /**
-     * 画兴趣雷达：分区标题 + 子块标题（带口径）+ N 行 `分类名 ─ [轨|填充] ─ 百分比`。
+     * 画「画像」分区：分区标题 + 依次画各「有料」子块（雷达 / 作者 / 时段），返回新 y。
      *
-     * 🔴 **纯黑白**：条体（轨与填充）坐标**全部取整** ⇒ 那部分像素只有 `0x00` / `0xFF`；
+     * 🔴 **纯黑白**：条体（轨与填充）与时段柱体坐标**全部取整** ⇒ 那部分像素只有 `0x00` / `0xFF`；
      *    文字仍走全 App 统一的 `ANTI_ALIAS_FLAG`（与其它页同口径，见 TASK-048 §3-A5）。
      */
-    private static void drawInterestRadar(Canvas c, float w, float top, float unit, Paint p,
-                                          List<Bar> bars, String scope, String empty) {
-        float pad = w * PAD_X_RATIO;
-        float left = pad, right = w - pad;
+    private static void drawProfile(Canvas c, float w, float top, float unit, Paint p,
+                                    List<Bar> cats, List<AuthorBar> authors, int[] times,
+                                    String scope, String empty) {
         float y = drawSectionHead(c, w, top, unit, p, "阅读画像");
 
-        if (bars == null || bars.isEmpty()) {
-            drawCenteredIn(c, w, y, SZ_BODY * unit * 1.9f * 2f, unit, p, empty);
+        int nc = (cats == null) ? 0 : cats.size();
+        int na = (authors == null) ? 0 : authors.size();
+        boolean ht = hasTime(times);
+
+        if (nc == 0 && na == 0 && !ht) {                       // 三个子块全无料 ⇒ 分区级空态
+            drawCenteredIn(c, w, y, emptyBox2(unit), unit, p, empty);
             return;
         }
 
-        // ── 子块标题「兴趣雷达 · <口径>」──
+        if (nc > 0) {                                          // ① 兴趣雷达
+            List<Row> rows = new ArrayList<Row>(nc);
+            for (int i = 0; i < nc; i++) {
+                Bar b = cats.get(i);
+                rows.add(new Row(b.name, b.frac, fmtPct(b.pct)));
+            }
+            y = drawBarBlock(c, w, y, unit, p, "兴趣雷达", scope, rows);
+        }
+        if (na > 0) {                                          // ② 偏好作者
+            List<Row> rows = new ArrayList<Row>(na);
+            for (int i = 0; i < na; i++) {
+                AuthorBar a = authors.get(i);
+                rows.add(new Row(a.name, a.frac, a.count + "本"));
+            }
+            y = drawBarBlock(c, w, y, unit, p, "偏好作者", scope, rows);
+        }
+        if (ht) {                                              // ③ 偏好时段
+            drawTimeBlock(c, w, y, unit, p, times, scope);
+        }
+
+        p.setTextAlign(Paint.Align.LEFT);
+        p.setStyle(Paint.Style.FILL);
+    }
+
+    /**
+     * 画一个「横向条形」子块：子块标题（带口径）+ N 行 `名 ─ [轨|填充] ─ 右值`，返回新 y。
+     * 雷达（K4）与作者（K5）共用同一几何 —— 「与 K4 同款横向条形」由这条复用保证。
+     */
+    private static float drawBarBlock(Canvas c, float w, float top, float unit, Paint p,
+                                      String cap, String scope, List<Row> rows) {
+        float pad = w * PAD_X_RATIO;
+        float left = pad, right = w - pad;
+        float y = top;
+
+        // ── 子块标题「<cap> · <口径>」──
         float capSz = RADAR_CAP_SZ * unit;
         p.setStyle(Paint.Style.FILL);
         p.setColor(GRAY);
         p.setFakeBoldText(false);
         p.setTextAlign(Paint.Align.LEFT);
         p.setTextSize(capSz);
-        c.drawText((scope == null || scope.length() == 0) ? "兴趣雷达" : ("兴趣雷达 · " + scope),
+        c.drawText((scope == null || scope.length() == 0) ? cap : (cap + " · " + scope),
                 left, y + capSz * 1.25f, p);
         y += (RADAR_CAP_SZ + RADAR_CAP_GAP) * unit;
 
         // ── 行几何（一次算好，各行共用）──
         float nameW = w * RADAR_NAME_W;
-        float pctSz = RADAR_PCT_SZ * unit;
-        p.setTextSize(pctSz);
-        float pctW = p.measureText("100.0%");                 // 固定槽宽 ⇒ 数值变化不抖
+        float valSz = RADAR_PCT_SZ * unit;
+        p.setTextSize(valSz);
+        float valW = 0f;
+        for (int i = 0; i < rows.size(); i++) {                // 右列固定槽宽 = 最宽右值的宽
+            float tw = p.measureText(rows.get(i).right);       // ⇒ 各行轨道右端对齐、数值变化不抖
+            if (tw > valW) valW = tw;
+        }
         float barL = left + nameW + RADAR_GAP * unit;
-        float barR = right - pctW - RADAR_GAP * unit;
+        float barR = right - valW - RADAR_GAP * unit;
         float trackW = Math.max(unit * 24f, barR - barL);
         float barH = RADAR_BAR_H * unit;
         float rowH = RADAR_ROW_H * unit;
         float bodySz = SZ_BODY * unit;
 
-        for (int i = 0; i < bars.size(); i++) {
-            Bar b = bars.get(i);
+        for (int i = 0; i < rows.size(); i++) {
+            Row r = rows.get(i);
             float cy = y + i * rowH + rowH * 0.5f;
 
             // 条体 —— 整数对齐（0.5 偏移让 1px 描边落在像素中心 ⇒ 无 AA 灰边）
@@ -360,33 +414,204 @@ final class InsightRenderer {
             p.setColor(INK);
             c.drawRect(x0 + 0.5f, t0 + 0.5f, x1 - 0.5f, t1 - 0.5f, p);   // 轨（空槽外框）
             p.setStyle(Paint.Style.FILL);
-            c.drawRect(x0, t0, x0 + Math.max(1, Math.round(trackW * b.frac)), t1, p);  // 填充
+            c.drawRect(x0, t0, x0 + Math.max(1, Math.round(trackW * r.frac)), t1, p);  // 填充
 
-            // 分类名（左；超宽按 0.4 步长缩字，下限 11×unit）
+            // 名（左；超宽按 0.4 步长缩字，下限 11×unit）
             p.setColor(INK);
             p.setTextAlign(Paint.Align.LEFT);
             float ns = bodySz;
             p.setTextSize(ns);
-            while (ns > 11f * unit && p.measureText(b.name) > nameW - RADAR_GAP * unit) {
+            while (ns > 11f * unit && p.measureText(r.name) > nameW - RADAR_GAP * unit) {
                 ns -= 0.4f;
                 p.setTextSize(ns);
             }
-            c.drawText(b.name, left, cy + ns * 0.36f, p);
+            c.drawText(r.name, left, cy + ns * 0.36f, p);
 
-            // 百分比（右）
+            // 右值（右对齐）
             p.setTextAlign(Paint.Align.RIGHT);
-            p.setTextSize(pctSz);
-            c.drawText(fmtPct(b.pct), right, cy + pctSz * 0.36f, p);
+            p.setTextSize(valSz);
+            c.drawText(r.right, right, cy + valSz * 0.36f, p);
         }
 
         p.setTextAlign(Paint.Align.LEFT);
         p.setStyle(Paint.Style.FILL);
+        return y + rowH * rows.size();
     }
 
     /** 百分比文案：固定一位小数（`45.1%`）—— 与卡面 ASCII 一致。 */
     private static String fmtPct(float pct) {
         int t = Math.round(pct * 10f);
         return (t / 10) + "." + Math.abs(t % 10) + "%";
+    }
+
+    // ══════════════════════ K5（TASK-050）：偏好三件套（作者 / 时段）══════════════════════
+
+    /** 作者条数上限（卡面：Top 6）。 */
+    static final int AUTHOR_TOP_N = 6;
+
+    /** 时段桶数（`preferTime` 固定 24）。 */
+    private static final int TIME_BUCKETS = 24;
+    /** 时段柱柱高（×unit ⇒ ≈48px @480×800）。 */
+    private static final float TIME_CHART_UNITS = 40f;
+    /** 时段锚点标签行高（×unit ⇒ ≈22px）。 */
+    private static final float TIME_LABEL_UNITS = 18f;
+    /** 时段柱间距（×unit）。 */
+    private static final float TIME_GAP_UNITS = 1.5f;
+    /**
+     * 时段锚点：**桶序号**（0 基）。
+     * 🔴 桶 0 = **06 点**（`preferTime` 从 6 点起）⇒ 锚点应为 06 / 12 / 18 / 24（= 桶 0/6/12/18）。
+     */
+    private static final int[] TIME_ANCHOR_POS = { 0, 6, 12, 18 };
+    /** 时段锚点标签（与 {@link #TIME_ANCHOR_POS} 一一对应）。 */
+    private static final String[] TIME_ANCHOR_LABEL = { "06", "12", "18", "24" };
+
+    /**
+     * 作者偏好的一根条。
+     *
+     * 🔴 条长口径 = **书本数 `count`**（并非阅读时长）—— 理由：官方回包 `preferAuthor`
+     *    **本身就按 `count` 降序**（实测样本 index0=7本 ⇒ 递减），条长沿用同一量纲才能
+     *    与官方排序**单调一致**（否则会出现"后一根比前一根长"的错位观感）。右标签同量纲（`N本`），
+     *    保证「条长 ↔ 标签」自洽。`timeText`（如 "50小时34分钟"）保留备用：官方若展示时长，
+     *    改动点仅在此一处（把 frac 换成时长比、右标签换成 `timeText`）。
+     */
+    static final class AuthorBar {
+        final String name;
+        /** 阅读该作者的书本数（条长分子） */
+        final int count;
+        /** 阅读该作者作品的时长**文本**（回包原样，如 "50小时34分钟"；可能为 null） */
+        final String timeText;
+        /** 条长占比 —— `count / 最大 count` ⇒ 最长条恒为 `1.0` */
+        final float frac;
+
+        AuthorBar(String name, int count, String timeText, float frac) {
+            this.name = name; this.count = count; this.timeText = timeText; this.frac = frac;
+        }
+    }
+
+    /** 一根条的统一渲染行（雷达 / 作者共用）：名 + 条长占比 + 右侧值文案。 */
+    static final class Row {
+        final String name;
+        final float frac;
+        final String right;
+
+        Row(String name, float frac, String right) {
+            this.name = name; this.frac = frac; this.right = right;
+        }
+    }
+
+    /** 条形子块高（雷达 / 作者共用同几何，保证 `height()` 与 `draw()` 同高）。 */
+    private static float barBlockH(float unit, int n) {
+        return (RADAR_CAP_SZ + RADAR_CAP_GAP) * unit + RADAR_ROW_H * unit * n;
+    }
+
+    /** 时段子块高（子块标题 + 柱图 + 锚点标签行）。 */
+    private static float timeBlockH(float unit) {
+        return (RADAR_CAP_SZ + RADAR_CAP_GAP) * unit
+                + (TIME_CHART_UNITS + TIME_LABEL_UNITS) * unit;
+    }
+
+    /** 24 时段里是否有任一桶 > 0（时段子块的「有料」判据）。 */
+    static boolean hasTime(int[] t) {
+        if (t == null) return false;
+        for (int i = 0; i < t.length; i++) if (t[i] > 0) return true;
+        return false;
+    }
+
+    /**
+     * 把 `preferAuthor` 收成 Top-N 条。
+     *
+     * 🔴 **保持 API 原序**（不按时长重排）—— 官方已按**书本数降序**返回，尊重服务端排序
+     *    才能满足卡面 A1「与官方一致」；条长 = `count / 最大 count`。
+     * · 过滤 `count <= 0` 与无名项（画不出来）；
+     * · 全部 `count <= 0`（异常/无数据）⇒ 返回空 ⇒ 分区画空态（不崩）。
+     * 🔴 与 `_probe/t050/author_probe.py` **逐条同构**，两边必须一起改。
+     */
+    static List<AuthorBar> aggregateAuthors(List<PeriodStats.PreferCat> authors, int topN) {
+        List<AuthorBar> out = new ArrayList<AuthorBar>();
+        if (authors == null || authors.isEmpty()) return out;
+
+        int lim = Math.min(topN <= 0 ? AUTHOR_TOP_N : topN, authors.size());
+        int mx = 0;
+        for (int i = 0; i < lim; i++) {
+            PeriodStats.PreferCat a = authors.get(i);
+            if (a != null && a.count > mx) mx = a.count;
+        }
+        if (mx <= 0) return out;                                  // 无有效「书本数」⇒ 空态
+
+        for (int i = 0; i < lim; i++) {
+            PeriodStats.PreferCat a = authors.get(i);
+            if (a == null) continue;
+            String nm = a.name;
+            if (nm == null || nm.length() == 0) continue;
+            if (a.count <= 0) continue;
+            out.add(new AuthorBar(nm, a.count, a.readTimeText, (float) a.count / mx));
+        }
+        return out;
+    }
+
+    /**
+     * 画「偏好时段」子块：子块标题（带口径）+ **24 桶紧凑柱图**（🔴 原序，桶 0 = 06 点）+ 锚点标签，
+     * 返回新 y。
+     *
+     * 🔴 **不许按 0~23 排**：`preferTime` 从 6 点起，若按 `i` 直接当小时会**整体错位 6 小时**
+     *    （最高柱落错位置）。本函数**只按数组原序画**、锚点固定标 06/12/18/24 ⇒ 天然不错位。
+     */
+    private static void drawTimeBlock(Canvas c, float w, float top, float unit, Paint p,
+                                      int[] times, String scope) {
+        float pad = w * PAD_X_RATIO;
+        float left = pad, right = w - pad;
+        float y = top;
+
+        // ── 子块标题「偏好时段 · <口径>」──
+        float capSz = RADAR_CAP_SZ * unit;
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(GRAY);
+        p.setFakeBoldText(false);
+        p.setTextAlign(Paint.Align.LEFT);
+        p.setTextSize(capSz);
+        c.drawText((scope == null || scope.length() == 0) ? "偏好时段" : ("偏好时段 · " + scope),
+                left, y + capSz * 1.25f, p);
+        y += (RADAR_CAP_SZ + RADAR_CAP_GAP) * unit;
+
+        // ── 24 桶 ──
+        float chartH = TIME_CHART_UNITS * unit;
+        int baseY = Math.round(y + chartH);                    // 基线（整行）
+        float gap = TIME_GAP_UNITS * unit;
+        float colW = (right - left - gap * (TIME_BUCKETS - 1)) / TIME_BUCKETS;
+        if (colW < 1f) colW = 1f;
+
+        int mx = 0;
+        for (int i = 0; i < TIME_BUCKETS && i < times.length; i++) if (times[i] > mx) mx = times[i];
+
+        for (int i = 0; i < TIME_BUCKETS; i++) {
+            int sec = (i < times.length) ? times[i] : 0;
+            int hpx = (sec > 0 && mx > 0) ? Math.max(1, Math.round(chartH * sec / (float) mx)) : 0;
+            if (hpx > 0) {
+                int xa = Math.round(left + i * (colW + gap));
+                int xb = Math.round(left + i * (colW + gap) + colW);
+                p.setStyle(Paint.Style.FILL);
+                p.setColor(INK);
+                c.drawRect(xa, baseY - hpx, xb, baseY, p);
+            }
+        }
+        // 基线（LIGHT 档 1px 实线 —— 与年度柱图同口径）
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(LIGHT);
+        c.drawRect(left, baseY, right, baseY + 1, p);
+        y = baseY + 1f;
+
+        // 锚点标签（06 / 12 / 18 / 24）
+        float lblSz = 12f * unit;
+        p.setColor(GRAY);
+        p.setTextAlign(Paint.Align.CENTER);
+        p.setTextSize(lblSz);
+        for (int i = 0; i < TIME_ANCHOR_POS.length; i++) {
+            int pos = TIME_ANCHOR_POS[i];
+            float cx = left + pos * (colW + gap) + colW * 0.5f;
+            c.drawText(TIME_ANCHOR_LABEL[i], cx, y + lblSz * 1.35f, p);
+        }
+        p.setTextAlign(Paint.Align.LEFT);
+        p.setStyle(Paint.Style.FILL);
     }
 
     // ══════════════════════ K6（TASK-051）：年度视图 ══════════════════════
