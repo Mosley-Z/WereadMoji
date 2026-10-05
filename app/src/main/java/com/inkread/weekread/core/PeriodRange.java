@@ -55,6 +55,21 @@ public final class PeriodRange {
      */
     public static final String INSIGHT = "insight";
 
+    /**
+     * 「年度」—— V1.2.0-beta（TASK-046）：`/readdata/detail` 的 `mode=annually`。
+     *
+     * 它是**真周期**（有起止：自然年），但本项目只把它当「洞察页年度分区」的数据源
+     * （`TASK-051` 消费），**不进**周/月步进体系；缓存走 {@link StatsStore} 的独立段。
+     */
+    public static final String ANNUALLY = "annually";
+
+    /**
+     * 「累计」—— V1.2.0-beta（TASK-046）：`mode=overall`。
+     *
+     * 不是周期（无起止），只当「洞察页累计分区」的数据源（`TASK-052` 消费）。
+     */
+    public static final String OVERALL = "overall";
+
     private PeriodRange() {
     }
 
@@ -76,6 +91,16 @@ public final class PeriodRange {
     /** 是不是「洞察」形态（V1.2.0-beta / TASK-044） */
     public static boolean isInsight(String m) {
         return INSIGHT.equals(m);
+    }
+
+    /** 是不是「年度」周期（V1.2.0-beta / TASK-046） */
+    public static boolean isAnnually(String m) {
+        return ANNUALLY.equals(m);
+    }
+
+    /** 是不是「累计」（V1.2.0-beta / TASK-046） */
+    public static boolean isOverall(String m) {
+        return OVERALL.equals(m);
     }
 
     private static Calendar newCal() {
@@ -108,6 +133,19 @@ public final class PeriodRange {
     /** 今天 00:00 的时间戳（秒） */
     public static long todayStartSec() {
         Calendar c = newCal();
+        zero(c);
+        return sec(c);
+    }
+
+    /** 🆕 TASK-046：某时刻所在**自然年**（本机时区）；≤0 ⇒ 用「现在」 */
+    public static int yearOf(long s) {
+        return cal(s > 0 ? s : nowSec()).get(Calendar.YEAR);
+    }
+
+    /** 🆕 TASK-046：指定自然年 **1 月 1 日 00:00**（秒）—— `annually` 的 `baseTime` */
+    public static long yearStartOf(int year) {
+        Calendar c = newCal();
+        c.set(year, Calendar.JANUARY, 1);
         zero(c);
         return sec(c);
     }

@@ -71,7 +71,10 @@ public class WereadApi {
 
     /**
      * @param mode     {@link PeriodRange#WEEKLY} / {@link PeriodRange#MONTHLY}
-     * @param baseTime 0 = 当前周期；否则传该周期内任意时间戳（秒）
+     *                 / {@link PeriodRange#ANNUALLY} / {@link PeriodRange#OVERALL}
+     *                 —— **原样透传给服务端**（TASK-046 确认：本条路径零逻辑改动）
+     * @param baseTime 0 = 当前周期；否则传该周期内任意时间戳（秒）。
+     *                 ⚠️ `annually` 只返 `baseTime` **所在自然年** ⇒ 切年要传该年 1/1（见 TASK-051）
      */
     public static void fetchDetail(final String apiKey, final String mode,
                                    final long baseTime, final Callback cb) {

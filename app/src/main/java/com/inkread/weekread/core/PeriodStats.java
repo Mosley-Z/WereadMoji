@@ -4,6 +4,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
@@ -41,6 +42,27 @@ public class PeriodStats {
     public String topBook;
     public int topBookSec;
 
+    // ═════════════════ TASK-046 统计解析扩容：吐「全量原始料」 ═════════════════
+    // 本块字段只做「原样吐」，**不替消费方做任何过滤/解读**（过滤与口径留在各界面卡里）。
+    // 老缓存（无这些字段）⇒ 一律空集合/全 0，不崩。
+
+    /** 全量 readLongest（**不再只取 [0]**）。{@link #topBook}/{@link #topBookSec} 仍由 [0] 派生，二者并存。 */
+    public List<Longest> longest = new ArrayList<Longest>();
+    /** 分类偏好（preferCategory）。🔴 **原样吐、不过滤** —— `readingTime<=0` 的项也在内，过滤交给消费方（K4）。 */
+    public List<PreferCat> preferCategory = new ArrayList<PreferCat>();
+    /** 作者偏好（preferAuthor）—— ⚠️ **仅 annually/overall 回包有**，周/月为空集合。 */
+    public List<PreferCat> preferAuthor = new ArrayList<PreferCat>();
+    /** 四段摘要（readStat：读过 / 读完 / 阅读 / 笔记）。⚠️ `counts` 是**带单位的字符串**（如 "8本" / "21天"）。 */
+    public List<StatItem> readStat = new ArrayList<StatItem>();
+    /** 24 时段偏好（preferTime）。🔴 **回包从 6 点起排序**（6→次日 5），语义解读留给消费方（K5）。 */
+    public int[] preferTime = new int[24];
+    /** 勋章名（medals[].name）。用户未勾 ⑪ ⇒ 只用于**计数**（K7 不做勋章墙）。 */
+    public List<String> medals = new ArrayList<String>();
+    /** 注册时间（**毫秒**）。回包是秒 ⇒ 解析时已 ×1000；0 = 回包未带。 */
+    public long registTimeMs;
+    /** 12 桶按月（**仅 annually 有意义**：该年各月秒数）。其它 mode 恒全 0。 */
+    public int[] monthSec = new int[12];
+
     /**
      * 🔴 B6：回包结构上**不像统计数据**（四个统计字段 `totalReadTime` / `readDays` /
      * `readTimes` / `dayAverageReadTime` **全缺**）。用于把"2xx 但内容不对"的异常响应用
@@ -59,7 +81,8 @@ public class PeriodStats {
      */
     public static PeriodStats parse(JSONObject j, long fetchedAt, String mode, long reqBase) {
         PeriodStats s = new PeriodStats();
-        s.mode = PeriodRange.MONTHLY.equals(mode) ? PeriodRange.MONTHLY : PeriodRange.WEEKLY;
+        // 🔴 TASK-046：weekly/monthly 归一化不变；annually/overall **原样保留**（缓存键要按它分段），未知一律回 weekly。
+        s.mode = normalizeMode(mode);
         s.fetchedAt = fetchedAt;
         if (j == null) {
             s.baseTime = PeriodRange.startOf(s.mode, reqBase);
@@ -103,6 +126,7 @@ public class PeriodStats {
             }
         }
 
+        // ── 原有派生逻辑（[0] 一本书）—— 🔴 一行未改，保证 topBook/topBookSec 逐字节兼容 ──
         JSONArray longest = j.optJSONArray("readLongest");
         if (longest != null && longest.length() > 0) {
             JSONObject first = longest.optJSONObject(0);
@@ -112,7 +136,171 @@ public class PeriodStats {
                 s.topBookSec = first.optInt("readTime", 0);
             }
         }
+
+        // ── TASK-046：全量 readLongest（与上面的 [0] 并存）──
+        if (longest != null) {
+            for (int i = 0; i < longest.length(); i++) {
+                JSONObject o = longest.optJSONObject(i);
+                if (o == null) continue;
+                Longest l = new Longest();
+                JSONObject book = o.optJSONObject("book");
+                if (book != null) {
+                    l.bookId = book.optString("bookId", null);
+                    l.title = book.optString("title", null);
+                    l.author = book.optString("author", null);
+                    l.cover = book.optString("cover", null);
+                    l.deepLink = book.optString("deepLink", null);
+                }
+                l.readTime = o.optInt("readTime", 0);
+                JSONArray tags = o.optJSONArray("tags");
+                if (tags != null) {
+                    for (int t = 0; t < tags.length(); t++) {
+                        String tg = tags.optString(t, null);
+                        if (tg != null) l.tags.add(tg);
+                    }
+                }
+                s.longest.add(l);
+            }
+        }
+
+        // ── TASK-046：偏好分类 / 作者（**原样吐，不过滤**）──
+        s.preferCategory = readPreferList(j.optJSONArray("preferCategory"), true);
+        s.preferAuthor = readPreferList(j.optJSONArray("preferAuthor"), false);
+
+        // ── TASK-046：四段摘要 readStat（counts 带单位，原样存字符串）──
+        JSONArray stat = j.optJSONArray("readStat");
+        if (stat != null) {
+            for (int i = 0; i < stat.length(); i++) {
+                JSONObject o = stat.optJSONObject(i);
+                if (o == null) continue;
+                StatItem it = new StatItem();
+                it.stat = o.optString("stat", null);
+                it.counts = o.optString("counts", null);
+                s.readStat.add(it);
+            }
+        }
+
+        // ── TASK-046：24 时段 preferTime（🔴 原序：从 6 点起）──
+        JSONArray pt = j.optJSONArray("preferTime");
+        if (pt != null) {
+            for (int i = 0; i < pt.length() && i < s.preferTime.length; i++) {
+                s.preferTime[i] = pt.optInt(i, 0);
+            }
+        }
+
+        // ── TASK-046：勋章（只收名字，供计数）──
+        JSONArray med = j.optJSONArray("medals");
+        if (med != null) {
+            for (int i = 0; i < med.length(); i++) {
+                JSONObject o = med.optJSONObject(i);
+                if (o == null) continue;
+                String nm = o.optString("name", null);
+                if (nm != null) s.medals.add(nm);
+            }
+        }
+
+        // ── TASK-046：注册时间（秒 → 毫秒，单位统一）──
+        long reg = j.optLong("registTime", 0);
+        if (reg > 0) s.registTimeMs = reg < 100000000000L ? reg * 1000L : reg;
+
+        // ── TASK-046：12 桶按月（仅 annually；键 = 各月起点秒）──
+        if (PeriodRange.ANNUALLY.equals(s.mode) && rt != null) {
+            Iterator<String> mk = rt.keys();
+            while (mk.hasNext()) {
+                String k = mk.next();
+                long ks;
+                try {
+                    ks = Long.parseLong(k);
+                } catch (Exception ignored) {
+                    continue;
+                }
+                int mi = monthIndex(s.baseTime, ks);
+                if (mi >= 0 && mi < s.monthSec.length) s.monthSec[mi] = rt.optInt(k, 0);
+            }
+        }
         return s;
+    }
+
+    /** weekly/monthly 归一化；annually/overall 原样；其它一律 weekly（老行为不变）。 */
+    private static String normalizeMode(String m) {
+        if (PeriodRange.MONTHLY.equals(m)) return PeriodRange.MONTHLY;
+        if (PeriodRange.ANNUALLY.equals(m)) return PeriodRange.ANNUALLY;
+        if (PeriodRange.OVERALL.equals(m)) return PeriodRange.OVERALL;
+        return PeriodRange.WEEKLY;
+    }
+
+    /** 解析偏好数组；{@code category=true} 走分类字段、否则走作者字段。 */
+    private static List<PreferCat> readPreferList(JSONArray arr, boolean category) {
+        List<PreferCat> out = new ArrayList<PreferCat>();
+        if (arr == null) return out;
+        for (int i = 0; i < arr.length(); i++) {
+            JSONObject o = arr.optJSONObject(i);
+            if (o == null) continue;
+            PreferCat p = new PreferCat();
+            if (category) {
+                p.id = o.optString("categoryId", null);
+                p.name = o.optString("categoryTitle", null);
+                p.parent = o.optString("parentCategoryTitle", null);
+                p.count = o.optInt("readingCount", 0);
+                p.readTimeSec = o.optInt("readingTime", 0);
+            } else {
+                p.id = o.optString("authorId", null);
+                p.name = o.optString("name", null);
+                p.count = o.optInt("count", 0);
+                p.readTimeText = o.optString("readTime", null);   // 作者回包是 "48小时20分钟"
+            }
+            out.add(p);
+        }
+        return out;
+    }
+
+    /** 从 {@code baseSec} 到 {@code kSec} 相差几个自然月（annually 的 12 桶定位用）。 */
+    private static int monthIndex(long baseSec, long kSec) {
+        Calendar a = Calendar.getInstance();
+        a.setTimeInMillis(baseSec * 1000L);
+        Calendar b = Calendar.getInstance();
+        b.setTimeInMillis(kSec * 1000L);
+        return (b.get(Calendar.YEAR) - a.get(Calendar.YEAR)) * 12
+                + (b.get(Calendar.MONTH) - a.get(Calendar.MONTH));
+    }
+
+    // ═════════════════ TASK-046：三个静态内类 ═════════════════
+
+    /** readLongest[] 的一项：一本书 + 本周期在它上面的时长。 */
+    public static class Longest {
+        public String bookId;
+        public String title;
+        public String author;
+        public String cover;
+        public String deepLink;
+        /** 秒 */
+        public int readTime;
+        /** 徽章（如「笔记最多」「单日阅读最久」；可能为空） */
+        public List<String> tags = new ArrayList<String>();
+    }
+
+    /**
+     * 偏好项 —— **分类与作者共用**。
+     * · 分类：填 {@link #parent}（parentCategoryTitle）与 {@link #readTimeSec}（readingTime，秒）；
+     * · 作者：填 {@link #readTimeText}（回包是 "48小时20分钟" 这种**文本**，无秒值）。
+     */
+    public static class PreferCat {
+        public String id;
+        public String name;
+        /** parentCategoryTitle（仅分类用；作者为 null） */
+        public String parent;
+        /** readingCount / count */
+        public int count;
+        /** readingTime（仅分类用，秒） */
+        public int readTimeSec;
+        /** 作者的时长文本（仅作者用，如 "48小时20分钟"） */
+        public String readTimeText;
+    }
+
+    /** readStat[] 的一项：`{"stat":"读过","counts":"8本"}`（counts 是**带单位的字符串**）。 */
+    public static class StatItem {
+        public String stat;
+        public String counts;
     }
 
     /**

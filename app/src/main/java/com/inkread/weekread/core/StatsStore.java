@@ -240,6 +240,60 @@ public class StatsStore {
         touch(c, s.mode, s.baseTime);
     }
 
+    // ═════════ TASK-046：年度 / 累计 —— 独立缓存段（**不参与 CACHE_MAX 轮转**） ═════════
+    // 为什么必须独立：CACHE_MAX=6 是周/月池（本周/上周/上上周 + 本月/上月/上上月）的容量。
+    // 年度/累计若混进同一个池，用户随便切几次周/月就会把它们挤掉 ⇒ 每次进洞察页都得重拉。
+    // 键：`stats_annual_<年>` / `stats_overall`（配套 `_t` 存 fetchedAt），**从不被 prune 触碰**。
+
+    private static final String K_ANNUAL_PRE = "stats_annual_";
+    private static final String K_ANNUAL_T_PRE = "stats_annual_t_";
+    private static final String K_OVERALL = "stats_overall";
+    private static final String K_OVERALL_T = "stats_overall_t";
+
+    /** 存一份**年度**统计（按回包 baseTime 所在自然年入键） */
+    public static void saveAnnual(Context c, PeriodStats s) {
+        if (s == null || s.baseTime <= 0 || s.incomplete) return;
+        int y = PeriodRange.yearOf(s.baseTime);
+        sp(c).edit()
+                .putString(K_ANNUAL_PRE + y, s.rawJson == null ? "" : s.rawJson)
+                .putLong(K_ANNUAL_T_PRE + y, s.fetchedAt)
+                .commit();
+    }
+
+    /** 读某年的年度统计；没有则 null */
+    public static PeriodStats loadAnnual(Context c, int year) {
+        String raw = sp(c).getString(K_ANNUAL_PRE + year, null);
+        if (raw == null || raw.length() == 0) return null;
+        try {
+            return PeriodStats.parse(new JSONObject(raw),
+                    sp(c).getLong(K_ANNUAL_T_PRE + year, 0),
+                    PeriodRange.ANNUALLY, PeriodRange.yearStartOf(year));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** 存**累计**统计 */
+    public static void saveOverall(Context c, PeriodStats s) {
+        if (s == null || s.incomplete || s.rawJson == null || s.rawJson.length() == 0) return;
+        sp(c).edit()
+                .putString(K_OVERALL, s.rawJson)
+                .putLong(K_OVERALL_T, s.fetchedAt)
+                .commit();
+    }
+
+    /** 读累计统计；没有则 null */
+    public static PeriodStats loadOverall(Context c) {
+        String raw = sp(c).getString(K_OVERALL, null);
+        if (raw == null || raw.length() == 0) return null;
+        try {
+            return PeriodStats.parse(new JSONObject(raw),
+                    sp(c).getLong(K_OVERALL_T, 0), PeriodRange.OVERALL, 0);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     // ── 顺序表 + 淘汰 ──
 
     private static List<String> readOrder(SharedPreferences p) {
@@ -305,6 +359,13 @@ public class StatsStore {
     public static void clearCache(Context c) {
         SharedPreferences p = sp(c);
         for (String k : readOrder(p)) erase(p, k);
+        // 🆕 TASK-046：年度/累计是独立段，也要一并失效（否则换 Key 后新账号会看到旧账号的年报）
+        for (String k : new ArrayList<String>(p.getAll().keySet())) {
+            if (k.startsWith(K_ANNUAL_PRE) || k.startsWith(K_ANNUAL_T_PRE)
+                    || K_OVERALL.equals(k) || K_OVERALL_T.equals(k)) {
+                p.edit().remove(k).commit();
+            }
+        }
         p.edit().remove(K_ORDER).commit();
     }
 }
