@@ -10,7 +10,8 @@ import java.util.List;
  * 🆕 TASK-048（K3）：洞察页的**分区渲染器** —— 只管「怎么排、怎么画」，**不管滚动**（滚动在
  * {@link InsightPageView}）。
  *
- * 结构 = 一页抬头 + 若干 {@link Section}，自上而下依次排布。
+ * 结构 = 一小段上边距 + 若干 {@link Section}，自上而下依次排布。
+ * 🔴 **没有大标题**（用户 2026-10-06 当场要求删掉「阅读洞察」—— 下拉里已显示「洞察▽」，重复且占高）。
  * 本卡只注册 5 个**占位分区**（各自带一句专属空态文案）；K4~K8/K10 各自新增一个 {@code Section}
  * 实现、在 {@link InsightPageView#rebuildSections()} 里把对应的占位行换掉即可 ——
  * **容器与滚动逻辑零改动**（分区边界是稳定的扩展点）。
@@ -41,9 +42,17 @@ final class InsightRenderer {
     }
 
     // ── 尺（与 CardRenderer 的同名字号对齐，保证两页目视一致）──
-    private static final float SZ_TITLE = 19f;   // 页抬头（加粗）
     private static final float SZ_SEC   = 17f;   // 分区标题（加粗）
     private static final float SZ_BODY  = 15f;   // 分区正文 / 空态
+
+    /**
+     * 抬头区高 —— 🔴 **只留一小段上边距**。
+     *
+     * 原来这里是一行大标题「阅读洞察」（`SZ_TITLE=19` 加粗）+ 一条 1px 分隔线，共 `19×unit×3.2 ≈ 73px`。
+     * 用户 2026-10-06 当场要求**去掉大标题**（下拉里已经写着「洞察▽」，再顶一行大字纯属重复占高），
+     * 所以整个抬头块缩成这一段留白。
+     */
+    private static final float HEAD_PAD_UNITS = 12f;   // ×unit ⇒ ≈14px @480×800
 
     private static final int INK   = 0xFF000000;
     private static final int GRAY  = 0xFF3C3C3C;
@@ -66,8 +75,8 @@ final class InsightRenderer {
 
     // ── 量高 ──
 
-    /** 抬头区高（上边距 + 页标题 + 分隔线）。 */
-    float headerHeight(float unit) { return SZ_TITLE * unit * 3.2f; }
+    /** 抬头区高（只有一小段上边距 —— 大标题已删，见 {@link #HEAD_PAD_UNITS}）。 */
+    float headerHeight(float unit) { return HEAD_PAD_UNITS * unit; }
 
     /** 全部内容总高（含抬头）。容器据此决定「能不能滚」。 */
     float contentHeight(float w, float vh, float unit) {
@@ -86,20 +95,7 @@ final class InsightRenderer {
         float left = pad, right = w - pad;
         float y = -scrollY;
 
-        // ── 抬头「阅读洞察」──
-        p.setStyle(Paint.Style.FILL);
-        p.setColor(INK);
-        p.setFakeBoldText(true);
-        p.setTextAlign(Paint.Align.LEFT);
-        p.setTextSize(SZ_TITLE * unit);
-        c.drawText("阅读洞察", left, y + SZ_TITLE * unit * 1.65f, p);
-        p.setFakeBoldText(false);
-
-        // 抬头下的分隔线（1px 实线，不用灰阶渐变）
-        float ruleY = y + headerHeight(unit) - unit * 2f;
-        p.setColor(LIGHT);
-        c.drawRect(left, ruleY, right, ruleY + 1f, p);
-
+        // ── 抬头：**只剩留白**（大标题「阅读洞察」+ 抬头分隔线已按用户要求删除）──
         y += headerHeight(unit);
 
         // ── 各分区（视口外的直接跳过）──
