@@ -9,7 +9,7 @@ import android.view.MotionEvent;
 import android.view.View;
 
 /**
- * V1.2.0-beta · 遥控台「状态胶囊」（docs/09 §5.1）。
+ * V1.1.1-beta · 遥控台「状态胶囊」（docs/09 §5.1）。
  *
  * <p>常驻顶部，一眼看出「连没连上」：圆形状态点（8dp）+ 一行文字；右侧挂一个**换向**图标按钮
  * （TASK-038 的方向交换）。整体底色 {@code paper2}、圆角 999dp。

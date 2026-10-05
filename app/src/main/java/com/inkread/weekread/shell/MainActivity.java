@@ -82,7 +82,7 @@ public class MainActivity extends Activity {
      *
      * <p>与 {@link #remotePhone} 是**两条轴**（App 形态 vs TCP 传输角色，见 `ADR-012`）：
      * 本形态下卡片 UI 根本不装配，`onResume`/`onPause` 需据此早退（否则拿到 null 卡片会 NPE）。
-     * 置位后立即 {@code finish()} 并跳 {@link ConsoleActivity 遥控台}（V1.2.0-beta 起），
+     * 置位后立即 {@code finish()} 并跳 {@link ConsoleActivity 遥控台}（V1.1.1-beta 起），
      * 所以它主要保护"即将销毁的这一帧"。
      */
     private boolean installPhone;
@@ -167,7 +167,7 @@ public class MainActivity extends Activity {
      *   <li><b>手机端</b>（`phone`）⇒ 立即转 {@link ConsoleActivity 遥控台} 并 {@code finish()}
      *       （纯控制面板，返回即退出）；置 {@link #installPhone} 让 onResume/onPause 早退
      *       （卡片 UI 根本没装配，防 NPE）。
-     *       <p>🔴 V1.2.0-beta（TASK-037）改：落地页由「设置-实验室」升级为**独立遥控台**。</li>
+     *       <p>🔴 V1.1.1-beta（TASK-037）改：落地页由「设置-实验室」升级为**独立遥控台**。</li>
      *   <li><b>阅读器端</b>（`reader`，默认）⇒ {@link #setupReaderUi()}，与现状**零差异**。</li>
      * </ul>
      */

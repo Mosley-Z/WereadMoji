@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  V1.2.0-beta · 手机端「遥控台」设计 token（XML 侧）。
+  V1.1.1-beta · 手机端「遥控台」设计 token（XML 侧）。
   权威定义 = docs/09_手机端遥控台UI规范.md §二。
   隐喻：纸 + 墨 + 一点青（纸=暖白底，墨=近黑文字，青=唯一强调色）。
   ⚠️ 仅手机端遥控台使用；墨水屏端不适用。Java 侧同名常量见 ui/InkTheme.java（两处保持同步）。
@@ -17,7 +17,7 @@
     <color name="ink_clay">#B0763C</color>
     <color name="ink_clay_weak">#F3E7D6</color>
 
-    <!-- ══════════ 🆕 TASK-041（V1.2.0-beta）：深色 token ══════════
+    <!-- ══════════ 🆕 TASK-041（V1.1.1-beta）：深色 token ══════════
          逐值对齐本产品网页应用（wereadmoji-site）暗色语言；真源 = docs/09 §2.1。
          🔴 仅手机端（install_role=phone + phone_dark_mode=true）使用；Java 侧同名常量见 ui/InkTheme.java。 -->
     <color name="ink_d_paper">#070A0F</color>        <!-- 墨：主背景 -->

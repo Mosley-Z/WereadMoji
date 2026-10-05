@@ -177,7 +177,7 @@
     <string name="lab_shake_sens_high">高</string>
     <string name="lab_shake_rev_lr">左右晃方向反转</string>
     <string name="lab_shake_rev_ud">上下晃方向反转</string>
-    <!-- 🆕 TASK-042（V1.2.0-beta）：晃动方向自选（响应哪几组轴）。
+    <!-- 🆕 TASK-042（V1.1.1-beta）：晃动方向自选（响应哪几组轴）。
          🔴 「响应」与「反转」是两回事：本组管"晃它响不响应"，下面两个"反转"管"翻哪一页"。
          默认双勾 = 现模式；禁止双不勾（UI 弹回 + Preferences 联合兜底）。 -->
     <string name="lab_shake_axis_label">响应方向：</string>
@@ -341,7 +341,7 @@
     <string name="card_pool_tip">只影响桌面卡片；App 内各页面的查看不受影响。</string>
     <string name="card_pool_min_one">至少要保留一张卡片</string>
 
-    <!-- ══════════ 🆕 TASK-037~040（V1.2.0-beta）：手机端「遥控台」 ══════════
+    <!-- ══════════ 🆕 TASK-037~040（V1.1.1-beta）：手机端「遥控台」 ══════════
          🔴 仅 install_role=phone 使用；阅读器端零差异。
          🔴 文案红线：只写已验证能力；不出现「读取屏幕内容」；不承诺未验证项。 -->
     <string name="console_gear">设置</string>

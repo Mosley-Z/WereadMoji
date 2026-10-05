@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  V1.2.0-beta · 手机端「遥控台」布局骨架（TASK-037 基座 + TASK-040 连接页）。
+  V1.1.1-beta · 手机端「遥控台」布局骨架（TASK-037 基座 + TASK-040 连接页）。
   ⚠️ 仅 install_role=phone 时由 ConsoleActivity 加载；阅读器端不使用本布局（零差异）。
   视觉 token 见 docs/09_手机端遥控台UI规范.md。
 -->

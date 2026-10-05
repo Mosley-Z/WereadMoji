@@ -258,7 +258,7 @@ public final class CardPrefs {
         sp(c).edit().putBoolean("remote_shake_ud_rev", v).commit();
     }
 
-    // ── 🆕 TASK-042：晃动方向「通道使能」（V1.2.0-beta）──
+    // ── 🆕 TASK-042：晃动方向「通道使能」（V1.1.1-beta）──
     //
     // 🔴 与上面的两个**反转**开关**正交**：反转控"翻哪边"，本组控"响不响应"。
     //    · 只勾左右 ⇒ 上下晃**不进判决**（检测层直接弃权，非"翻错方向"）；
@@ -301,7 +301,7 @@ public final class CardPrefs {
         sp(c).edit().putBoolean("shake_axis_ud_enabled", v).commit();
     }
 
-    // ── 🆕 TASK-041：手机端深色模式（V1.2.0-beta）──
+    // ── 🆕 TASK-041：手机端深色模式（V1.1.1-beta）──
     //
     // 🔴 **仅手机端**（install_role=phone）生效；阅读器端据此键也为 false 默认 ⇒ 零差异。
     //    true  ⇒ 遥控台 + 设置页按 docs/09 §2.1 深色 token 渲染；
@@ -351,7 +351,7 @@ public final class CardPrefs {
         sp(c).edit().putBoolean("bt_control_enabled", v).commit();
     }
 
-    // ── 🆕 TASK-039：音量键翻页（蓝牙通道 · V1.2.0-beta）──
+    // ── 🆕 TASK-039：音量键翻页（蓝牙通道 · V1.1.1-beta）──
     //
     // 🔴 **只作用于蓝牙通道**（即 `bt_control_enabled=true` 时）：让手机侧面**实体音量键**
     //    也能翻页（复用 RemoteKeyService 捕获层，按通道分流 —— 蓝牙走 HID、热点走 TCP）。
@@ -368,7 +368,7 @@ public final class CardPrefs {
         sp(c).edit().putBoolean("bt_volkey_enabled", v).commit();
     }
 
-    // ── 🆕 TASK-038：遥控台翻页交互偏好（V1.2.0-beta）──
+    // ── 🆕 TASK-038：遥控台翻页交互偏好（V1.1.1-beta）──
     //
     // 🔴 与热点通道的方向设置（`remote_shake_lr_rev` 等）**彼此独立** —— 蓝牙翻页自有一套
     //    `bt_flip_*`，命名隔离、不复用，避免两条通道"串味"（验收 R4）。

@@ -23,7 +23,7 @@
     </style>
 
     <!--
-      🆕 TASK-041（V1.2.0-beta）：设置页**深色**变体。
+      🆕 TASK-041（V1.1.1-beta）：设置页**深色**变体。
 
       用途：仅手机端（install_role=phone）且用户开了深色模式时，在 onCreate **setContentView 之前**
       用 {@code setTheme(R.style.Theme_WereadMoji_Settings_Dark)} 应用 —— 这样顶栏（ActionBar）

@@ -12,7 +12,7 @@ import android.view.View;
 import android.view.ViewConfiguration;
 
 /**
- * V1.2.0-beta · 遥控台「巨型翻页键」（docs/09 §5.2 + TASK-038 交互增强）。
+ * V1.1.1-beta · 遥控台「巨型翻页键」（docs/09 §5.2 + TASK-038 交互增强）。
  *
  * <p>整屏铺满：左右各半（默认）或上下各半（{@link #setVertical}）；键面 {@code paper2} +
  * **超大方向符号** + 主字「上一页 / 下一页」。未连接时整体降透明度至 40%（一眼看出"按了没用"）。

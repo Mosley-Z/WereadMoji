@@ -7,7 +7,7 @@ import android.util.TypedValue;
 import com.inkread.weekread.core.CardPrefs;
 
 /**
- * V1.2.0-beta · 手机端「遥控台」设计 token（Java 侧，**双色板**）。
+ * V1.1.1-beta · 手机端「遥控台」设计 token（Java 侧，**双色板**）。
  *
  * <p>权威定义 = {@code docs/09_手机端遥控台UI规范.md} §二（亮）/ §2.1（深）。隐喻 **纸 + 墨 + 一点青**：
  * 纸 = 暖白底（非纯白，减轻刺眼），墨 = 近黑文字，青 = 唯一强调色。深色版 = **墨青底 + 纸白字 + 朱砂 + 鎏金**。

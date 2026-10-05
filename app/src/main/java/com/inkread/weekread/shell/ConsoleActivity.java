@@ -25,7 +25,7 @@ import com.inkread.weekread.ui.InkTheme;
 import com.inkread.weekread.ui.StatusChipView;
 
 /**
- * V1.2.0-beta · 手机端「遥控台」（Phone Console）。
+ * V1.1.1-beta · 手机端「遥控台」（Phone Console）。
  *
  * <p>TASK-037 立形态：启动直达本页 —— **整屏巨型翻页键** + **常驻状态胶囊** + 右上角齿轮进设置。
  * <p>TASK-038 补交互：滑动翻页 / 长按连翻（间隔可调）/ 方向交换 / 上下排布 ——
