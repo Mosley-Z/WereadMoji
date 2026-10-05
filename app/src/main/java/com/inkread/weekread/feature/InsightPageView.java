@@ -49,6 +49,9 @@ public final class InsightPageView extends View {
     private List<PeriodStats.PreferCat> interestCats;
     private String interestScope;
 
+    // ── K6（TASK-051）：年度视图的料（null ⇒ 分区画空态）──
+    private PeriodStats annualStats;
+
     public InsightPageView(Context c) { this(c, null); }
 
     public InsightPageView(Context c, AttributeSet a) {
@@ -86,6 +89,17 @@ public final class InsightPageView extends View {
                 && !InsightRenderer.aggregateCategories(st.preferCategory, 1).isEmpty();
     }
 
+    /**
+     * 🆕 K6（TASK-051）：设定「年度视图」分区（②）的料。
+     *
+     * @param st 当年（`mode=annually`）的统计；null ⇒ 画空态
+     */
+    public void setAnnual(PeriodStats st) {
+        annualStats = st;
+        rebuildSections();
+        invalidate();
+    }
+
     // ══════════════════════ 分区注册（后序卡的唯一改动点） ══════════════════════
 
     /**
@@ -102,8 +116,8 @@ public final class InsightPageView extends View {
         renderer.clear();
         // ① 摘要（TASK-047 已实现渲染，但那是"周/月全屏页"的底部行；洞察页这一格待后序卡接）
         renderer.add(InsightRenderer.placeholderLines("阅读摘要", "暂无阅读摘要", 1f));
-        // ② 年度（→ TASK-051 K6）
-        renderer.add(InsightRenderer.placeholderLines("年度视图", "暂无年度数据", 2f));
+        // ② 年度（🆕 TASK-051 K6：**已落地** —— 12 桶按月柱图 + 汇总行 + readStat）
+        renderer.add(InsightRenderer.annualSection(annualStats, "暂无年度数据"));
         // ③ 累计（→ TASK-052 K7）
         renderer.add(InsightRenderer.placeholderLines("累计视图", "暂无累计数据", 2f));
         // ④ 排行（→ TASK-053 K8）── 🔴 高度按视口百分比预留（40~45%），避免后序卡返工（卡面 R3）

@@ -103,6 +103,8 @@ public class MainActivity extends Activity {
     private TodoPageController todoCtrl;
     /** 🆕 TASK-048：洞察页容器（本卡 = 区块骨架 + 5 分区空态；内容由 K4~K8/K10 填）。 */
     private InsightPageView insightPage;
+    /** 🆕 TASK-051（K6）：年度首拉在途标记 —— 防止反复进洞察页时重复发请求（卡面 A4）。 */
+    private boolean annualLoading;
     /** 🆕 TASK-044：当前大标签下标（阅读/设置/实验室/待办）。 */
     private int mainPage = MP_READER;
     /**
@@ -652,7 +654,9 @@ public class MainActivity extends Activity {
             picker.setVisibility(View.GONE);
             card.setVisibility(View.GONE);
             insightPage.setVisibility(View.VISIBLE);
+            bindInsightAnnual();             // 🆕 TASK-051 K6：把「年度视图」的缓存喂进去
             bindInsightInterest();           // 🆕 TASK-049 K4：把「兴趣雷达」的料喂进去
+            ensureAnnualLoaded();            // 🆕 TASK-051 K6：年度缓存缺 ⇒ 触发一次拉取
             insightPage.resetScroll();       // 每次进入都从顶部看起
             // 🆕 postreview（F-2）：洞察页无数据可取 ⇒ 刷新键是「可见但无反应」的死键，一并隐藏。
             findViewById(R.id.btn_refresh).setVisibility(View.GONE);
@@ -738,6 +742,56 @@ public class MainActivity extends Activity {
         if (PeriodRange.ANNUALLY.equals(mode)) return "今年";
         if (PeriodRange.MONTHLY.equals(mode)) return "本月";
         return "本周";
+    }
+
+    // ══════════════ 🆕 TASK-051（K6）：洞察页「年度视图」的取数 ══════════════
+
+    /** 把「今年」的年度缓存喂给分区②（没有 ⇒ 空态）。 */
+    private void bindInsightAnnual() {
+        PeriodStats st = StatsStore.loadAnnual(this, PeriodRange.yearOf(0));
+        insightPage.setAnnual(st);
+        CardDebug.note(this, st == null
+                ? "insight annual: 空态（无年度缓存）"
+                : "insight annual: year=" + PeriodRange.yearOf(0) + " total=" + st.totalSec);
+    }
+
+    /**
+     * 🔴 本卡**唯一的真机项**：年度缓存缺失 ⇒ 触发**一次** `mode=annually` 拉取。
+     *
+     * <p>缓存命中 / 在途 / 无 Key ⇒ 直接返回（**零请求**）。成功后落 `StatsStore.saveAnnual`，
+     * 重绑分区②，并**重绑兴趣雷达** —— 年度到货后 K4 的口径链（累计→年度→本月→本周）
+     * 可能前移（年度比本月更全），§⑤ 会随之更新。
+     *
+     * <p>⚠️ `annually` **只返 `baseTime` 所在自然年** ⇒ 必须传「**当年 1 月 1 日**」
+     * （{@link PeriodRange#yearStartOf}）；传 0 会落到服务端的默认年（去年）。
+     */
+    private void ensureAnnualLoaded() {
+        final int year = PeriodRange.yearOf(0);
+        if (StatsStore.loadAnnual(this, year) != null) return;   // 命中 ⇒ 零请求（卡面 A5）
+        if (annualLoading) return;                               // 在途 ⇒ 不重复发（卡面 A4）
+        final String key = StatsStore.getKey(this);
+        if (key.length() == 0) return;                           // 无 Key ⇒ 无从拉（等设置页存 Key）
+        annualLoading = true;
+        final long gen = StatsStore.keyGen();                    // R05：换 Key ⇒ 丢弃迟到结果
+        CardDebug.note(this, "insight annual: 发起拉取 year=" + year
+                + " baseTime=" + PeriodRange.yearStartOf(year));
+        WereadApi.fetchDetail(key, PeriodRange.ANNUALLY, PeriodRange.yearStartOf(year),
+                new WereadApi.Callback() {
+                    @Override
+                    public void onResult(PeriodStats stats, String rawJson, String error) {
+                        annualLoading = false;
+                        if (gen != StatsStore.keyGen()) return;      // 换过 Key ⇒ 丢弃
+                        if (error != null || stats == null) {
+                            CardDebug.note(MainActivity.this, "insight annual: 拉取失败 " + error);
+                            return;
+                        }
+                        StatsStore.saveAnnual(MainActivity.this, stats);
+                        bindInsightAnnual();          // 年度分区换真实数据
+                        bindInsightInterest();        // 兴趣雷达口径可能前移（见方法注释）
+                        CardDebug.note(MainActivity.this, "insight annual: fetched OK total="
+                                + stats.totalSec);
+                    }
+                });
     }
 
     /**

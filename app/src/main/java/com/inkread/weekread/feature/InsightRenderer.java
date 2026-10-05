@@ -387,4 +387,165 @@ final class InsightRenderer {
         int t = Math.round(pct * 10f);
         return (t / 10) + "." + Math.abs(t % 10) + "%";
     }
+
+    // ══════════════════════ K6（TASK-051）：年度视图 ══════════════════════
+
+    /** 12 柱柱图段高（×unit ⇒ ≈ 84px @480×800）。 */
+    private static final float ANNUAL_CHART_UNITS = 70f;
+    /** 锚点标签行高（×unit）。 */
+    private static final float ANNUAL_LABEL_UNITS = 24f;
+    /** 柱间距（×unit）。 */
+    private static final float ANNUAL_GAP_UNITS = 3f;
+    /** 月份锚点（1 起）—— 只标这 4 个，12 个数字会挤成一团。 */
+    private static final int[] ANNUAL_ANCHORS = { 1, 4, 7, 10 };
+
+    /** 空态盒高（= 2 行正文），供「无数据」两种分支共用，保证 `height()` 与 `draw()` 同高。 */
+    private static float annualEmptyBox(float unit) { return SZ_BODY * unit * 1.9f * 2f; }
+
+    /** 当年 12 桶里的最大月秒数（0 = 整年无记录）。 */
+    private static int annualMaxMonth(PeriodStats st) {
+        int mx = 0;
+        if (st == null || st.monthSec == null) return 0;
+        for (int i = 0; i < st.monthSec.length; i++) if (st.monthSec[i] > mx) mx = st.monthSec[i];
+        return mx;
+    }
+
+    /** `readStat` 拼成一行（无则 null）—— `counts` 已带单位，原样拼。 */
+    private static String statLine(PeriodStats st) {
+        if (st == null || st.readStat == null || st.readStat.isEmpty()) return null;
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < st.readStat.size(); i++) {
+            PeriodStats.StatItem it = st.readStat.get(i);
+            if (it == null || it.stat == null) continue;
+            if (sb.length() > 0) sb.append(" · ");
+            sb.append(it.stat).append(' ').append(it.counts == null ? "" : it.counts);
+        }
+        return sb.length() == 0 ? null : sb.toString();
+    }
+
+    /** 有真年份数据（至少一个月 > 0）—— 空态与有数据的分水岭。 */
+    static boolean hasAnnual(PeriodStats st) { return annualMaxMonth(st) > 0; }
+
+    /**
+     * 分区②「年度视图」—— **K6 真实实现**（顶替 `TASK-048` 的占位）。
+     *
+     * 自上而下三段：
+     *   ① 汇总行「今年 共读 N 小时 · N 天」（`totalReadTime` + `readDays`）；
+     *   ② **12 桶按月柱图**（柱高 = 该月秒数 / 当年最大月；等宽分布，1/4/7/10 月锚点）；
+     *   ③ 四段摘要（`readStat`，`counts` 带单位原样拼）。
+     *
+     * 🔴 **不画 `preferCategory`**：分类偏好已是分区⑤「兴趣雷达」的主料（`TASK-049`），
+     *    年度分区再画一遍属**重复占位**（见 `验证记录/160` §1 的设计决策 D1）。
+     *
+     * @param st    当年的 `PeriodStats`（`mode=annually`）；null ⇒ 画 {@code empty}
+     * @param empty 空态文案（"没有缓存"用）
+     */
+    static Section annualSection(final PeriodStats st, final String empty) {
+        final String title = "年度视图";
+        return new Section() {
+            public String title() { return title; }
+
+            public float height(float w, float vh, float unit) {
+                float head = secHeadH(unit);
+                if (!hasAnnual(st)) return head + annualEmptyBox(unit);
+                float h = head
+                        + SZ_BODY * unit * 1.9f          // 汇总行
+                        + ANNUAL_CHART_UNITS * unit      // 柱图
+                        + ANNUAL_LABEL_UNITS * unit;     // 锚点标签
+                if (statLine(st) != null) h += SZ_BODY * unit * 1.9f;
+                return h + unit * 4f;
+            }
+
+            public void draw(Canvas c, float w, float vh, float top, float unit, Paint p) {
+                drawAnnualSection(c, w, top, unit, p, st, empty);
+            }
+        };
+    }
+
+    /**
+     * 画年度分区。
+     *
+     * 🔴 **纯黑白**：柱体坐标全部 `Math.round` 取整 ⇒ 柱体像素只有 `0x00` / `0xFF`；
+     *    基线用 `LIGHT` 档 1px（三档灰之内）；文字仍走全 App 统一 AA（与其它页同口径）。
+     */
+    private static void drawAnnualSection(Canvas c, float w, float top, float unit, Paint p,
+                                          PeriodStats st, String empty) {
+        float pad = w * PAD_X_RATIO;
+        float left = pad, right = w - pad;
+        float y = drawSectionHead(c, w, top, unit, p, "年度视图");
+
+        if (st == null) {
+            drawCenteredIn(c, w, y, annualEmptyBox(unit), unit, p, empty);
+            return;
+        }
+        if (annualMaxMonth(st) == 0) {                       // 有回包但整年无记录
+            drawCenteredIn(c, w, y, annualEmptyBox(unit), unit, p, "今年还没有阅读记录");
+            return;
+        }
+
+        // ── ① 汇总行 ──
+        float bodySz = SZ_BODY * unit;
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(INK);
+        p.setFakeBoldText(false);
+        p.setTextAlign(Paint.Align.LEFT);
+        p.setTextSize(bodySz);
+        String sum = "今年 共读 " + CardLayout.fmtTotal(st.totalSec) + " · " + st.readDays + " 天";
+        c.drawText(sum, left, y + bodySz * 1.2f, p);
+        y += bodySz * 1.9f;
+
+        // ── ② 12 桶柱图 ──
+        float chartH = ANNUAL_CHART_UNITS * unit;
+        int baseY = Math.round(y + chartH);                  // 基线（整行）
+        float gap = ANNUAL_GAP_UNITS * unit;
+        float colW = (right - left - gap * 11f) / 12f;
+        if (colW < 2f * unit) colW = 2f * unit;
+        int mx = annualMaxMonth(st);
+
+        for (int i = 0; i < 12; i++) {
+            int xa = Math.round(left + i * (colW + gap));
+            int xb = Math.round(left + i * (colW + gap) + colW);
+            int sec = st.monthSec[i];
+            int hpx = sec > 0 ? Math.max(1, Math.round(chartH * sec / (float) mx)) : 0;
+            if (hpx > 0) {
+                p.setStyle(Paint.Style.FILL);
+                p.setColor(INK);
+                c.drawRect(xa, baseY - hpx, xb, baseY, p);
+            }
+        }
+        // 基线（LIGHT 档 1px 实线）
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(LIGHT);
+        c.drawRect(left, baseY, right, baseY + 1, p);
+        y = baseY + 1f;
+
+        // 锚点标签（1/4/7/10 月）
+        float lblSz = 12f * unit;
+        p.setColor(GRAY);
+        p.setTextAlign(Paint.Align.CENTER);
+        p.setTextSize(lblSz);
+        for (int i = 0; i < ANNUAL_ANCHORS.length; i++) {
+            int mon = ANNUAL_ANCHORS[i];
+            float cx = left + (mon - 1) * (colW + gap) + colW * 0.5f;
+            c.drawText(mon + "月", cx, y + lblSz * 1.35f, p);
+        }
+        p.setTextAlign(Paint.Align.LEFT);
+        y += ANNUAL_LABEL_UNITS * unit;
+
+        // ── ③ readStat 行 ──
+        String stat = statLine(st);
+        if (stat != null) {
+            float sz = bodySz;
+            p.setColor(GRAY);
+            p.setTextSize(sz);
+            while (p.measureText(stat) > (right - left) && sz > 11f * unit) {
+                sz -= 0.4f;
+                p.setTextSize(sz);
+            }
+            c.drawText(stat, left, y + sz * 1.05f, p);
+        }
+
+        p.setTextAlign(Paint.Align.LEFT);
+        p.setStyle(Paint.Style.FILL);
+    }
 }
