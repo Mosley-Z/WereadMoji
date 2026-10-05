@@ -9,7 +9,10 @@
      🔴 容器 id 用 mp_* 前缀（不用 page_*）——避免与 settings_layout.xml 里的
         page_init/page_custom/page_lab 内层容器 id 相撞（同一视图树里 id 必须唯一）。
      🔴 TASK-045：删除阅读页底部的「设置」按钮（大标签② 已承担该入口）。
-        实测已证 `t11` 回归打的是 ELauncher 桌面图标、与本入口无关（见 验证记录/150 §4）。 -->
+        实测已证 `t11` 回归打的是 ELauncher 桌面图标、与本入口无关（见 验证记录/150 §4）。
+     🆕 TASK-044-R1：大标签① 本体即下拉扳机 —— 第 0 段显示「当前界面名 + ▽」（如「本周▽」）。
+        点击：不在阅读页 ⇒ 进入阅读页；已在阅读页 ⇒ 展开/收起浮层。
+        随之删除原阅读页顶部的 40dp「下拉行占位」（nav_drop_slot）⇒ 阅读页省出 40dp 垂直空间。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -45,12 +48,6 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:orientation="vertical">
-
-                <!-- 下拉行占位：40dp，给叠加的 NavDropView 留出位置（本身透明不可见） -->
-                <View
-                    android:id="@+id/nav_drop_slot"
-                    android:layout_width="match_parent"
-                    android:layout_height="40dp" />
 
                 <!-- 周期步进选择器：仅本周/本月可见（本书/本记/洞察由代码置 GONE） -->
                 <com.inkread.weekread.ui.PeriodPickerView
@@ -133,12 +130,14 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- 下拉叠加层：收起 40dp（与 nav_drop_slot 同高同位）；展开时自身高度改 MATCH_PARENT，
-                 覆盖下方且不推挤（详见 NavDropView 类注释）。 -->
+            <!-- 🆕 TASK-044-R1：下拉浮层。扳机行已搬到**大标签① 本体**（显示成「本周▽」）⇒
+                 本控件收起态高度 = 0（由 NavDropView.setTriggerless(true) 保证，不占垂直空间）；
+                 展开时自身高度改 MATCH_PARENT，**只画顶部列表**、下方透明但照常吃触摸
+                 ⇒ 从大标签栏下沿覆盖下来、不推挤，点浮层外即收起（详见 NavDropView 类注释）。 -->
             <com.inkread.weekread.ui.NavDropView
                 android:id="@+id/nav_drop"
                 android:layout_width="match_parent"
-                android:layout_height="40dp"
+                android:layout_height="0dp"
                 android:layout_gravity="top" />
         </FrameLayout>
 

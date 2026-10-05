@@ -53,6 +53,12 @@ public class NavDropView extends View {
     private int selected = 0;
     /** 是否处于「展开」态（展开时自身高度 = MATCH_PARENT，只画顶部）。 */
     private boolean expanded = false;
+    /**
+     * 🆕 TASK-044-R1：**无扳机行模式** —— 扳机行搬到大标签① 本体上（显示成「本周▽」），
+     * 本控件退化为「只在展开时存在的浮层」：收起态高度 = 0（既不占位也不绘制），
+     * 展开只能由外部 {@link #expand()} / {@link #toggle()} 触发。
+     */
+    private boolean triggerless = false;
     private Listener listener;
 
     public NavDropView(Context c) { this(c, null); }
@@ -96,16 +102,48 @@ public class NavDropView extends View {
     /**
      * 展开 / 收起：改自身 LayoutParams 高度（收起 40dp / 展开 MATCH_PARENT）后重绘。
      * 🔴 只改自己的高度，父容器是 {@code FrameLayout} ⇒ **不影响任何兄弟视图的布局**。
+     *
+     * <p>🆕 TASK-044-R1：{@link #triggerless} 模式下收起态高度改为 <b>0</b>。
      */
     private void setExpanded(boolean on) {
         if (expanded == on) return;
         expanded = on;
-        ViewGroup.LayoutParams lp = getLayoutParams();
-        if (lp != null) {
-            lp.height = on ? ViewGroup.LayoutParams.MATCH_PARENT : (int) headerH;
-            setLayoutParams(lp);
-        }
+        applyHeight();
         invalidate();
+    }
+
+    /** 按「当前展开态 + 是否 triggerless」重设自身高度 —— **唯一的高度写入口**。 */
+    private void applyHeight() {
+        ViewGroup.LayoutParams lp = getLayoutParams();
+        if (lp == null) return;
+        lp.height = expanded ? ViewGroup.LayoutParams.MATCH_PARENT
+                : (triggerless ? 0 : (int) headerH);
+        setLayoutParams(lp);
+    }
+
+    /**
+     * 🆕 TASK-044-R1：无扳机行模式开关（默认 false ⇒ 与改造前逐像素一致）。
+     *
+     * <p>开启后：收起态高度 = 0（不占位、不绘制扳机行），展开态列表从 {@code y=0} 直接列 5 项；
+     * 展开/收起只能由外部（大标签① 本体）调 {@link #expand()} / {@link #toggle()}。
+     */
+    public void setTriggerless(boolean on) {
+        if (triggerless == on) return;
+        triggerless = on;
+        if (on) expanded = false;      // 进入无扳机模式 ⇒ 必然收起（绕过 setExpanded 的同值早退）
+        applyHeight();
+        invalidate();
+    }
+
+    public boolean isTriggerless() { return triggerless; }
+
+    /** 🆕 TASK-044-R1：外部展开（大标签① 本体被点击时调）。 */
+    public void expand() { setExpanded(true); }
+
+    /** 🆕 TASK-044-R1：展开 ⇄ 收起；返回切换后的展开状态。 */
+    public boolean toggle() {
+        setExpanded(!expanded);
+        return expanded;
     }
 
     @Override
@@ -115,8 +153,11 @@ public class NavDropView extends View {
         if (w <= 0 || h <= 0) return;
 
         final float size = 16f * unit;
+        // 🔴 TASK-044-R1：triggerless 时没有扳机行 ⇒ 列表从 y=0 开始（否则从 headerH 开始）。
+        final float listTop = triggerless ? 0f : headerH;
 
         if (!expanded) {
+            if (triggerless) return;              // 无扳机行 ⇒ 收起态什么都不画（高度也是 0）
             // 收起态：整行白底 + 扳机行内容（自身高度恰好 40dp）
             c.drawColor(0xFFFFFFFF);
             drawHeader(c, w, size, false);
@@ -124,16 +165,16 @@ public class NavDropView extends View {
         }
 
         // 展开态：**只把顶部白底画出来**，下方保持透明（父容器/卡片照常可见）
-        final float listBottom = headerH + rowH * labels.length;
+        final float listBottom = listTop + rowH * labels.length;
         p.setStyle(Paint.Style.FILL);
         p.setColor(0xFFFFFFFF);
         c.drawRect(0f, 0f, w, listBottom, p);
 
-        drawHeader(c, w, size, true);
+        if (!triggerless) drawHeader(c, w, size, true);   // triggerless 时扳机行不在本控件上
 
         // 5 个选项行
         for (int i = 0; i < labels.length; i++) {
-            float top = headerH + i * rowH;
+            float top = listTop + i * rowH;
             if (i > 0) {                       // 行间细线
                 p.setStyle(Paint.Style.FILL);
                 p.setColor(LINE);
@@ -195,12 +236,13 @@ public class NavDropView extends View {
         final float y = e.getY();
 
         if (!expanded) {
+            if (triggerless) return false;         // 高 0 ⇒ 本不该收到触摸；兜底放行
             setExpanded(true);                    // 收起态：点一下原地展开
             return true;
         }
 
-        final float listTop = headerH;
-        final float listBottom = headerH + rowH * labels.length;
+        final float listTop = triggerless ? 0f : headerH;
+        final float listBottom = listTop + rowH * labels.length;
         if (y >= listTop && y < listBottom) {     // 命中某个选项 ⇒ 选中并收起
             int idx = (int) ((y - listTop) / rowH);
             if (idx < 0) idx = 0;

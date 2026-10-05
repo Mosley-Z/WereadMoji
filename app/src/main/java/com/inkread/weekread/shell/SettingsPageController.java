@@ -157,6 +157,14 @@ public class SettingsPageController {
     /** 装配本页全部控件与监听（等价于改造前 {@link SettingsActivity#onCreate} 的 init/custom 段）。 */
     public void bind() {
         etKey = (EditText) host.findViewById(R.id.et_key);
+        // 🆕 TASK-044-R1：**回填已保存的 API Key**。
+        // 此前输入框恒为空（全流程只有「粘贴」会写它），用户看不出"到底存没存"——
+        // 屏幕上卡片有数据、设置页却是个空框，观感自相矛盾（尤其重装后怀疑 Key 丢了）。
+        // 只在框为空时回填 ⇒ 不覆盖用户正在编辑、尚未保存的内容。
+        if (etKey != null && etKey.getText().toString().trim().length() == 0) {
+            String savedKey = StatsStore.getKey(host);
+            if (savedKey != null && savedKey.length() > 0) etKey.setText(savedKey);
+        }
         cbCard = (CheckBox) host.findViewById(R.id.cb_card);
         cbSinglePage = (CheckBox) host.findViewById(R.id.cb_single_page);
         cbBindWeek = (CheckBox) host.findViewById(R.id.cb_bind_week);

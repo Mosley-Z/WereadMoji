@@ -105,6 +105,10 @@ public class MainActivity extends Activity {
     private TextView tvInsightPh;
     /** 🆕 TASK-044：当前大标签下标（阅读/设置/实验室/待办）。 */
     private int mainPage = MP_READER;
+    /**
+     * 🆕 TASK-044-R1：大标签① 当前文案（「本周▽」之类）—— 只在变化时重设，免无谓 invalidate。
+     */
+    private String lastReaderTabLabel;
 
     /**
      * 当前选项卡对应的形态：weekly（第 0 屏）/ monthly（第 1 屏）/ book（第 2 屏）。
@@ -240,6 +244,9 @@ public class MainActivity extends Activity {
         card = (WeekCardView) findViewById(R.id.card);
         segMain = (SegTabView) findViewById(R.id.tab_main);
         navDrop = (NavDropView) findViewById(R.id.nav_drop);
+        // 🆕 TASK-044-R1：扳机行搬到大标签① 本体 ⇒ 本控件退化为「只在展开时存在的浮层」，
+        //    收起态高度 = 0（不再占那 40dp）。
+        navDrop.setTriggerless(true);
         picker = (PeriodPickerView) findViewById(R.id.picker);
         tvInsightPh = (TextView) findViewById(R.id.tv_insight_ph);
         pageReader = findViewById(R.id.mp_reader);
@@ -384,17 +391,61 @@ public class MainActivity extends Activity {
      *
      * <p>抽成方法：正常阅读器路径与 {@code remote_role=phone} 路径**都要装**（后者已无底部
      * 「设置」按钮，大标签② 是其唯一回设置页的入口）。
+     *
+     * <p>🆕 TASK-044-R1：**第 0 段即下拉扳机** —— 显示成「当前界面名 + ▽」（如「本周▽」）。
+     * 点击行为按「当前是否已在阅读页」分流：
+     * <ul>
+     *   <li>不在阅读页 ⇒ {@link #showMainPage(int) 进入阅读页}（不展开）；</li>
+     *   <li>已在阅读页 ⇒ 展开 / 收起 {@link #navDrop} 浮层（{@link NavDropView#toggle()}）。</li>
+     * </ul>
+     * 其余三段仍是普通页面切换。
      */
     private void wireMainTabs() {
-        segMain.setLabels(new String[]{
-                getString(R.string.main_tab_reader), getString(R.string.main_tab_settings),
-                getString(R.string.main_tab_lab), getString(R.string.main_tab_todo)});
+        refreshMainTabLabels();
         segMain.setListener(new SegTabView.Listener() {
             @Override
             public void onSegSelected(int index) {
+                if (index == MP_READER) {
+                    // 🔴 TASK-044-R1：本段是下拉扳机，不是普通页签。
+                    //    （SegTabView 对"再点已选中段"也会回调 —— 这里靠 mainPage 自己判断分流。）
+                    if (mainPage == MP_READER && !remotePhone) {
+                        navDrop.toggle();
+                        return;
+                    }
+                    showMainPage(MP_READER);
+                    return;
+                }
                 showMainPage(index);
             }
         });
+    }
+
+    /**
+     * 🆕 TASK-044-R1：刷新大标签栏文案 —— 第 0 段 = 「当前形态名 + ▽」（下拉扳机），
+     * 其余三段仍是页面名。**形态切换后必须重调**，否则标签上还写着上一形态。
+     *
+     * <p>只在文案真变时 {@code setLabels}（后者内部会 invalidate）。
+     */
+    private void refreshMainTabLabels() {
+        if (segMain == null) return;
+        String cur = getString(navLabelResOf(indexOf(tabMode)));
+        String readerLabel = cur + "▽";
+        if (readerLabel.equals(lastReaderTabLabel)) return;
+        lastReaderTabLabel = readerLabel;
+        segMain.setLabels(new String[]{
+                readerLabel,
+                getString(R.string.main_tab_settings),
+                getString(R.string.main_tab_lab),
+                getString(R.string.main_tab_todo)});
+    }
+
+    /** 下拉下标 → 字符串资源（大标签① 上显示的那个形态名）。与 {@link #modeOf(int)} 一一对应。 */
+    private static int navLabelResOf(int idx) {
+        if (idx == 1) return R.string.nav_month;
+        if (idx == 2) return R.string.nav_book;
+        if (idx == 3) return R.string.nav_note;
+        if (idx == 4) return R.string.nav_insight;
+        return R.string.nav_week;
     }
 
     /**
@@ -582,6 +633,7 @@ public class MainActivity extends Activity {
      */
     private void showReaderPage() {
         navDrop.setSelected(indexOf(tabMode));
+        refreshMainTabLabels();     // 🆕 TASK-044-R1：大标签① 文案跟随形态（「本周▽」→「本月▽」…）
 
         // 洞察页（TASK-044 占位）：没有周期、不画卡片 —— 只显示占位文字（内容 → TASK-048）
         if (PeriodRange.INSIGHT.equals(tabMode)) {
