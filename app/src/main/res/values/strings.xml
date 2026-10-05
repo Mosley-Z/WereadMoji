@@ -3,6 +3,11 @@
     <string name="app_name">微读墨记</string>
     <string name="settings_name">微读墨记 · 设置</string>
 
+    <!-- 🆕 TASK-043：顶部页签文案（原先硬编码在 SettingsActivity，改资源以便按 install_role 装配） -->
+    <string name="tab_init">初始化</string>
+    <string name="tab_custom">自定义</string>
+    <string name="tab_lab">实验室</string>
+
     <string name="label_api_key">微信读书 API Key</string>
     <string name="hint_api_key">粘贴 API Key（wrk- 开头）</string>
     <string name="btn_save">保存并返回</string>

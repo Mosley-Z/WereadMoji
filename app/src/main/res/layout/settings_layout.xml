@@ -49,7 +49,15 @@
 
                 <!-- ================= ⓪ 本机角色（🆕 TASK-031） ================= -->
                 <!-- App 形态「阅读器端 / 手机端」，与「实验室-角色」（remote_role）**正交**、不得混用。
-                     置于页首 = 回答"这台设备是什么"，是首装引导之后的第一项。 -->
+                     置于页首 = 回答"这台设备是什么"，是首装引导之后的第一项。
+                     🆕 TASK-043：整块包进 section_install_role_init —— 手机端时由 SettingsActivity
+                     **整块搬到「实验室」页顶部**（手机端必须能切回阅读器端，A5）。 -->
+                <LinearLayout
+                    android:id="@+id/section_install_role_init"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -101,7 +109,16 @@
                     android:layout_marginTop="12dp"
                     android:background="#FFD8D8D8" />
 
+                </LinearLayout><!-- /section_install_role_init（TASK-043） -->
+
                 <!-- ================= ① 微信读书 API Key ================= -->
+                <!-- 🆕 TASK-043：手机端整块隐藏（手机不取数，Key 无用）。
+                     reader 端一字不改；由 SettingsActivity 按 install_role 控制。 -->
+                <LinearLayout
+                    android:id="@+id/section_api_key_init"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
 
                 <TextView
                     android:layout_width="match_parent"
@@ -198,6 +215,8 @@
                     android:layout_height="1dp"
                     android:layout_marginTop="12dp"
                     android:background="#FFD8D8D8" />
+
+                </LinearLayout><!-- /section_api_key_init（TASK-043） -->
 
                 <!-- ================= ② 桌面卡片无障碍 ================= -->
 

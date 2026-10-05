@@ -34,6 +34,7 @@ import android.provider.Settings;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
@@ -146,6 +147,9 @@ public class SettingsActivity extends Activity {
     // phone 角色整块隐藏「桌面卡片」分区（A7）
     private View sectionCardInit;        // 初始化页 ③ 桌面卡片
     private View sectionCardCustom;      // 自定义页「桌面卡片」
+    private View sectionApiKeyInit;      // 🆕 TASK-043：初始化页 ① API Key 组（phone 隐藏）
+    /** 🆕 TASK-043：顶部页签「可见表」—— 索引 index → 原页下标（0=初始化/1=自定义/2=实验室）。 */
+    private int[] mTopPageKeep;
 
     // ── 🆕 TASK-029 实验室 · 遥控翻页 · 手机端「晃动翻页」──
     private View llShakeBlock;           // 晃动翻页块（仅 role=手机 显示）
@@ -288,6 +292,7 @@ public class SettingsActivity extends Activity {
         etRemoteIdle = (EditText) findViewById(R.id.et_remote_idle);
         sectionCardInit = findViewById(R.id.section_card_init);
         sectionCardCustom = findViewById(R.id.section_card_custom);
+        sectionApiKeyInit = findViewById(R.id.section_api_key_init);   // 🆕 TASK-043
         llShakeBlock = findViewById(R.id.ll_shake_block);          // 🆕 TASK-029
         cbShakeEnabled = (CheckBox) findViewById(R.id.cb_shake_enabled);
         rgShakeSens = (RadioGroup) findViewById(R.id.rg_shake_sens);   // 🆕 灵敏度三档
@@ -319,9 +324,11 @@ public class SettingsActivity extends Activity {
         // ── v0.4.3 顶部页签「初始化 / 自定义 / 实验室」；v0.7 加第三段「实验室」──
         // 三个页面是同一个 ScrollView 里的三个容器，切页只切 visibility。
         // 🆕 TASK-031：切换逻辑抽到 showTopPage()，便于「手机端入口」程序化定位到实验室页。
+        // 🆕 TASK-043：顶部页签**按 install_role 装配** —— 手机端只留「实验室」
+        //   （初始化里的 API Key / 桌面卡片、整个「自定义」页 = 阅读器专属，对手机端全是无效项）。
+        //   reader 端装配结果与改造前逐项一致（A6）。
         final SegTabView seg = (SegTabView) findViewById(R.id.seg);
-        // SegTabView 默认只给两段标签，这里显式扩到三段（它本来就是通用 N 段控件）
-        seg.setLabels(new String[]{"初始化", "自定义", "实验室"});
+        bindTopTabs(seg);
         seg.setListener(new SegTabView.Listener() {
             @Override
             public void onSegSelected(int index) {
@@ -1051,8 +1058,10 @@ public class SettingsActivity extends Activity {
                         ? CardPrefs.INSTALL_ROLE_PHONE : CardPrefs.INSTALL_ROLE_READER;
                 if (role == CardPrefs.getInstallRole(SettingsActivity.this)) return;   // 无变化不处理
                 CardPrefs.setInstallRole(SettingsActivity.this, role);
+                bindTopTabs((SegTabView) findViewById(R.id.seg));   // 🆕 TASK-043：顶部页签随角色重装
                 bindLabTabs();        // 实验室可见子标签随之变化
                 refreshBtUi();        // 🆕 TASK-033：蓝牙控制页按新角色重刷（手机端控件块 ↔ 墨水屏端说明）
+                refreshRoleUi();      // 🆕 TASK-043：重算 API Key / 桌面卡片分区显隐
                 applyDarkTheme();     // 🆕 TASK-041：角色变化影响深色适用范围（phone 才可能深色）
                 Toast.makeText(SettingsActivity.this, R.string.install_role_changed,
                         Toast.LENGTH_LONG).show();
@@ -1067,9 +1076,11 @@ public class SettingsActivity extends Activity {
 
         // ── 🆕 TASK-031：从主入口以「手机端」路由进来时，直接定位到「实验室」页 ──
         // 🔴 SegTabView.setSelected 同值早退、不回调 listener ⇒ 必须手动走一次 showTopPage()。
+        // 🆕 TASK-043：手机端顶部只剩「实验室」一页 ⇒ 可见表下标 0（reader 端仍是 2）。
         if (getIntent() != null && getIntent().getBooleanExtra(EXTRA_OPEN_LAB, false)) {
-            seg.setSelected(2);
-            showTopPage(2);
+            int labIdx = labTabIndex();
+            seg.setSelected(labIdx);
+            showTopPage(labIdx);
         }
     }
 
@@ -1082,13 +1093,86 @@ public class SettingsActivity extends Activity {
      * 程序化定位到实验室页用（`setSelected` 不会回调 listener）。
      */
     private void showTopPage(int index) {
-        findViewById(R.id.page_init).setVisibility(index == 0 ? View.VISIBLE : View.GONE);
-        findViewById(R.id.page_custom).setVisibility(index == 1 ? View.VISIBLE : View.GONE);
-        findViewById(R.id.page_lab).setVisibility(index == 2 ? View.VISIBLE : View.GONE);
+        // 🆕 TASK-043：顶部页签按 install_role 装配，索引 → 页容器要走**可见表**（reader = 全 3 段，
+        //   phone = 仅实验室）。mTopPageKeep 由 bindTopTabs() 填；越界时退回全量（防御）。
+        final int[] keep = (mTopPageKeep != null) ? mTopPageKeep : new int[]{0, 1, 2};
+        final int orig = (index >= 0 && index < keep.length) ? keep[index] : 0;
+        findViewById(R.id.page_init).setVisibility(orig == 0 ? View.VISIBLE : View.GONE);
+        findViewById(R.id.page_custom).setVisibility(orig == 1 ? View.VISIBLE : View.GONE);
+        findViewById(R.id.page_lab).setVisibility(orig == 2 ? View.VISIBLE : View.GONE);
         // 切页回到顶部：各页高度不同，留着旧滚动位置会看着像"卡住了"
         ((ScrollView) findViewById(R.id.sv_settings)).scrollTo(0, 0);
         // 进实验室页时刷一次角色/状态显示 —— 不轮询、不常驻（会话状态由 Listener 推）
-        if (index == 2) refreshRoleUi();
+        if (orig == 2) refreshRoleUi();
+    }
+
+    /**
+     * 🆕 TASK-043：按 {@code install_role} 装配**顶部页签**（初始化 / 自定义 / 实验室）。
+     *
+     * <p>可扩展表 {@code {label, page 下标}} + 可见判定：
+     * <ul>
+     *   <li><b>阅读器端</b> ⇒ 三段全装（与改造前逐项一致，A6）；</li>
+     *   <li><b>手机端</b> ⇒ 只装「实验室」（自定义整页 + 初始化里的 Key/卡片模块都对手机端无效）。</li>
+     * </ul>
+     * 结果写回 {@link #mTopPageKeep}（可见表）供 {@link #showTopPage(int)} 反查页容器。
+     */
+    private void bindTopTabs(SegTabView seg) {
+        final boolean phone = CardPrefs.getInstallRole(this) == CardPrefs.INSTALL_ROLE_PHONE;
+        //  下标 0=初始化 / 1=自定义 / 2=实验室（与 showTopPage 的容器一一对应）
+        final int[] labelRes = {R.string.tab_init, R.string.tab_custom, R.string.tab_lab};
+        // 🔴 手机端只留「实验室」；新增"手机端也要看"的页时把此处对应项置 true 即可。
+        final boolean[] show = {!phone, !phone, true};
+        final int[] keep = new int[labelRes.length];
+        int n = 0;
+        for (int i = 0; i < labelRes.length; i++) {
+            if (show[i]) keep[n++] = i;
+        }
+        final int[] keepTrim = new int[n];
+        System.arraycopy(keep, 0, keepTrim, 0, n);
+        mTopPageKeep = keepTrim;
+        final String[] labels = new String[n];
+        for (int i = 0; i < n; i++) labels[i] = getString(labelRes[keepTrim[i]]);
+        seg.setLabels(labels);
+        // 🔴 setSelected 同值会早退、不回调 listener ⇒ 必须显式把三个页容器的可见性对齐可见表，
+        //    否则手机端会出现"页签写着「实验室」、显示的却是 page_init（XML 默认 VISIBLE）"。
+        seg.setSelected(0);
+        showTopPage(0);
+    }
+
+    /** 🆕 TASK-043：「实验室」在**当前可见表**里的下标（reader=2 / phone=0）。找不到退回 0。 */
+    private int labTabIndex() {
+        final int[] keep = mTopPageKeep;
+        if (keep != null) {
+            for (int i = 0; i < keep.length; i++) {
+                if (keep[i] == 2) return i;
+            }
+        }
+        return 2;
+    }
+
+    /**
+     * 🆕 TASK-043：「本机角色」整块的**归属页**随角色切换。
+     *
+     * <ul>
+     *   <li>手机端 ⇒ 搬进「实验室 · 热点翻页」子页**顶部**（page_init 对手机端不可达，
+     *       但切回阅读器端的能力必须保留，A5）；</li>
+     *   <li>阅读器端 ⇒ 搬回 page_init 原位（index 0，恢复与改造前一致的页首位置，A6）。</li>
+     * </ul>
+     * 用「整块搬运」而非「复制一份」：只有一个 {@code rg_install_role} 实例、一份监听器，
+     * 避免同 id 双控件导致 `findViewById` 取错 / 勾选串台。
+     */
+    private void relocateInstallRoleBlock() {
+        View block = findViewById(R.id.section_install_role_init);
+        if (block == null) return;
+        final boolean phone = CardPrefs.getInstallRole(this) == CardPrefs.INSTALL_ROLE_PHONE;
+        ViewGroup wantParent = (ViewGroup) findViewById(
+                phone ? R.id.page_lab_remote : R.id.page_init);
+        if (wantParent == null) return;
+        if (block.getParent() == wantParent) return;     // 已在位：不动（避免每帧重排）
+        if (block.getParent() instanceof ViewGroup) {
+            ((ViewGroup) block.getParent()).removeView(block);
+        }
+        wantParent.addView(block, 0);                    // 置顶
     }
 
     /**
@@ -1789,6 +1873,17 @@ public class SettingsActivity extends Activity {
         int cardVis = (role == RemoteRole.PHONE) ? View.GONE : View.VISIBLE;
         if (sectionCardInit != null) sectionCardInit.setVisibility(cardVis);
         if (sectionCardCustom != null) sectionCardCustom.setVisibility(cardVis);
+        // 🆕 TASK-043：手机端（install_role=phone）另隐藏「初始化 · API Key」整块
+        //   —— 手机不取数，Key 对其无用；reader 端一字不改（A6）。
+        if (sectionApiKeyInit != null) {
+            sectionApiKeyInit.setVisibility(
+                    CardPrefs.getInstallRole(this) == CardPrefs.INSTALL_ROLE_PHONE
+                            ? View.GONE : View.VISIBLE);
+        }
+        // 🆕 TASK-043：手机端「本机角色」整块**搬到「实验室」页顶部**（手机端 page_init 不可达，
+        //   但必须保留切回阅读器端的能力）。reader 端搬回 page_init 原位 —— 单一控件、单份监听器，
+        //   不做复制（复制会引出两个 rg_install_role 同 id 的坑）。
+        relocateInstallRoleBlock();
         // 🆕 TASK-029：晃动翻页块**仅手机角色**可见（A2 —— 墨水屏 / 关闭角色下不可见且零响应）
         if (llShakeBlock != null) {
             llShakeBlock.setVisibility(role == RemoteRole.PHONE ? View.VISIBLE : View.GONE);
