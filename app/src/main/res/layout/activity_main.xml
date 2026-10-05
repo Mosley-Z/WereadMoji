@@ -68,19 +68,13 @@
                     android:layout_height="0dp"
                     android:layout_weight="1" />
 
-                <!-- 洞察页占位（TASK-048 填真实内容；本卡只保证「可选中 + 不崩」） -->
-                <TextView
-                    android:id="@+id/tv_insight_ph"
+                <!-- 🆕 TASK-048（K3）：洞察页容器 —— 自绘纵向滚动 + 5 分区骨架
+                     （取代 TASK-044 的占位 TextView「tv_insight_ph」） -->
+                <com.inkread.weekread.feature.InsightPageView
+                    android:id="@+id/insight"
                     android:layout_width="match_parent"
                     android:layout_height="0dp"
                     android:layout_weight="1"
-                    android:gravity="center"
-                    android:lineSpacingExtra="6dp"
-                    android:paddingLeft="24dp"
-                    android:paddingRight="24dp"
-                    android:text="@string/insight_placeholder"
-                    android:textColor="#FF3C3C3C"
-                    android:textSize="15sp"
                     android:visibility="gone" />
 
                 <View

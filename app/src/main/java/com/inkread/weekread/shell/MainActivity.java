@@ -12,6 +12,7 @@ import com.inkread.weekread.core.NoteStore;
 import com.inkread.weekread.core.PeriodRange;
 import com.inkread.weekread.core.PeriodStats;
 import com.inkread.weekread.core.StatsStore;
+import com.inkread.weekread.feature.InsightPageView;
 import com.inkread.weekread.feature.NoteExport;
 import com.inkread.weekread.feature.WeekCardView;
 import com.inkread.weekread.net.NoteSync;
@@ -32,7 +33,6 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
-import android.widget.TextView;
 
 /**
  * 「微读墨记」主页。
@@ -101,8 +101,8 @@ public class MainActivity extends Activity {
     private SettingsPageController settingsCtrl;
     private LabPageController labCtrl;
     private TodoPageController todoCtrl;
-    /** 🆕 TASK-044：洞察页占位（真实内容 → TASK-048）。 */
-    private TextView tvInsightPh;
+    /** 🆕 TASK-048：洞察页容器（本卡 = 区块骨架 + 5 分区空态；内容由 K4~K8/K10 填）。 */
+    private InsightPageView insightPage;
     /** 🆕 TASK-044：当前大标签下标（阅读/设置/实验室/待办）。 */
     private int mainPage = MP_READER;
     /**
@@ -248,7 +248,7 @@ public class MainActivity extends Activity {
         //    收起态高度 = 0（不再占那 40dp）。
         navDrop.setTriggerless(true);
         picker = (PeriodPickerView) findViewById(R.id.picker);
-        tvInsightPh = (TextView) findViewById(R.id.tv_insight_ph);
+        insightPage = (InsightPageView) findViewById(R.id.insight);
         pageReader = findViewById(R.id.mp_reader);
         pageSettings = findViewById(R.id.mp_settings);
         pageLab = findViewById(R.id.mp_lab);
@@ -646,11 +646,13 @@ public class MainActivity extends Activity {
         navDrop.setSelected(indexOf(tabMode));
         refreshMainTabLabels();     // 🆕 TASK-044-R1：大标签① 文案跟随形态（「本周▽」→「本月▽」…）
 
-        // 洞察页（TASK-044 占位）：没有周期、不画卡片 —— 只显示占位文字（内容 → TASK-048）
+        // 洞察页（🆕 TASK-048 K3）：没有周期、不画卡片 —— 换成自绘滚动容器
+        // （5 分区骨架 + 空态；各分区内容由 K4~K8/K10 陆续填）
         if (PeriodRange.INSIGHT.equals(tabMode)) {
             picker.setVisibility(View.GONE);
             card.setVisibility(View.GONE);
-            tvInsightPh.setVisibility(View.VISIBLE);
+            insightPage.setVisibility(View.VISIBLE);
+            insightPage.resetScroll();       // 每次进入都从顶部看起
             // 🆕 postreview（F-2）：洞察页无数据可取 ⇒ 刷新键是「可见但无反应」的死键，一并隐藏。
             findViewById(R.id.btn_refresh).setVisibility(View.GONE);
             return;
@@ -658,7 +660,7 @@ public class MainActivity extends Activity {
         // 🆕 postreview（F-2）：非洞察形态恢复刷新键（原先从不被本方法触碰 ⇒ 等价于恒 VISIBLE）。
         findViewById(R.id.btn_refresh).setVisibility(View.VISIBLE);
         card.setVisibility(View.VISIBLE);
-        tvInsightPh.setVisibility(View.GONE);
+        insightPage.setVisibility(View.GONE);
 
         card.setMode(tabMode);
         applyMonthStyle();       // 本月呈现（打卡/热力图）随偏好刷新（TASK-014）
@@ -722,7 +724,7 @@ public class MainActivity extends Activity {
         findViewById(R.id.picker).setVisibility(View.GONE);
         findViewById(R.id.sep_mid).setVisibility(View.GONE);
         findViewById(R.id.card).setVisibility(View.GONE);
-        findViewById(R.id.tv_insight_ph).setVisibility(View.GONE);
+        findViewById(R.id.insight).setVisibility(View.GONE);
         findViewById(R.id.sep_card).setVisibility(View.GONE);
         findViewById(R.id.btn_refresh).setVisibility(View.GONE);
         findViewById(R.id.tv_remote_notice).setVisibility(View.VISIBLE);
