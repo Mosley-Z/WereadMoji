@@ -718,22 +718,43 @@ public class MainActivity extends Activity {
      * 就自动变丰富（链路取到的档自然前移）。
      */
     private void bindInsightProfile() {
+        // 🆕 TASK-055（K10）：画像判定要的两个**非偏好类**量 —— 与口径链无关，先各自算好：
+        //   · 想法字数：来自本记索引（`TASK-056`，🔴 零新增网络请求，只读本地索引）；
+        //   · 累计年数：取「累计」档的 `registTime`，**固定用累计档**（与画像口径链无关，
+        //     年份本就是"陪你多久"这种跨周期量，换档不该变）。
+        int noteChars = NoteStore.totalIdeaChars(this);
+        int years = yearsOf(StatsStore.loadOverall(this));
+
         String[] chain = { PeriodRange.OVERALL, PeriodRange.ANNUALLY,
                            PeriodRange.MONTHLY, PeriodRange.WEEKLY };
         for (int i = 0; i < chain.length; i++) {
             PeriodStats st = loadProfileScope(chain[i]);
             if (InsightPageView.hasProfile(st)) {
                 insightPage.setProfile(st.preferCategory, st.preferAuthor,
-                        st.preferTime, scopeWordOf(chain[i]));
+                        st.preferTime, scopeWordOf(chain[i]), noteChars, years);
                 CardDebug.note(this, "insight profile: scope=" + chain[i]
                         + " cats=" + (st.preferCategory == null ? 0 : st.preferCategory.size())
                         + " authors=" + (st.preferAuthor == null ? 0 : st.preferAuthor.size())
-                        + " timeMax=" + maxSec(st.preferTime));
+                        + " timeMax=" + maxSec(st.preferTime)
+                        + " noteChars=" + noteChars + " years=" + years);
                 return;
             }
         }
-        insightPage.setProfile(null, null, null, null);   // 全档都无料 ⇒ 空态
-        CardDebug.note(this, "insight profile: 空态（四档缓存都没有偏好数据）");
+        // 全档都无偏好料 ⇒ 三件套空态；但判定块仍可凭 noteChars / years 出结果
+        insightPage.setProfile(null, null, null, null, noteChars, years);
+        CardDebug.note(this, "insight profile: 偏好三件套空态（四档缓存都没有偏好数据）"
+                + " noteChars=" + noteChars + " years=" + years);
+    }
+
+    /**
+     * 注册年数（`registTime` 手算；口径与 `InsightRenderer.yearsWithYouText` **一致**）。
+     *
+     * @return 年数（≥0；0 = 注册于今年）；**-1 = 未知**（无累计缓存 / 回包未带 `registTime`）
+     */
+    private static int yearsOf(PeriodStats st) {
+        if (st == null || st.registTimeMs <= 0) return -1;
+        int n = PeriodRange.yearOf(0) - PeriodRange.yearOf(st.registTimeMs / 1000L);
+        return n > 0 ? n : 0;
     }
 
     /** 24 桶里的最大秒数（0 = 无时段数据）—— 仅用于日志。 */
@@ -814,15 +835,16 @@ public class MainActivity extends Activity {
 
     // ══════════════ 🆕 TASK-052（K7）：洞察页「累计视图」的取数 ══════════════
 
-    /** 把「累计」缓存喂给分区③（没有 ⇒ 空态）。 */
+    /** 把「累计」缓存喂给分区③（没有 ⇒ 空态）。🆕 TASK-055：顺带喂「想法 N 字」（A5 的第二展示位）。 */
     private void bindInsightOverall() {
         PeriodStats st = StatsStore.loadOverall(this);
-        insightPage.setOverall(st);
+        int noteChars = NoteStore.totalIdeaChars(this);
+        insightPage.setOverall(st, noteChars);
         CardDebug.note(this, st == null
-                ? "insight overall: 空态（无累计缓存）"
+                ? "insight overall: 空态（无累计缓存）noteChars=" + noteChars
                 : "insight overall: total=" + st.totalSec + " readDays=" + st.readDays
                   + " medals=" + (st.medals == null ? 0 : st.medals.size())
-                  + " regMs=" + st.registTimeMs);
+                  + " regMs=" + st.registTimeMs + " noteChars=" + noteChars);
     }
 
     /**

@@ -243,11 +243,19 @@ final class InsightRenderer {
      * 🔴 条长与百分比**分母不同**，别混：卡面 ASCII 里最长条（45.1%）也不是满轨 —— 见 A5 的两半。
      * 🔴 与 `_probe/t049/radar_probe.py` **逐条同构**，两边必须一起改。
      */
-    static List<Bar> aggregateCategories(List<PeriodStats.PreferCat> cats, int topN) {
-        List<Bar> out = new ArrayList<Bar>();
-        if (cats == null || cats.isEmpty()) return out;
-
+    /**
+     * 把 `preferCategory` 收拢成 `名称 → 秒数` —— K4 雷达与 K10 知识型占比**共用同一口径**
+     * （收拢键与过滤规则一字不改；`TASK-056` 的 A5 决定「占比」两处必须对得上）。
+     *
+     * ① 按 `parentCategoryTitle` 收拢求和（空 ⇒ 回落 `categoryTitle` ⇒ 再空归「其它」）；
+     * ② 过滤 `readingTime <= 0`（回包里带 6 个全 0 的"候选分类"）。
+     *
+     * 🔴 抽成独立方法只是**纯提取**：`aggregateCategories` 的排序 / 分母 / Top-N 一行未动
+     *    （它与 `_probe/t049/radar_probe.py` 逐条同构，此次改动不涉及那部分）。
+     */
+    private static Map<String, Integer> aggregateMap(List<PeriodStats.PreferCat> cats) {
         Map<String, Integer> sum = new HashMap<String, Integer>();
+        if (cats == null) return sum;
         for (int i = 0; i < cats.size(); i++) {
             PeriodStats.PreferCat c = cats.get(i);
             if (c == null) continue;
@@ -259,6 +267,12 @@ final class InsightRenderer {
             Integer old = sum.get(n);
             sum.put(n, (old == null ? 0 : old.intValue()) + t);           // ①
         }
+        return sum;
+    }
+
+    static List<Bar> aggregateCategories(List<PeriodStats.PreferCat> cats, int topN) {
+        List<Bar> out = new ArrayList<Bar>();
+        Map<String, Integer> sum = aggregateMap(cats);
         if (sum.isEmpty()) return out;
 
         List<Map.Entry<String, Integer>> es =
@@ -299,7 +313,8 @@ final class InsightRenderer {
      * @param scope   口径范围词（累计 / 今年 / 本月 / 本周），拼进各子块标题
      */
     static Section profileSection(final List<Bar> cats, final List<AuthorBar> authors,
-                                  final int[] times, final String scope, final String empty) {
+                                  final int[] times, final String scope, final String empty,
+                                  final Portrait portrait) {
         final String title = "阅读画像";
         return new Section() {
             public String title() { return title; }
@@ -309,8 +324,9 @@ final class InsightRenderer {
                 int nc = (cats == null) ? 0 : cats.size();
                 int na = (authors == null) ? 0 : authors.size();
                 boolean ht = hasTime(times);
-                if (nc == 0 && na == 0 && !ht) return head + emptyBox2(unit);   // 与 draw 的空态盒同高
-                float h = head;
+                float h = head
+                        + portraitBlockH(unit, portrait, empty)                 // 🔴 判定块（恒占位）
+                        + disclaimerH(unit);                                    // 🔴 免责声明（恒占位）
                 if (nc > 0) h += barBlockH(unit, nc);
                 if (na > 0) h += barBlockH(unit, na);
                 if (ht) h += timeBlockH(unit);
@@ -318,7 +334,7 @@ final class InsightRenderer {
             }
 
             public void draw(Canvas c, float w, float vh, float top, float unit, Paint p) {
-                drawProfile(c, w, top, unit, p, cats, authors, times, scope, empty);
+                drawProfile(c, w, top, unit, p, cats, authors, times, scope, empty, portrait);
             }
         };
     }
@@ -331,17 +347,16 @@ final class InsightRenderer {
      */
     private static void drawProfile(Canvas c, float w, float top, float unit, Paint p,
                                     List<Bar> cats, List<AuthorBar> authors, int[] times,
-                                    String scope, String empty) {
+                                    String scope, String empty, Portrait portrait) {
         float y = drawSectionHead(c, w, top, unit, p, "阅读画像");
+
+        // ── ⓪ 画像判定 + 依据（🆕 K10 / TASK-055）──
+        // 无数据 ⇒ 画 `empty` 空态（A6）；有数据 ⇒ 判定句 + 依据（A1 / A5）
+        y = drawPortraitBlock(c, w, y, unit, p, portrait, empty);
 
         int nc = (cats == null) ? 0 : cats.size();
         int na = (authors == null) ? 0 : authors.size();
         boolean ht = hasTime(times);
-
-        if (nc == 0 && na == 0 && !ht) {                       // 三个子块全无料 ⇒ 分区级空态
-            drawCenteredIn(c, w, y, emptyBox2(unit), unit, p, empty);
-            return;
-        }
 
         if (nc > 0) {                                          // ① 兴趣雷达
             List<Row> rows = new ArrayList<Row>(nc);
@@ -361,7 +376,12 @@ final class InsightRenderer {
         }
         if (ht) {                                              // ③ 偏好时段
             drawTimeBlock(c, w, y, unit, p, times, scope);
+            y += timeBlockH(unit);
         }
+
+        // ── ④ 免责声明（🆕 K10）—— 🔴 **恒显**，不随判定/数据变化（红线 R1）──
+        y += PORTRAIT_DISC_GAP * unit;
+        drawDisclaimer(c, w, y, unit, p);
 
         p.setTextAlign(Paint.Align.LEFT);
         p.setStyle(Paint.Style.FILL);
@@ -447,6 +467,231 @@ final class InsightRenderer {
     private static String fmtPct(float pct) {
         int t = Math.round(pct * 10f);
         return (t / 10) + "." + Math.abs(t % 10) + "%";
+    }
+
+    // ══════════════════════ K10（TASK-055）：阅读画像判定 + 免责声明 ══════════════════════
+    //
+    // 🔴 E 组三条红线（卡面，不可违反）：
+    //   R1 必带免责声明「以上为基于阅读行为的推论，仅供参考与娱乐」—— 恒显、不随判定变化；
+    //   R2 禁出现「官方 / 权威」字样（本文件 + strings.xml + help.txt 由 A3 grep 断言）；
+    //   R3 未验证的不许写成结论 —— 判定句只陈述阈值命中，**不编造事实**；数据不足明确留空态。
+
+    /** 判定句字号（×unit ⇒ ≈19px）；加粗 INK，比子块标题重、比分区标题轻。 */
+    private static final float SZ_VERDICT = 16f;
+    /** 免责声明字号（×unit ⇒ ≈13px）—— 全页**最小档**。 */
+    private static final float SZ_TINY = 11f;
+    /** 免责声明上方的留白（×unit）。 */
+    private static final float PORTRAIT_DISC_GAP = 8f;
+
+    /** 🔴 免责声明原文（红线 R1）—— **不许改字**，A2 按此逐字断言。 */
+    static final String PORTRAIT_DISCLAIMER = "以上为基于阅读行为的推论，仅供参考与娱乐";
+    /** 无数据空态（A6：**不出判定**）。 */
+    static final String PORTRAIT_EMPTY = "暂无阅读画像";
+    /** 有数据但三条阈值都不命中 ⇒ 中性兜底（🔴 **不硬凑**成三种型之一 —— 红线 R3）。 */
+    static final String PORTRAIT_NONE = "暂时还没有明显的阅读画像";
+
+    /** 阈值①：想法字数 ≥ 该值 ⇒ 思考沉淀型。 */
+    static final int PORTRAIT_NOTE_MIN = 8000;
+    /** 阈值②：知识型占比 ≥ 该千分比（= 50.0%）⇒ 知识精进型。 */
+    static final int PORTRAIT_KNOW_PM = 500;
+    /** 阈值③：累计年数 ≥ 该值 ⇒ 持之以恒型。 */
+    static final int PORTRAIT_YEARS_MIN = 2;
+
+    /**
+     * 「知识型」分类**显式白名单**（🔴 卡面设计要点 2：精确匹配，**不做关键词模糊匹配**）。
+     *
+     * 白名单取官方 `parentCategoryTitle` 的**实际取值**（对齐 `preferCategory[].parentCategoryTitle`）。
+     * 只有**整串相等**才算命中 —— 靠 `contains` 之类的模糊匹配会在"文学史"/"经济小说"这类
+     * 交叉命名上误伤，且不可复现。
+     */
+    static final String[] KNOWLEDGE_CATS = {
+            "社会科学", "历史", "哲学宗教", "经济理财", "政治军事", "法律",
+            "心理", "传记", "计算机", "科技"
+    };
+
+    /** 名称是否属于「知识型」（精确匹配白名单）。 */
+    static boolean isKnowledgeCat(String name) {
+        if (name == null) return false;
+        for (int i = 0; i < KNOWLEDGE_CATS.length; i++) {
+            if (KNOWLEDGE_CATS[i].equals(name)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 「知识型」占比（**千分比** 0~1000；-1 = 该档没有分类数据）。
+     *
+     * 口径与 K4 兴趣雷达**同源同分母**：先 {@link #aggregateMap} 收拢 + 过滤，
+     * 分子 = 白名单里各分类秒数之和，分母 = 过滤后总和。
+     * 🔴 注意：分母是全量，**不是**雷达 Top-8 的子集 —— 否则排名靠后的知识型会被漏算。
+     */
+    static int knowledgePermille(List<PeriodStats.PreferCat> cats) {
+        Map<String, Integer> sum = aggregateMap(cats);
+        long total = 0L, know = 0L;
+        for (Map.Entry<String, Integer> e : sum.entrySet()) {
+            int v = e.getValue().intValue();
+            total += v;
+            if (isKnowledgeCat(e.getKey())) know += v;
+        }
+        if (total <= 0L) return -1;
+        return (int) Math.round(1000.0 * know / (double) total);
+    }
+
+    /** 千分比 → 一位小数的百分比文案（`478` ⇒ `47.8%`）。 */
+    static String fmtPermille(int pm) {
+        return (pm / 10) + "." + Math.abs(pm % 10) + "%";
+    }
+
+    /** 画像判定结果（K10）。 */
+    static final class Portrait {
+        /** 判定句（已成形，直接画）。 */
+        final String verdict;
+        /** 依据句（`依据：…`；null ⇒ 不画）。 */
+        final String basis;
+        /** 无数据（画 {@code empty} 空态，不画判定句）。 */
+        final boolean noData;
+
+        Portrait(String verdict, String basis, boolean noData) {
+            this.verdict = verdict;
+            this.basis = basis;
+            this.noData = noData;
+        }
+    }
+
+    /**
+     * 画像判定（🆕 K10，纯函数 —— 与 `_probe/t055/portrait_probe.py` 逐条同构，两边必须一起改）。
+     *
+     * <pre>
+     *   🔴 判定顺序（**落码时确定**，见 验证记录/166 §1.2 D2）：
+     *      ① 想法字数 ≥ 8000   ⇒ 思考沉淀型     —— "行为深度"信号，最稀缺
+     *      ② 知识型占比 ≥ 50.0% ⇒ 知识精进型     —— "内容取向"信号
+     *      ③ 累计年数 ≥ 2       ⇒ 持之以恒型     —— 门槛最低，作兜底
+     *      ④ 都不命中           ⇒ {@link #PORTRAIT_NONE}（中性，不硬凑）
+     * </pre>
+     *
+     * 多个命中 ⇒ **取第一个**（单一判定，避免并列展示在窄屏上挤成两行）。
+     *
+     * @param cats     该档 `preferCategory` 原始列表（**未收拢未过滤** —— 内部自己收拢）
+     * @param ideaChars 全库**想法正文**字数（`NoteStore.totalIdeaChars`；🔴 不是"原文+想法"）
+     * @param years    累计年数（`registTime` 手算；-1 = 未知）
+     */
+    static Portrait judgePortrait(List<PeriodStats.PreferCat> cats, int ideaChars, int years) {
+        int kpm = knowledgePermille(cats);
+        boolean hasData = (kpm >= 0) || ideaChars > 0 || years >= 0;
+        if (!hasData) return new Portrait(PORTRAIT_EMPTY, null, true);   // A6：不出判定
+
+        String basis = buildBasis(kpm, ideaChars, years);
+        if (ideaChars >= PORTRAIT_NOTE_MIN) return new Portrait("你是一位「思考沉淀型」读者", basis, false);
+        if (kpm >= PORTRAIT_KNOW_PM)        return new Portrait("你是一位「知识精进型」读者", basis, false);
+        if (years >= PORTRAIT_YEARS_MIN)    return new Portrait("你是一位「持之以恒型」读者", basis, false);
+        return new Portrait(PORTRAIT_NONE, basis, false);                // 红线 R3：不硬凑
+    }
+
+    /**
+     * 依据句（A5）—— 只列**真有数据**的那些量，每个数字都能在同页找到对应展示：
+     * · 知识型占比 → 兴趣雷达（同源 `preferCategory`、同分母）；
+     * · 想法字数 → 累计视图「想法 N 字」（`TASK-055` 顺带加）；
+     * · 累计年数 → 累计视图「已陪你 N 年」。
+     */
+    private static String buildBasis(int kpm, int ideaChars, int years) {
+        StringBuilder sb = new StringBuilder("依据：");
+        boolean any = false;
+        if (kpm >= 0) {
+            sb.append("知识型 ").append(fmtPermille(kpm));
+            any = true;
+        }
+        if (ideaChars > 0) {
+            if (any) sb.append(" · ");
+            sb.append("想法 ").append(ideaChars).append(" 字");
+            any = true;
+        }
+        if (years >= 0) {
+            if (any) sb.append(" · ");
+            sb.append("累计 ").append(years <= 0 ? "不足 1 年" : (years + " 年"));
+            any = true;
+        }
+        return any ? sb.toString() : null;
+    }
+
+    /** 判定块高（与 {@link #drawPortraitBlock} 逐段对齐 ⇒ `height()` 与 `draw()` 同高）。 */
+    private static float portraitBlockH(float unit, Portrait pt, String empty) {
+        if (pt == null || pt.noData) return SZ_BODY * unit * 1.9f;        // 一行空态
+        float h = SZ_VERDICT * unit * 1.9f;
+        if (pt.basis != null) h += SZ_BODY * unit * 1.7f;
+        return h;
+    }
+
+    /** 免责声明占高（含上方留白）。 */
+    private static float disclaimerH(float unit) {
+        return PORTRAIT_DISC_GAP * unit + SZ_TINY * unit * 1.7f;
+    }
+
+    /**
+     * 画判定块：判定句（加粗 INK）+ 依据（GRAY），返回新 y。
+     * 无数据 ⇒ 画一行居中的 {@code empty}（A6）。
+     */
+    private static float drawPortraitBlock(Canvas c, float w, float top, float unit, Paint p,
+                                           Portrait pt, String empty) {
+        float pad = w * PAD_X_RATIO;
+        float left = pad;
+        float maxW = w * (1f - 2f * PAD_X_RATIO);
+
+        if (pt == null || pt.noData) {
+            drawCenteredIn(c, w, top, SZ_BODY * unit * 1.9f, unit, p, empty);
+            return top + SZ_BODY * unit * 1.9f;
+        }
+
+        // ① 判定句（加粗 INK）
+        float vsz = SZ_VERDICT * unit;
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(INK);
+        p.setFakeBoldText(true);
+        p.setTextAlign(Paint.Align.LEFT);
+        p.setTextSize(vsz);
+        while (vsz > 12f * unit && p.measureText(pt.verdict) > maxW) {
+            vsz -= 0.4f;
+            p.setTextSize(vsz);
+        }
+        c.drawText(pt.verdict, left, top + vsz * 1.25f, p);
+        p.setFakeBoldText(false);
+        float y = top + SZ_VERDICT * unit * 1.9f;
+
+        // ② 依据（GRAY，超宽按 0.4 步长缩字）
+        if (pt.basis != null) {
+            float bsz = SZ_BODY * unit;
+            p.setColor(GRAY);
+            p.setTextSize(bsz);
+            while (bsz > 11f * unit && p.measureText(pt.basis) > maxW) {
+                bsz -= 0.4f;
+                p.setTextSize(bsz);
+            }
+            c.drawText(pt.basis, left, y + bsz * 1.1f, p);
+            y += SZ_BODY * unit * 1.7f;
+        }
+
+        p.setTextAlign(Paint.Align.LEFT);
+        p.setStyle(Paint.Style.FILL);
+        return y;
+    }
+
+    /**
+     * 画免责声明（🔴 红线 R1：**恒显**，字号全页最小档，居中，`GRAY`）。
+     * 用 `GRAY` 而非 `LIGHT`：这是**要读得清**的一句话，不是装饰线 —— `LIGHT` 只用于 1px 分隔/基线。
+     */
+    private static void drawDisclaimer(Canvas c, float w, float y, float unit, Paint p) {
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(GRAY);
+        p.setFakeBoldText(false);
+        p.setTextAlign(Paint.Align.CENTER);
+        float sz = SZ_TINY * unit;
+        p.setTextSize(sz);
+        float maxW = w * (1f - 2f * PAD_X_RATIO);
+        while (sz > 9f * unit && p.measureText(PORTRAIT_DISCLAIMER) > maxW) {
+            sz -= 0.4f;
+            p.setTextSize(sz);
+        }
+        c.drawText(PORTRAIT_DISCLAIMER, w * 0.5f, y + sz * 1.3f, p);
+        p.setTextAlign(Paint.Align.LEFT);
     }
 
     // ══════════════════════ K5（TASK-050）：偏好三件套（作者 / 时段）══════════════════════
@@ -816,7 +1061,7 @@ final class InsightRenderer {
      * @param st    累计 `PeriodStats`（`mode=overall`）；null ⇒ 画 {@code empty}
      * @param empty 空态文案
      */
-    static Section overallSection(final PeriodStats st, final String empty) {
+    static Section overallSection(final PeriodStats st, final String empty, final int noteChars) {
         final String title = "累计视图";
         return new Section() {
             public String title() { return title; }
@@ -826,19 +1071,19 @@ final class InsightRenderer {
                 if (st == null) return head + emptyBox2(unit);
                 float h = head
                         + SZ_BODY * unit * 1.9f      // 汇总行
-                        + SZ_BODY * unit * 1.9f;     // 陪伴 + 勋章
+                        + SZ_BODY * unit * 1.9f;     // 陪伴 + 勋章 + 想法字数
                 if (statLine(st) != null) h += SZ_BODY * unit * 1.9f;
                 return h + unit * 4f;
             }
 
             public void draw(Canvas c, float w, float vh, float top, float unit, Paint p) {
-                drawOverallSection(c, w, top, unit, p, st, empty);
+                drawOverallSection(c, w, top, unit, p, st, empty, noteChars);
             }
         };
     }
 
     private static void drawOverallSection(Canvas c, float w, float top, float unit, Paint p,
-                                           PeriodStats st, String empty) {
+                                           PeriodStats st, String empty, int noteChars) {
         float pad = w * PAD_X_RATIO;
         float left = pad, right = w - pad;
         float y = drawSectionHead(c, w, top, unit, p, "累计视图");
@@ -859,7 +1104,9 @@ final class InsightRenderer {
                 left, y + bodySz * 1.2f, p);
         y += bodySz * 1.9f;
 
-        // ② 已陪你 N 年 · 已获 M 枚（medals **只计数**，不出列表/图标）
+        // ② 已陪你 N 年 · 已获 M 枚 · 想法 N 字（medals **只计数**，不出列表/图标）
+        //    🆕 末段「想法 N 字」是 K10（TASK-055）顺带加的：它是**累计口径**的一个量，
+        //    同时把画像判定依据里的字数在这页**落了第二处展示** ⇒ 满足卡面 A5「依据可追溯」。
         StringBuilder sb = new StringBuilder();
         String wy = yearsWithYouText(st);
         if (wy != null) sb.append(wy);
@@ -867,7 +1114,19 @@ final class InsightRenderer {
             if (sb.length() > 0) sb.append(" · ");
             sb.append("已获 ").append(st.medals.size()).append(" 枚");
         }
-        if (sb.length() > 0) c.drawText(sb.toString(), left, y + bodySz * 1.2f, p);
+        if (noteChars > 0) {
+            if (sb.length() > 0) sb.append(" · ");
+            sb.append("想法 ").append(noteChars).append(" 字");
+        }
+        if (sb.length() > 0) {
+            float wSz = bodySz;
+            p.setTextSize(wSz);
+            while (wSz > 11f * unit && p.measureText(sb.toString()) > (right - left)) {
+                wSz -= 0.4f;
+                p.setTextSize(wSz);
+            }
+            c.drawText(sb.toString(), left, y + wSz * 1.2f, p);
+        }
         y += bodySz * 1.9f;
 
         // ③ readStat

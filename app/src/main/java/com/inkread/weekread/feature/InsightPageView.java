@@ -61,11 +61,19 @@ public final class InsightPageView extends View {
     private int[] interestTimes;
     private String interestScope;
 
+    // ── K10（TASK-055）：画像判定用的两个**非偏好类**量（shell 层算好喂入）──
+    /** 全库**想法正文**字数（`NoteStore.totalIdeaChars`）；≤0 = 未知 */
+    private int interestNoteChars;
+    /** 累计年数（`registTime` 手算）；-1 = 未知 */
+    private int interestYears;
+
     // ── K6（TASK-051）：年度视图的料（null ⇒ 分区画空态）──
     private PeriodStats annualStats;
 
     // ── K7（TASK-052）：累计视图的料（null ⇒ 分区画空态）──
     private PeriodStats overallStats;
+    /** K7 顺带（TASK-055）：累计视图②行要显示的「想法 N 字」（≤0 ⇒ 不显示该段） */
+    private int overallNoteChars;
 
     public InsightPageView(Context c) { this(c, null); }
 
@@ -89,11 +97,14 @@ public final class InsightPageView extends View {
      */
     public void setProfile(List<PeriodStats.PreferCat> cats,
                            List<PeriodStats.PreferCat> authors,
-                           int[] times, String scope) {
+                           int[] times, String scope,
+                           int noteChars, int years) {
         interestCats = cats;
         interestAuthors = authors;
         interestTimes = times;
         interestScope = scope;
+        interestNoteChars = noteChars;
+        interestYears = years;
         rebuildSections();
         invalidate();
     }
@@ -143,8 +154,9 @@ public final class InsightPageView extends View {
      *
      * @param st 累计（`mode=overall`）的统计；null ⇒ 画空态
      */
-    public void setOverall(PeriodStats st) {
+    public void setOverall(PeriodStats st, int noteChars) {
         overallStats = st;
+        overallNoteChars = noteChars;
         rebuildSections();
         invalidate();
     }
@@ -168,16 +180,18 @@ public final class InsightPageView extends View {
         // ② 年度（🆕 TASK-051 K6：**已落地** —— 12 桶按月柱图 + 汇总行 + readStat）
         renderer.add(InsightRenderer.annualSection(annualStats, "暂无年度数据"));
         // ③ 累计（🆕 TASK-052 K7：**已落地** —— 汇总行 + 陪伴年数 + 勋章计数 + readStat）
-        renderer.add(InsightRenderer.overallSection(overallStats, "暂无累计数据"));
+        renderer.add(InsightRenderer.overallSection(overallStats, "暂无累计数据", overallNoteChars));
         // ④ 排行（🆕 TASK-053 K8：**已落地** —— 有界高 42% + 内部独立滚动；料 = 年度 longest[]）
         rankSection.setItems(rankItems);
         renderer.add(rankSection);
         // ⑤ 画像（🆕 TASK-049 K4 兴趣雷达 + TASK-050 K5 偏好作者/时段：**三件套已落地**；
         //         K10 画像判定继续往这一格加）
+        //         🆕 TASK-055 K10：判定块（判定句 + 依据）恒在分区最上，免责声明恒在最下
         renderer.add(InsightRenderer.profileSection(
                 InsightRenderer.aggregateCategories(interestCats, InsightRenderer.RADAR_TOP_N),
                 InsightRenderer.aggregateAuthors(interestAuthors, InsightRenderer.AUTHOR_TOP_N),
-                interestTimes, interestScope, "暂无阅读画像"));
+                interestTimes, interestScope, "暂无阅读画像",
+                InsightRenderer.judgePortrait(interestCats, interestNoteChars, interestYears)));
     }
 
     // ══════════════════════ 量高 / 钳位 ══════════════════════
