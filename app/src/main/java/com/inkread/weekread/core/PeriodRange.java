@@ -199,6 +199,25 @@ public final class PeriodRange {
         return periodStart > 0 && periodStart == startOf(mode, 0);
     }
 
+    /**
+     * 🆕 TASK-047：摘要行的**范围词** —— 本周/本月/9月 这类前缀。
+     *
+     * 🔴 **当前周期与历史周期必须分开**：全屏页是能往回翻的，页头会跟着变成「2026年9月阅读」；
+     * 此时摘要行若还写死「本月」，就成了「2026年9月」配「本月」的自相矛盾。
+     * 所以历史月取**具体月名**（`9月`，年份由页头承担，不重复占宽），历史周取 `该周`。
+     *
+     * 与 {@link #title} 用同一套判据（`baseTime` / {@link #startOf}）⇒ 两处文案永远同进退。
+     */
+    public static String statRangeWord(String mode, long periodStart) {
+        boolean cur = isCurrent(mode, periodStart);
+        if (MONTHLY.equals(mode)) {
+            if (cur) return "本月";
+            Calendar c = cal(periodStart);
+            return (c.get(Calendar.MONTH) + 1) + "月";
+        }
+        return cur ? "本周" : "该周";
+    }
+
     /** 该日是不是"今天" */
     public static boolean isToday(long dayStartSec) {
         return dayStartSec == todayStartSec();
