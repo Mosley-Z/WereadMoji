@@ -652,6 +652,7 @@ public class MainActivity extends Activity {
             picker.setVisibility(View.GONE);
             card.setVisibility(View.GONE);
             insightPage.setVisibility(View.VISIBLE);
+            bindInsightInterest();           // 🆕 TASK-049 K4：把「兴趣雷达」的料喂进去
             insightPage.resetScroll();       // 每次进入都从顶部看起
             // 🆕 postreview（F-2）：洞察页无数据可取 ⇒ 刷新键是「可见但无反应」的死键，一并隐藏。
             findViewById(R.id.btn_refresh).setVisibility(View.GONE);
@@ -690,6 +691,53 @@ public class MainActivity extends Activity {
         PeriodStats st = StatsStore.load(this, tabMode, a);
         card.setStats(st, emptyNote(tabMode, a, st));
         picker.setPeriod(tabMode, a);
+    }
+
+    // ══════════════ 🆕 TASK-049（K4）：洞察页「画像」兴趣雷达的取数 ══════════════
+
+    /**
+     * 口径链：**累计 → 年度 → 本月 → 本周**，取第一个「收拢过滤后有料」的档。
+     *
+     * <p>为什么是这个顺序（实测依据，见 `验证记录/159`）：
+     * `preferCategory` 按 `parentCategoryTitle` 收拢后，本账号各档分别只有
+     * **累计 5 类 / 年度 4 类 / 本月 2 类 / 本周 0 类**（上游周回包根本没有该字段）。
+     * ⇒ 单用周/月这一格常年近乎空白，所以**优先用最全的档**。
+     *
+     * <p>🔴 **只读缓存，零新增网络请求** —— 年度/累计的**首次拉取**归
+     * {@code TASK-051} / {@code TASK-052}（本卡不越界）。它们落码后本方法**无需改动**
+     * 就自动变丰富（链路取到的档自然前移）。
+     */
+    private void bindInsightInterest() {
+        String[] chain = { PeriodRange.OVERALL, PeriodRange.ANNUALLY,
+                           PeriodRange.MONTHLY, PeriodRange.WEEKLY };
+        for (int i = 0; i < chain.length; i++) {
+            PeriodStats st = loadInsightInterest(chain[i]);
+            if (InsightPageView.hasInterest(st)) {
+                insightPage.setInterest(st.preferCategory, scopeWordOf(chain[i]));
+                CardDebug.note(this, "insight interest: scope=" + chain[i]);
+                return;
+            }
+        }
+        insightPage.setInterest(null, null);          // 全档都无料 ⇒ 空态
+        CardDebug.note(this, "insight interest: 空态（四档缓存都没有可统计的分类）");
+    }
+
+    /** 读某一档的缓存：累计 → `loadOverall`；年度 → `loadAnnual(今年)`；其余 → 当前周期缓存。 */
+    private PeriodStats loadInsightInterest(String mode) {
+        if (PeriodRange.OVERALL.equals(mode)) return StatsStore.loadOverall(this);
+        if (PeriodRange.ANNUALLY.equals(mode)) {
+            // 🔴 `PeriodRange.startOf` 只认周/月 ⇒ 年度必须走 `yearOf`（0 = 现在所在年）
+            return StatsStore.loadAnnual(this, PeriodRange.yearOf(0));
+        }
+        return StatsStore.loadCurrent(this, mode);
+    }
+
+    /** 兴趣雷达的口径范围词（🔴 必须带 —— 同 TASK-047 摘要行的教训：不同档的数不可混读）。 */
+    private static String scopeWordOf(String mode) {
+        if (PeriodRange.OVERALL.equals(mode)) return "累计";
+        if (PeriodRange.ANNUALLY.equals(mode)) return "今年";
+        if (PeriodRange.MONTHLY.equals(mode)) return "本月";
+        return "本周";
     }
 
     /**

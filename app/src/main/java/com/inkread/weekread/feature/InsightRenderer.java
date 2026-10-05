@@ -3,8 +3,14 @@ package com.inkread.weekread.feature;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 
+import com.inkread.weekread.core.PeriodStats;
+
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 🆕 TASK-048（K3）：洞察页的**分区渲染器** —— 只管「怎么排、怎么画」，**不管滚动**（滚动在
@@ -186,5 +192,199 @@ final class InsightRenderer {
                 drawCenteredIn(c, w, bodyTop, vh * ratio, unit, p, empty);
             }
         };
+    }
+
+    // ══════════════════════ K4（TASK-049）：兴趣雷达 ══════════════════════
+
+    /** 雷达最多画几条（收拢后不足就画几条 —— 🔴 「Top 8」是**上限**，不是保证；见验证记录 §1）。 */
+    static final int RADAR_TOP_N = 8;
+
+    private static final float RADAR_ROW_H   = 22f;    // ×unit ⇒ ≈26px @480×800（卡面行距）
+    private static final float RADAR_BAR_H   = 12f;    // ×unit ⇒ ≈14px（卡面条高）
+    private static final float RADAR_NAME_W  = 0.20f;  // ×w    ⇒ ≈96px（卡面分类名宽）
+    private static final float RADAR_GAP     = 6f;     // ×unit ⇒ ≈7px（名↔轨 / 轨↔%）
+    private static final float RADAR_PCT_SZ  = 13f;    // ×unit ⇒ ≈15.6px（百分比字号）
+    private static final float RADAR_CAP_SZ  = 12f;    // ×unit ⇒ ≈14.4px（子块标题字号）
+    private static final float RADAR_CAP_GAP = 7f;     // ×unit（子块标题 → 首行）
+
+    /** 收拢后的一根条。 */
+    static final class Bar {
+        /** 分类名（`parentCategoryTitle`，空值回落 `categoryTitle`，再空 ⇒ 「其它」） */
+        final String name;
+        /** 收拢后的阅读秒数 */
+        final int sec;
+        /** 条长占比 —— `值 / 最大值` ⇒ 最长条恒为 `1.0`（A5：最长条 = 100% 轨宽） */
+        final float frac;
+        /** 百分比 —— `值 / 过滤后总和`（口径同官方「阅读偏好」的占比） */
+        final float pct;
+
+        Bar(String name, int sec, float frac, float pct) {
+            this.name = name; this.sec = sec; this.frac = frac; this.pct = pct;
+        }
+    }
+
+    /**
+     * 把 `preferCategory` 收拢成雷达用的 Top-N（卡面设计要点 1 的五步，逐条对上）。
+     *
+     * <pre>
+     *   ① 按 parentCategoryTitle 收拢求和（空 ⇒ 回落 categoryTitle ⇒ 再空归「其它」，卡面 R3）
+     *   ② 过滤 readingTime &lt;= 0        （E16：回包里带 6 个全 0 的"候选分类"）
+     *   ③ 降序（同值按名称升序 —— 保证多次渲染顺序稳定、可与离线脚本逐行对拍）
+     *   ④ 取 Top N
+     *   ⑤ frac = 值/最大值（**条长**）；pct = 100×值/过滤后总和（**百分比**，卡面设计要点 3）
+     * </pre>
+     *
+     * 🔴 条长与百分比**分母不同**，别混：卡面 ASCII 里最长条（45.1%）也不是满轨 —— 见 A5 的两半。
+     * 🔴 与 `_probe/t049/radar_probe.py` **逐条同构**，两边必须一起改。
+     */
+    static List<Bar> aggregateCategories(List<PeriodStats.PreferCat> cats, int topN) {
+        List<Bar> out = new ArrayList<Bar>();
+        if (cats == null || cats.isEmpty()) return out;
+
+        Map<String, Integer> sum = new HashMap<String, Integer>();
+        for (int i = 0; i < cats.size(); i++) {
+            PeriodStats.PreferCat c = cats.get(i);
+            if (c == null) continue;
+            int t = c.readTimeSec;
+            if (t <= 0) continue;                                        // ②
+            String n = c.parent;
+            if (n == null || n.length() == 0) n = c.name;
+            if (n == null || n.length() == 0) n = "其它";
+            Integer old = sum.get(n);
+            sum.put(n, (old == null ? 0 : old.intValue()) + t);           // ①
+        }
+        if (sum.isEmpty()) return out;
+
+        List<Map.Entry<String, Integer>> es =
+                new ArrayList<Map.Entry<String, Integer>>(sum.entrySet());
+        Collections.sort(es, new Comparator<Map.Entry<String, Integer>>() {
+            public int compare(Map.Entry<String, Integer> a, Map.Entry<String, Integer> b) {
+                int d = b.getValue().intValue() - a.getValue().intValue();   // ③ 降序
+                return d != 0 ? d : a.getKey().compareTo(b.getKey());
+            }
+        });
+
+        long total = 0;
+        for (int i = 0; i < es.size(); i++) total += es.get(i).getValue();
+        int mx = es.get(0).getValue();
+        int n = Math.min(topN <= 0 ? RADAR_TOP_N : topN, es.size());      // ④
+        for (int i = 0; i < n; i++) {
+            Map.Entry<String, Integer> e = es.get(i);
+            int v = e.getValue().intValue();
+            float frac = mx > 0 ? (float) v / (float) mx : 0f;            // ⑤ 条长
+            float pct = total > 0 ? 100f * v / (float) total : 0f;        //   百分比
+            out.add(new Bar(e.getKey(), v, frac, pct));
+        }
+        return out;
+    }
+
+    /**
+     * 分区⑤「阅读画像」—— **K4 兴趣雷达**（真实实现，顶替 `TASK-048` 的占位）。
+     *
+     * @param bars  聚合后的 Top-N；null / 空 ⇒ 画 {@code empty} 空态
+     * @param scope 口径范围词（累计 / 今年 / 本月 / 本周），拼进子块标题
+     */
+    static Section interestRadar(final List<Bar> bars, final String scope, final String empty) {
+        final String title = "阅读画像";
+        return new Section() {
+            public String title() { return title; }
+
+            public float height(float w, float vh, float unit) {
+                float head = secHeadH(unit);
+                if (bars == null || bars.isEmpty()) {
+                    return head + SZ_BODY * unit * 1.9f * 2f;             // 与 draw 的空态盒同高
+                }
+                return head + (RADAR_CAP_SZ + RADAR_CAP_GAP) * unit
+                        + RADAR_ROW_H * unit * bars.size() + unit * 4f;
+            }
+
+            public void draw(Canvas c, float w, float vh, float top, float unit, Paint p) {
+                drawInterestRadar(c, w, top, unit, p, bars, scope, empty);
+            }
+        };
+    }
+
+    /**
+     * 画兴趣雷达：分区标题 + 子块标题（带口径）+ N 行 `分类名 ─ [轨|填充] ─ 百分比`。
+     *
+     * 🔴 **纯黑白**：条体（轨与填充）坐标**全部取整** ⇒ 那部分像素只有 `0x00` / `0xFF`；
+     *    文字仍走全 App 统一的 `ANTI_ALIAS_FLAG`（与其它页同口径，见 TASK-048 §3-A5）。
+     */
+    private static void drawInterestRadar(Canvas c, float w, float top, float unit, Paint p,
+                                          List<Bar> bars, String scope, String empty) {
+        float pad = w * PAD_X_RATIO;
+        float left = pad, right = w - pad;
+        float y = drawSectionHead(c, w, top, unit, p, "阅读画像");
+
+        if (bars == null || bars.isEmpty()) {
+            drawCenteredIn(c, w, y, SZ_BODY * unit * 1.9f * 2f, unit, p, empty);
+            return;
+        }
+
+        // ── 子块标题「兴趣雷达 · <口径>」──
+        float capSz = RADAR_CAP_SZ * unit;
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(GRAY);
+        p.setFakeBoldText(false);
+        p.setTextAlign(Paint.Align.LEFT);
+        p.setTextSize(capSz);
+        c.drawText((scope == null || scope.length() == 0) ? "兴趣雷达" : ("兴趣雷达 · " + scope),
+                left, y + capSz * 1.25f, p);
+        y += (RADAR_CAP_SZ + RADAR_CAP_GAP) * unit;
+
+        // ── 行几何（一次算好，各行共用）──
+        float nameW = w * RADAR_NAME_W;
+        float pctSz = RADAR_PCT_SZ * unit;
+        p.setTextSize(pctSz);
+        float pctW = p.measureText("100.0%");                 // 固定槽宽 ⇒ 数值变化不抖
+        float barL = left + nameW + RADAR_GAP * unit;
+        float barR = right - pctW - RADAR_GAP * unit;
+        float trackW = Math.max(unit * 24f, barR - barL);
+        float barH = RADAR_BAR_H * unit;
+        float rowH = RADAR_ROW_H * unit;
+        float bodySz = SZ_BODY * unit;
+
+        for (int i = 0; i < bars.size(); i++) {
+            Bar b = bars.get(i);
+            float cy = y + i * rowH + rowH * 0.5f;
+
+            // 条体 —— 整数对齐（0.5 偏移让 1px 描边落在像素中心 ⇒ 无 AA 灰边）
+            int t0 = Math.round(cy - barH * 0.5f);
+            int t1 = t0 + Math.round(barH);
+            int x0 = Math.round(barL);
+            int x1 = x0 + Math.round(trackW);
+
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeWidth(1f);
+            p.setColor(INK);
+            c.drawRect(x0 + 0.5f, t0 + 0.5f, x1 - 0.5f, t1 - 0.5f, p);   // 轨（空槽外框）
+            p.setStyle(Paint.Style.FILL);
+            c.drawRect(x0, t0, x0 + Math.max(1, Math.round(trackW * b.frac)), t1, p);  // 填充
+
+            // 分类名（左；超宽按 0.4 步长缩字，下限 11×unit）
+            p.setColor(INK);
+            p.setTextAlign(Paint.Align.LEFT);
+            float ns = bodySz;
+            p.setTextSize(ns);
+            while (ns > 11f * unit && p.measureText(b.name) > nameW - RADAR_GAP * unit) {
+                ns -= 0.4f;
+                p.setTextSize(ns);
+            }
+            c.drawText(b.name, left, cy + ns * 0.36f, p);
+
+            // 百分比（右）
+            p.setTextAlign(Paint.Align.RIGHT);
+            p.setTextSize(pctSz);
+            c.drawText(fmtPct(b.pct), right, cy + pctSz * 0.36f, p);
+        }
+
+        p.setTextAlign(Paint.Align.LEFT);
+        p.setStyle(Paint.Style.FILL);
+    }
+
+    /** 百分比文案：固定一位小数（`45.1%`）—— 与卡面 ASCII 一致。 */
+    private static String fmtPct(float pct) {
+        int t = Math.round(pct * 10f);
+        return (t / 10) + "." + Math.abs(t % 10) + "%";
     }
 }

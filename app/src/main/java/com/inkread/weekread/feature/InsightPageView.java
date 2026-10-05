@@ -6,6 +6,10 @@ import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
 
+import com.inkread.weekread.core.PeriodStats;
+
+import java.util.List;
+
 /**
  * 🆕 TASK-048（K3）：**洞察页容器** —— 纯 `Canvas` 自绘 + 单指纵向拖动滚动。
  *
@@ -41,6 +45,10 @@ public final class InsightPageView extends View {
     private float lastTouchY = 0f;
     private boolean dragging = false;
 
+    // ── K4（TASK-049）：兴趣雷达的料（由 shell 层喂入；null/空 ⇒ 分区画空态）──
+    private List<PeriodStats.PreferCat> interestCats;
+    private String interestScope;
+
     public InsightPageView(Context c) { this(c, null); }
 
     public InsightPageView(Context c, AttributeSet a) {
@@ -50,12 +58,40 @@ public final class InsightPageView extends View {
         rebuildSections();
     }
 
+    // ══════════════════════ 料入口（后序卡按分区继续加） ══════════════════════
+
+    /**
+     * 🆕 K4（TASK-049）：设定「画像」分区**兴趣雷达**的料。
+     *
+     * @param cats  某一档的 `preferCategory` 原始列表（**未收拢、未过滤** —— 那些在
+     *              {@link InsightRenderer#aggregateCategories} 里做）；null/空 ⇒ 画空态
+     * @param scope 口径范围词（累计 / 今年 / 本月 / 本周），拼进子块标题
+     */
+    public void setInterest(List<PeriodStats.PreferCat> cats, String scope) {
+        interestCats = cats;
+        interestScope = scope;
+        rebuildSections();
+        invalidate();
+    }
+
+    /**
+     * 🆕 K4：给「取数方」（{@code MainActivity}）判断**某一档有没有料**用。
+     *
+     * 为什么要这个静态口：`InsightRenderer` 是**包内可见**的，shell 层引用不到它的类型；
+     * 而"有没有料"必须用**收拢过滤后**的判据（`preferCategory` 可能整列表全是 `readingTime=0`，
+     * 只看 `isEmpty()` 会误判成"有料"）。
+     */
+    public static boolean hasInterest(PeriodStats st) {
+        return st != null
+                && !InsightRenderer.aggregateCategories(st.preferCategory, 1).isEmpty();
+    }
+
     // ══════════════════════ 分区注册（后序卡的唯一改动点） ══════════════════════
 
     /**
      * 注册洞察页的 5 个分区。
      *
-     * 🔴 **本卡全部是占位**（只画空态文案）。K4~K8/K10 落码时：
+     * 🔴 未落地的分区仍是**占位**（只画空态文案）。K5~K8/K10 落码时：
      * 把自己那个 `placeholderXxx(...)` 换成一个真实 `Section` 实现即可，
      * **不要动本类的滚动/量高逻辑**。
      *
@@ -72,8 +108,10 @@ public final class InsightPageView extends View {
         renderer.add(InsightRenderer.placeholderLines("累计视图", "暂无累计数据", 2f));
         // ④ 排行（→ TASK-053 K8）── 🔴 高度按视口百分比预留（40~45%），避免后序卡返工（卡面 R3）
         renderer.add(InsightRenderer.placeholderRatio("读书排行", "暂无阅读排行", RANK_VIEWPORT_RATIO));
-        // ⑤ 画像（→ TASK-049 K4 / TASK-050 K5 / TASK-055 K10）
-        renderer.add(InsightRenderer.placeholderLines("阅读画像", "暂无阅读画像", 2f));
+        // ⑤ 画像（🆕 TASK-049 K4：**兴趣雷达已落地**；K5 偏好三件套 / K10 画像判定继续往这一格加）
+        renderer.add(InsightRenderer.interestRadar(
+                InsightRenderer.aggregateCategories(interestCats, InsightRenderer.RADAR_TOP_N),
+                interestScope, "暂无阅读画像"));
     }
 
     // ══════════════════════ 量高 / 钳位 ══════════════════════
