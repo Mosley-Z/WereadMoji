@@ -105,6 +105,8 @@ public class MainActivity extends Activity {
     private InsightPageView insightPage;
     /** 🆕 TASK-051（K6）：年度首拉在途标记 —— 防止反复进洞察页时重复发请求（卡面 A4）。 */
     private boolean annualLoading;
+    /** 🆕 TASK-052（K7）：累计首拉在途标记 —— 与 {@link #annualLoading} 同法（卡面 A5）。 */
+    private boolean overallLoading;
     /** 🆕 TASK-044：当前大标签下标（阅读/设置/实验室/待办）。 */
     private int mainPage = MP_READER;
     /**
@@ -655,8 +657,10 @@ public class MainActivity extends Activity {
             card.setVisibility(View.GONE);
             insightPage.setVisibility(View.VISIBLE);
             bindInsightAnnual();             // 🆕 TASK-051 K6：把「年度视图」的缓存喂进去
+            bindInsightOverall();            // 🆕 TASK-052 K7：把「累计视图」的缓存喂进去
             bindInsightInterest();           // 🆕 TASK-049 K4：把「兴趣雷达」的料喂进去
             ensureAnnualLoaded();            // 🆕 TASK-051 K6：年度缓存缺 ⇒ 触发一次拉取
+            ensureOverallLoaded();           // 🆕 TASK-052 K7：累计缓存缺 ⇒ 触发一次拉取
             insightPage.resetScroll();       // 每次进入都从顶部看起
             // 🆕 postreview（F-2）：洞察页无数据可取 ⇒ 刷新键是「可见但无反应」的死键，一并隐藏。
             findViewById(R.id.btn_refresh).setVisibility(View.GONE);
@@ -789,6 +793,55 @@ public class MainActivity extends Activity {
                         bindInsightAnnual();          // 年度分区换真实数据
                         bindInsightInterest();        // 兴趣雷达口径可能前移（见方法注释）
                         CardDebug.note(MainActivity.this, "insight annual: fetched OK total="
+                                + stats.totalSec);
+                    }
+                });
+    }
+
+    // ══════════════ 🆕 TASK-052（K7）：洞察页「累计视图」的取数 ══════════════
+
+    /** 把「累计」缓存喂给分区③（没有 ⇒ 空态）。 */
+    private void bindInsightOverall() {
+        PeriodStats st = StatsStore.loadOverall(this);
+        insightPage.setOverall(st);
+        CardDebug.note(this, st == null
+                ? "insight overall: 空态（无累计缓存）"
+                : "insight overall: total=" + st.totalSec + " readDays=" + st.readDays
+                  + " medals=" + (st.medals == null ? 0 : st.medals.size())
+                  + " regMs=" + st.registTimeMs);
+    }
+
+    /**
+     * 🔴 本卡**唯一的真机项**：累计缓存缺失 ⇒ 触发**一次** `mode=overall` 拉取。
+     *
+     * <p>缓存命中 / 在途 / 无 Key ⇒ 直接返回（**零请求**）。成功后落 {@link StatsStore#saveOverall}，
+     * 重绑分区③，并**重绑兴趣雷达** —— 累计是 K4 口径链（**累计**→年度→本月→本周）的**最全档**，
+     * 到货后 §⑤ 会从「今年」前移到「累计」，条数与百分比随之更新（同 TASK-051 年度到货的处理）。
+     *
+     * <p>⚠️ `overall` **无周期概念** ⇒ `baseTime` 固定传 **0**（服务端忽略该值）。
+     */
+    private void ensureOverallLoaded() {
+        if (StatsStore.loadOverall(this) != null) return;       // 命中 ⇒ 零请求（卡面 A6）
+        if (overallLoading) return;                             // 在途 ⇒ 不重复发
+        final String key = StatsStore.getKey(this);
+        if (key.length() == 0) return;                          // 无 Key ⇒ 无从拉（等设置页存 Key）
+        overallLoading = true;
+        final long gen = StatsStore.keyGen();                   // R05：换 Key ⇒ 丢弃迟到结果
+        CardDebug.note(this, "insight overall: 发起拉取 baseTime=0");
+        WereadApi.fetchDetail(key, PeriodRange.OVERALL, 0L,
+                new WereadApi.Callback() {
+                    @Override
+                    public void onResult(PeriodStats stats, String rawJson, String error) {
+                        overallLoading = false;
+                        if (gen != StatsStore.keyGen()) return;      // 换过 Key ⇒ 丢弃
+                        if (error != null || stats == null) {
+                            CardDebug.note(MainActivity.this, "insight overall: 拉取失败 " + error);
+                            return;
+                        }
+                        StatsStore.saveOverall(MainActivity.this, stats);
+                        bindInsightOverall();         // 累计分区换真实数据
+                        bindInsightInterest();        // 兴趣雷达口径前移到累计档（见方法注释）
+                        CardDebug.note(MainActivity.this, "insight overall: fetched OK total="
                                 + stats.totalSec);
                     }
                 });

@@ -3,6 +3,7 @@ package com.inkread.weekread.feature;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 
+import com.inkread.weekread.core.PeriodRange;
 import com.inkread.weekread.core.PeriodStats;
 
 import java.util.ArrayList;
@@ -399,8 +400,8 @@ final class InsightRenderer {
     /** 月份锚点（1 起）—— 只标这 4 个，12 个数字会挤成一团。 */
     private static final int[] ANNUAL_ANCHORS = { 1, 4, 7, 10 };
 
-    /** 空态盒高（= 2 行正文），供「无数据」两种分支共用，保证 `height()` 与 `draw()` 同高。 */
-    private static float annualEmptyBox(float unit) { return SZ_BODY * unit * 1.9f * 2f; }
+    /** 2 行空态盒高（各分区空态分支共用，保证 `height()` 与 `draw()` 同高）。 */
+    private static float emptyBox2(float unit) { return SZ_BODY * unit * 1.9f * 2f; }
 
     /** 当年 12 桶里的最大月秒数（0 = 整年无记录）。 */
     private static int annualMaxMonth(PeriodStats st) {
@@ -447,7 +448,7 @@ final class InsightRenderer {
 
             public float height(float w, float vh, float unit) {
                 float head = secHeadH(unit);
-                if (!hasAnnual(st)) return head + annualEmptyBox(unit);
+                if (!hasAnnual(st)) return head + emptyBox2(unit);
                 float h = head
                         + SZ_BODY * unit * 1.9f          // 汇总行
                         + ANNUAL_CHART_UNITS * unit      // 柱图
@@ -475,11 +476,11 @@ final class InsightRenderer {
         float y = drawSectionHead(c, w, top, unit, p, "年度视图");
 
         if (st == null) {
-            drawCenteredIn(c, w, y, annualEmptyBox(unit), unit, p, empty);
+            drawCenteredIn(c, w, y, emptyBox2(unit), unit, p, empty);
             return;
         }
         if (annualMaxMonth(st) == 0) {                       // 有回包但整年无记录
-            drawCenteredIn(c, w, y, annualEmptyBox(unit), unit, p, "今年还没有阅读记录");
+            drawCenteredIn(c, w, y, emptyBox2(unit), unit, p, "今年还没有阅读记录");
             return;
         }
 
@@ -533,17 +534,114 @@ final class InsightRenderer {
         y += ANNUAL_LABEL_UNITS * unit;
 
         // ── ③ readStat 行 ──
-        String stat = statLine(st);
-        if (stat != null) {
-            float sz = bodySz;
-            p.setColor(GRAY);
+        drawStatLine(c, left, right, y, unit, p, statLine(st));
+
+        p.setTextAlign(Paint.Align.LEFT);
+        p.setStyle(Paint.Style.FILL);
+    }
+
+    /** 画 readStat 一行（左对齐 `GRAY`，超宽按 0.4 步长缩字）—— 年度 / 累计共用。 */
+    private static void drawStatLine(Canvas c, float left, float right, float y, float unit,
+                                     Paint p, String stat) {
+        if (stat == null) return;
+        float sz = SZ_BODY * unit;
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(GRAY);
+        p.setTextAlign(Paint.Align.LEFT);
+        p.setTextSize(sz);
+        while (p.measureText(stat) > (right - left) && sz > 11f * unit) {
+            sz -= 0.4f;
             p.setTextSize(sz);
-            while (p.measureText(stat) > (right - left) && sz > 11f * unit) {
-                sz -= 0.4f;
-                p.setTextSize(sz);
-            }
-            c.drawText(stat, left, y + sz * 1.05f, p);
         }
+        c.drawText(stat, left, y + sz * 1.05f, p);
+    }
+
+    // ══════════════════════ K7（TASK-052）：累计视图 ══════════════════════
+
+    /**
+     * 「已陪你 N 年」文案（`registTime` 手算年差）。
+     *
+     * 🔴 口径：`N = 当前年 − year(registTime)`（`TASK-046` 已把回包的秒 ×1000 存成 ms）。
+     * · `registTime <= 0`（回包未带）⇒ **null**（该子句不画）；
+     * · `N <= 0`（注册于今年）⇒ 「已陪你不到 1 年」（卡面 A7 边界）。
+     */
+    static String yearsWithYouText(PeriodStats st) {
+        if (st == null || st.registTimeMs <= 0) return null;
+        int regYear = PeriodRange.yearOf(st.registTimeMs / 1000L);
+        int n = PeriodRange.yearOf(0) - regYear;
+        if (n <= 0) return "已陪你不到 1 年";
+        return "已陪你 " + n + " 年";
+    }
+
+    /**
+     * 分区③「累计视图」—— **K7 真实实现**（顶替 `TASK-048` 的占位）。
+     *
+     * 自上而下：
+     *   ① 汇总行「累计 共读 N 小时 · N 天」（`totalReadTime` + `readDays`）；
+     *   ② 「已陪你 N 年 · 已获 M 枚」（`registTime` + `medals` **只计数**）；
+     *   ③ 四段摘要（`readStat`）。
+     *
+     * 🔴 **`medals` 只计数**（用户未勾 ⑪「勋章墙」）—— **不出列表、不画图标**（卡面 A4）。
+     *
+     * @param st    累计 `PeriodStats`（`mode=overall`）；null ⇒ 画 {@code empty}
+     * @param empty 空态文案
+     */
+    static Section overallSection(final PeriodStats st, final String empty) {
+        final String title = "累计视图";
+        return new Section() {
+            public String title() { return title; }
+
+            public float height(float w, float vh, float unit) {
+                float head = secHeadH(unit);
+                if (st == null) return head + emptyBox2(unit);
+                float h = head
+                        + SZ_BODY * unit * 1.9f      // 汇总行
+                        + SZ_BODY * unit * 1.9f;     // 陪伴 + 勋章
+                if (statLine(st) != null) h += SZ_BODY * unit * 1.9f;
+                return h + unit * 4f;
+            }
+
+            public void draw(Canvas c, float w, float vh, float top, float unit, Paint p) {
+                drawOverallSection(c, w, top, unit, p, st, empty);
+            }
+        };
+    }
+
+    private static void drawOverallSection(Canvas c, float w, float top, float unit, Paint p,
+                                           PeriodStats st, String empty) {
+        float pad = w * PAD_X_RATIO;
+        float left = pad, right = w - pad;
+        float y = drawSectionHead(c, w, top, unit, p, "累计视图");
+        if (st == null) {
+            drawCenteredIn(c, w, y, emptyBox2(unit), unit, p, empty);
+            return;
+        }
+
+        float bodySz = SZ_BODY * unit;
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(INK);
+        p.setFakeBoldText(false);
+        p.setTextAlign(Paint.Align.LEFT);
+        p.setTextSize(bodySz);
+
+        // ① 汇总行
+        c.drawText("累计 共读 " + CardLayout.fmtTotal(st.totalSec) + " · " + st.readDays + " 天",
+                left, y + bodySz * 1.2f, p);
+        y += bodySz * 1.9f;
+
+        // ② 已陪你 N 年 · 已获 M 枚（medals **只计数**，不出列表/图标）
+        StringBuilder sb = new StringBuilder();
+        String wy = yearsWithYouText(st);
+        if (wy != null) sb.append(wy);
+        if (st.medals != null && !st.medals.isEmpty()) {
+            if (sb.length() > 0) sb.append(" · ");
+            sb.append("已获 ").append(st.medals.size()).append(" 枚");
+        }
+        if (sb.length() > 0) c.drawText(sb.toString(), left, y + bodySz * 1.2f, p);
+        y += bodySz * 1.9f;
+
+        // ③ readStat
+        drawStatLine(c, left, right, y, unit, p, statLine(st));
 
         p.setTextAlign(Paint.Align.LEFT);
         p.setStyle(Paint.Style.FILL);

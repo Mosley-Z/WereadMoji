@@ -52,6 +52,9 @@ public final class InsightPageView extends View {
     // ── K6（TASK-051）：年度视图的料（null ⇒ 分区画空态）──
     private PeriodStats annualStats;
 
+    // ── K7（TASK-052）：累计视图的料（null ⇒ 分区画空态）──
+    private PeriodStats overallStats;
+
     public InsightPageView(Context c) { this(c, null); }
 
     public InsightPageView(Context c, AttributeSet a) {
@@ -100,6 +103,17 @@ public final class InsightPageView extends View {
         invalidate();
     }
 
+    /**
+     * 🆕 K7（TASK-052）：设定「累计视图」分区（③）的料。
+     *
+     * @param st 累计（`mode=overall`）的统计；null ⇒ 画空态
+     */
+    public void setOverall(PeriodStats st) {
+        overallStats = st;
+        rebuildSections();
+        invalidate();
+    }
+
     // ══════════════════════ 分区注册（后序卡的唯一改动点） ══════════════════════
 
     /**
@@ -118,8 +132,8 @@ public final class InsightPageView extends View {
         renderer.add(InsightRenderer.placeholderLines("阅读摘要", "暂无阅读摘要", 1f));
         // ② 年度（🆕 TASK-051 K6：**已落地** —— 12 桶按月柱图 + 汇总行 + readStat）
         renderer.add(InsightRenderer.annualSection(annualStats, "暂无年度数据"));
-        // ③ 累计（→ TASK-052 K7）
-        renderer.add(InsightRenderer.placeholderLines("累计视图", "暂无累计数据", 2f));
+        // ③ 累计（🆕 TASK-052 K7：**已落地** —— 汇总行 + 陪伴年数 + 勋章计数 + readStat）
+        renderer.add(InsightRenderer.overallSection(overallStats, "暂无累计数据"));
         // ④ 排行（→ TASK-053 K8）── 🔴 高度按视口百分比预留（40~45%），避免后序卡返工（卡面 R3）
         renderer.add(InsightRenderer.placeholderRatio("读书排行", "暂无阅读排行", RANK_VIEWPORT_RATIO));
         // ⑤ 画像（🆕 TASK-049 K4：**兴趣雷达已落地**；K5 偏好三件套 / K10 画像判定继续往这一格加）
