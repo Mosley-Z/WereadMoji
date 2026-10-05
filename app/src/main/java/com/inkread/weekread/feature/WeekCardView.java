@@ -174,6 +174,13 @@ public class WeekCardView extends View {
      * 一格两态：「全部」（描边）/「只看想法」（反白），点一下切换。
      */
     final RectF filterBox = new RectF();
+    /**
+     * 🆕 TASK-057（K11）本记形态**「选书」格**的矩形（App 全屏档专属，桌面卡片档恒为空）。
+     *
+     * 四格 → 五格后排在「换一条」与「导出」之间；点它 ⇒ 宿主（{@code MainActivity}）
+     * 弹半屏选书列表。桌面卡片路径**不读**它（也不画、不设），故卡片形态零影响（卡面 A6）。
+     */
+    final RectF pickBox = new RectF();
     /** 本记形态左下角「上一条」按钮的矩形（v0.4.2） */
     final RectF prevBox = new RectF();
     /**
@@ -257,6 +264,17 @@ public class WeekCardView extends View {
      * 由 {@code MainActivity.showNoteItem} 在设内容前设进来。
      */
     boolean noteIdeasSlot = false;
+    /**
+     * 🆕 TASK-057（K11）：进度行/池子规模取哪个**槽位**（`NoteStore.SLOT_*`：0 默认 / 1 只看想法 / 2 选书）。
+     *
+     * 与 {@link #noteIdeasSlot} 的分工：后者只管「筛选」格的**外观**（App 专属，桌面恒 false）；
+     * 本字段是**数据口径**，渲染层的进度行（`NoteStore.progress(ctx, noteSlot)`）读它。
+     *
+     * 🔴 **桌面卡片恒 0**（`CardContentController` 从不设它）⇒ 桌面的「第 N / 共 M 条」
+     * 永远按全库算，App 里选书改不动它（卡面 A6）。
+     * App 本记页由 `MainActivity.showNoteItem` 用 `NoteStore.slotFor(this)` 注入。
+     */
+    int noteSlot = 0;
 
     final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
     final Path path = new Path();
@@ -288,6 +306,12 @@ public class WeekCardView extends View {
         void onExportNote();
         /** 点了左下角的「筛选」格（v0.4.5）—— 在「全部 / 只看想法」之间切换 */
         void onToggleIdeas();
+        /**
+         * 🆕 TASK-057（K11）点了「选书」格 —— 宿主弹半屏选书列表（App 全屏档专属）。
+         *
+         * 本回调**只有 App 全屏档会触发**（卡片档不画这一格、{@code pickBox} 恒为空）。
+         */
+        void onPickNote();
     }
 
     /**
@@ -512,10 +536,16 @@ public class WeekCardView extends View {
         invalidate();
     }
 
-    /** 进度行用哪套序号空间（v0.4.4「只看想法」）—— App 在设内容前调用；桌面卡片不调（默认全量池） */
-    public void setNoteSlot(boolean ideasOnly) {
-        if (noteIdeasSlot == ideasOnly) return;
-        noteIdeasSlot = ideasOnly;
+    /**
+     * 进度行/池子用哪个槽位（v0.4.4 起是 boolean「只看想法」；🆕 TASK-057 扩成三槽位 int）。
+     *
+     * App 在设内容前调（传 {@code NoteStore.slotFor(this)}）；**桌面卡片不调**（默认 0 = 全量池）。
+     * 顺带把「筛选」格的外观标记 {@link #noteIdeasSlot} 对齐 —— 只有 App 会传 1。
+     */
+    public void setNoteSlot(int slot) {
+        if (noteSlot == slot) return;
+        noteSlot = slot;
+        noteIdeasSlot = (slot == 1);        // 1 = 只看想法（NoteStore.SLOT_IDEA）
         invalidate();
     }
 

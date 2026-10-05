@@ -128,6 +128,8 @@ final class CardRenderer {
     private static final String PREV_LABEL = "上一条";
     /** 本记形态「导出」按钮（v0.4.1：只画在 App 全屏档，桌面卡片放不下） */
     private static final String EXPORT_LABEL = "导出";
+    /** 🆕 TASK-057（K11）本记形态「选书」格（App 全屏档专属）—— 点它弹半屏选书列表 */
+    private static final String PICK_LABEL = "选书";
 
     // ── V1.0.3-beta（TASK-024）「待办」版式 ──
     // 每行 = 勾选框（最左）| 内容（超出省略号）| 日期时间（最右，无则不画该列）。
@@ -180,13 +182,16 @@ final class CardRenderer {
     private static final int NOTE_CARD_QUOTE_MIN = 1;
     private static final int NOTE_CARD_IDEA_MIN = 2;
     /**
-     * App 全屏档本记按钮行的几何（v0.4.5）：**四格等宽**（筛选 / 上一条 / 换一条 / 导出）。
+     * App 全屏档本记按钮行的几何：**五格等宽**（筛选 / 上一条 / 换一条 / 选书 / 导出）。
      *
-     * 50 + 3×8 = 424 ≤ 可用宽 432，两侧各余 4px 居中。
-     * 为什么不排五格（两个筛选项各占一格）：格宽要压到 84px 且字号得从 17 号降到 15 号，
-     * 墨水屏上五个小格子挨在一起误触明显；并成一格切换，格宽 100px、字号不变。
+     * 🆕 TASK-057（K11）：由四格 → 五格，「选书」插在「换一条」与「导出」之间。
+     * 重算格宽（R4）：可用宽 = `w − 2·padX = 480 − 48 = 432px`（`padXRatio = 0.05`）；
+     * `5×80 + 4×8 = 432` **恰好铺满**，两侧零余量 ⇒ 旧值 `NOTE_BOX_W = 100` 放不下五格，
+     * 这里降到 **80**（8 号缩放后单格 96px，三字标签 ~61px，仍有 ~17px 边距，墨水屏上不挤）。
+     * ⚠️ 旧注释担心的"五格压到 84px 且要降到 15 号"那种情况**不会发生** ——
+     * 那是"两个筛选项各占一格"（共 6 格）才会有的问题；这里 5 格 + 17 号不动。
      */
-    private static final float NOTE_BOX_W = 100f;
+    private static final float NOTE_BOX_W = 80f;
     private static final float NOTE_BOX_GAP = 8f;
     /** 筛选格里的文字字号（与全屏档按钮同号） */
     private static final float SZ_NOTE_FILTER = 17f;
@@ -1889,8 +1894,21 @@ final class CardRenderer {
             float authorW = host.p.measureText(author);
             if (titleW + auSize * 0.8f + authorW > availW) {
                 dropAuthor = true;
-                if (titleW > availW) title = host.layout.ellipsize(title, availW);
+                if (titleW > availW) {
+                    // 🔴 量书名必须切回**书名的最终绘制态**（粗体 + tiSize）：`ellipsize` 的契约是
+                    //    「调用前把 p 的字号/字重设成最终值」，此前停在 `auSize` 非粗体上量 ⇒ 偏窄，
+                    //    长书名（如"卡拉马佐夫兄弟（套装上下册）（陀思妥耶夫斯基文集2015）"）虽然
+                    //    被截过、画出来仍会**冲出卡片右边界**（TASK-057 选书后长书名成常态，真机复现）。
+                    host.p.setFakeBoldText(true);
+                    host.p.setTextSize(tiSize);
+                    title = host.layout.ellipsize(title, availW);
+                }
             }
+        } else {
+            // 无作者时原来整段被跳过 ⇒ 超宽书名**完全不截断**。补上（同样按粗体 + tiSize 量）。
+            host.p.setFakeBoldText(true);
+            host.p.setTextSize(tiSize);
+            if (host.p.measureText(title) > availW) title = host.layout.ellipsize(title, availW);
         }
         host.p.setColor(INK);
         host.p.setFakeBoldText(true);
@@ -1925,7 +1943,8 @@ final class CardRenderer {
         drawNoteButtons(c, h, left, right);
 
         // ── ⑧ 进度：第 N / 共 M 条（v0.4.2，池内序号 —— 与"换一条/上一条"同步增减）──
-        int[] pr = NoteStore.progress(host.getContext(), host.noteIdeasSlot);
+        // 🆕 TASK-057：按**槽位**取数（桌面恒 0 = 全库；App 由 MainActivity 注入 1 想法 / 2 选书）
+        int[] pr = NoteStore.progress(host.getContext(), host.noteSlot);
         if (pr != null) {
             String ps = "第 " + pr[0] + " / 共 " + pr[1] + " 条";
             host.p.setStyle(Paint.Style.FILL);
@@ -2069,20 +2088,23 @@ final class CardRenderer {
      */
     private void drawNoteButtons(Canvas c, float h, float left, float right) {
         if (host.fullscreen) {
-            // 四格等宽居中：「筛选」/ 上一条 / 换一条 / 导出
-            float total = NOTE_BOX_W * 4f + NOTE_BOX_GAP * 3f;
+            // 🆕 TASK-057：五格等宽居中 —— 「筛选」/ 上一条 / 换一条 / 选书 / 导出
+            float step = NOTE_BOX_W + NOTE_BOX_GAP;
+            float total = NOTE_BOX_W * 5f + NOTE_BOX_GAP * 4f;
             float x0 = left + ((right - left) - total) / 2f;
             if (x0 < left) x0 = left;
             drawFilterBox(c, x0, h);
-            drawBoxAt(c, x0 + (NOTE_BOX_W + NOTE_BOX_GAP), h, PREV_LABEL, host.prevBox, NOTE_BOX_W);
-            drawBoxAt(c, x0 + (NOTE_BOX_W + NOTE_BOX_GAP) * 2f, h, NOTE_LABEL, host.openBox, NOTE_BOX_W);
-            drawBoxAt(c, x0 + (NOTE_BOX_W + NOTE_BOX_GAP) * 3f, h, EXPORT_LABEL, host.exportBox, NOTE_BOX_W);
+            drawBoxAt(c, x0 + step, h, PREV_LABEL, host.prevBox, NOTE_BOX_W);
+            drawBoxAt(c, x0 + step * 2f, h, NOTE_LABEL, host.openBox, NOTE_BOX_W);
+            drawBoxAt(c, x0 + step * 3f, h, PICK_LABEL, host.pickBox, NOTE_BOX_W);
+            drawBoxAt(c, x0 + step * 4f, h, EXPORT_LABEL, host.exportBox, NOTE_BOX_W);
         } else {
-            // 桌面卡片：按钮区只有 368 宽，放不下四格 —— 保持左右各一个
+            // 桌面卡片：按钮区只有 368 宽，放不下五格 —— 保持左右各一个
             drawBoxAt(c, left + CardSpec.PREV_BOX_MARGIN_L, h, PREV_LABEL, host.prevBox);
             drawBoxAt(c, right - host.layout.boxW() - CardSpec.OPEN_BOX_MARGIN_R, h, NOTE_LABEL, host.openBox);
             host.exportBox.setEmpty();
             host.filterBox.setEmpty();          // 卡片档没有筛选格（也不开触摸窗）
+            host.pickBox.setEmpty();            // 🆕 TASK-057：卡片档没有选书格 ⇒ A6 桌面零影响
         }
     }
 

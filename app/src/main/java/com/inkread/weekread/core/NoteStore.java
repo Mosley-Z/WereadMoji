@@ -59,6 +59,16 @@ public final class NoteStore {
     /** 这一小把的内容（v0.4.5）；`_i` 后缀那份属于「只看想法」档 */
     private static final String F_BATCH = "nt_batch.json";
     private static final String F_BATCH_I = "nt_batch_i.json";
+    /**
+     * 🆕 TASK-057：**选书档**的批次文件 —— 独立第三槽，与默认档/只看想法档互不干扰。
+     *
+     * 🔴 为什么必须独立（A6 桌面隔离的硬要求，真机实测踩到）：
+     * 桌面卡片走 `pick(ctx, manual)` ⇒ `ideasSlot = false` ⇒ **用的就是默认档那一套**
+     * （同一个 `nt_batch.json` + 同一组 `batch_pos / taken / day / cur_book / cur_key / hist`）。
+     * 若选书档复用默认档，App 里选一本书就会把桌面「今日一签」连人带序号一起换掉
+     * （实测：桌面显示成 App 选的那本 + 「共 20 条」）⇒ 卡面 A6「改前改后逐像素一致」直接不成立。
+     */
+    private static final String F_BATCH_P = "nt_batch_p.json";
     private static final String PREFS = "notes";
 
     /**
@@ -101,6 +111,30 @@ public final class NoteStore {
     private static final String K_HIST = "hist";
     /** 历史栈上限 —— 够回看即可，不必无限涨 */
     private static final int HIST_MAX = 64;
+
+    /**
+     * 🆕 TASK-057（K11）**选书档**：用户在 App 本记页选中的书（`""` = 未选 ⇒ 走原随机池）。
+     *
+     * 🔴 **只属于 App 本记页的「全部」档**：
+     * · 桌面卡片**不读**这个键（它恒走默认档的随机池）⇒ 桌面本记形态零影响（卡面 A6）；
+     * · 与「只看想法」**互斥**（卡面 Q6 = 乙）⇒ 见 {@link #setPickedBook} / {@link #setIdeasOnly}。
+     */
+    private static final String K_PICK_BOOK = "pick_book";
+
+    /**
+     * 🆕 TASK-057：**抽取槽位**（0/1/2）—— 取代原先的布尔 `ideasSlot`。
+     *
+     * · {@link #SLOT_DEFAULT}（0）= 默认档：**桌面卡片** + App 本记页「全部」且**没选书**时；
+     * · {@link #SLOT_IDEA}（1）= 只看想法档：App 本记页专属（键后缀 `_i`，同旧 `ideasSlot=true`）；
+     * · {@link #SLOT_PICK}（2）= **选书档**：App 本记页专属（键后缀 `_p` + `nt_batch_p.json`）。
+     *
+     * 🔴 为什么要第三槽：选书档若复用默认档，选取一本书就会连桌面「今日一签」的
+     * 批次/序号/当前条一起改掉 ⇒ 卡面 A6 桌面逐像素一致的判据不成立（真机已复现）。
+     * 分槽后桌面**只碰 SLOT_DEFAULT**，与 App 的选书动作彻底解耦。
+     */
+    private static final int SLOT_DEFAULT = 0;
+    private static final int SLOT_IDEA = 1;
+    private static final int SLOT_PICK = 2;
 
     /** 索引自动有效期 —— 笔记书列表变动慢，6 小时一次足够 */
     public static final long INDEX_TTL_MS = 6L * 3600L * 1000L;
@@ -284,6 +318,7 @@ public final class NoteStore {
         dropIndexCache();
         sBatch = null;
         sBatchLoaded = false;
+        sBatchSlot = -1;          // 🆕 TASK-057：槽位缓存一并失效（免与下一槽误命中）
         sNoteAt.clear();
     }
 
@@ -1137,11 +1172,21 @@ public final class NoteStore {
      * 位置**随机偏移**而不是固定在第 8、16、24 格，免得"每次翻到第 8 格就是想法"。
      * 「只看想法」档整把都从想法层取。
      */
-    private static List<String[]> newBatch(Context c, boolean ideasSlot) {
+    private static List<String[]> newBatch(Context c, int slot) {
         long t0 = android.os.SystemClock.uptimeMillis();
         List<String[]> out = new ArrayList<String[]>(BATCH);
         JSONArray idx = index(c);
         if (idx == null) return out;
+
+        // 🆕 TASK-057（K11，Q5 = 乙）：**选书档（slot 2）** —— 直接顺序全量入队，
+        // 绕开 candidates()/pickBook() 的加权随机。放在随机路径之前
+        // （书本身就是从索引里选的 ⇒ 索引没建好时无书可选，早退无害）。
+        if (slot == SLOT_PICK) {
+            String pick = pickedBook(c);
+            if (pick.length() > 0) return orderedBatch(c, pick);
+        }
+        boolean ideasSlot = (slot == SLOT_IDEA);
+
         Random r = new Random(System.nanoTime());
         List<Cand> ideaC = candidates(c, idx, true);
         List<Cand> markC = candidates(c, idx, false);
@@ -1179,10 +1224,33 @@ public final class NoteStore {
             if (idea) ideaN++;                               // 层是按 hasIdea() 分的，直接数槽位就准
         }
         // 诊断：这一把抽了多少条、落在几本书上、其中几条是想法（≈1/8）
-        CardDebug.note(c, "newBatch slot=" + ideasSlot + " items=" + out.size()
+        CardDebug.note(c, "newBatch slot=" + slot + " items=" + out.size()
                 + " books=" + books.size() + " ideas=" + ideaN
                 + " candM=" + markC.size() + " candI=" + ideaC.size()
                 + " ms=" + (android.os.SystemClock.uptimeMillis() - t0));
+        return out;
+    }
+
+    /**
+     * 🆕 TASK-057（K11，Q5 = 乙）：**选书档**的一把 —— 该书**全部**条目按本地文件**原序**入队。
+     *
+     * 与随机路径的两个关键差别：
+     * · **不设 {@link #BATCH} 上限** —— 卡面 A4 要求"该书划线**全部**可达"，截成 40 条就到不了；
+     * · **不走 {@link #candidates} 的"本地没文件就跳过"** —— 选的书若还没预热到本地，
+     *   这里返回空表 ⇒ {@link #pick} 返回 null ⇒ 卡片画空态（不崩、不瞎抽别的书）。
+     *
+     * 空 `bookmarkId` 的条目直接丢弃（{@link #resolveSlot} 按它回查，空 id 永远查不到）。
+     */
+    private static List<String[]> orderedBatch(Context c, String bookId) {
+        List<NoteStats> items = itemsOfBook(c, bookId);
+        List<String[]> out = new ArrayList<String[]>(items.size());
+        for (int i = 0; i < items.size(); i++) {
+            NoteStats it = items.get(i);
+            if (it.bookmarkId.length() == 0) continue;
+            out.add(new String[]{bookId, it.bookmarkId});
+        }
+        CardDebug.note(c, "newBatch(pick) book=" + bookId + " pool=" + items.size()
+                + " queued=" + out.size());
         return out;
     }
 
@@ -1212,14 +1280,15 @@ public final class NoteStore {
     // ── 这一把的落盘与解析 ──
 
     private static List<String[]> sBatch;
-    private static boolean sBatchSlot;
+    /** 内存里这一把属于哪个槽位（🆕 TASK-057：由 boolean 改 int，见 SLOT_* 常量） */
+    private static int sBatchSlot;
     private static boolean sBatchLoaded;
 
     /** 当前这一把（内存优先，落盘只是为了"进程重启后还是同一条"） */
-    private static synchronized List<String[]> batch(Context c, boolean ideasSlot) {
-        if (sBatchLoaded && sBatchSlot == ideasSlot && sBatch != null) return sBatch;
+    private static synchronized List<String[]> batch(Context c, int slot) {
+        if (sBatchLoaded && sBatchSlot == slot && sBatch != null) return sBatch;
         List<String[]> out = new ArrayList<String[]>();
-        String s = read(c, ideasSlot ? F_BATCH_I : F_BATCH);
+        String s = read(c, batchFile(slot));
         if (s != null) {
             try {
                 JSONArray a = new JSONObject(s).optJSONArray("items");
@@ -1235,12 +1304,12 @@ public final class NoteStore {
             }
         }
         sBatch = out;
-        sBatchSlot = ideasSlot;
+        sBatchSlot = slot;
         sBatchLoaded = true;
         return out;
     }
 
-    private static synchronized void saveBatch(Context c, boolean ideasSlot, List<String[]> b) {
+    private static synchronized void saveBatch(Context c, int slot, List<String[]> b) {
         JSONArray a = new JSONArray();
         for (int i = 0; i < b.size(); i++) {
             JSONObject o = new JSONObject();
@@ -1257,10 +1326,17 @@ public final class NoteStore {
             root.put("items", a);
         } catch (Exception ignored) {
         }
-        write(c, ideasSlot ? F_BATCH_I : F_BATCH, root.toString());
+        write(c, batchFile(slot), root.toString());
         sBatch = b;
-        sBatchSlot = ideasSlot;
+        sBatchSlot = slot;
         sBatchLoaded = true;
+    }
+
+    /** 槽位 → 批次文件名（0 默认 / 1 只看想法 / 2 选书） */
+    private static String batchFile(int slot) {
+        if (slot == SLOT_IDEA) return F_BATCH_I;
+        if (slot == SLOT_PICK) return F_BATCH_P;
+        return F_BATCH;
     }
 
     private static NoteStats resolve(Context c, List<String[]> b, int pos) {
@@ -1282,57 +1358,72 @@ public final class NoteStore {
     /**
      * 取一条内容。
      *
-     * @param manual    true = 用户点了「换一条」（立刻前进一条）；
-     *                  false = 常规展示（同一天内返回当天那条，跨天才自动前进）
-     * @param ideasSlot true = 走「只看想法」那套**独立**的抽取状态（App 本记页的筛选）。
+     * <p>**桌面卡片专用入口** —— 恒走 {@link #SLOT_DEFAULT}：
+     * 不读 {@code K_PICK_BOOK}、不碰选书档，与 App 里的浏览/选书彻底解耦（卡面 A6）。
      *
-     * 为什么要分两套状态：桌面卡片始终用全量档，App 里切成「只看想法」不能把卡片也改掉。
-     * 两套状态各有自己的一把、自己的序号，互不干扰（见 {@link #k}）。
+     * <p>App 本记页请用 {@link #pick(Context, boolean, boolean)}（会按「只看想法 / 选书」落槽）。
+     *
+     * @param manual true = 用户点了「换一条」（立刻前进一条）；
+     *               false = 常规展示（同一天内返回当天那条，跨天才自动前进）
      */
     public static synchronized NoteStats pick(Context c, boolean manual) {
-        return pick(c, manual, false);
+        // 🔴 桌面卡片入口（{@code CardContentController} 唯一调用点）⇒ **恒 SLOT_DEFAULT**。
+        // 桌面**不读** K_PICK_BOOK、也不碰选书档 —— 这是卡面 A6「桌面逐像素不变」的隔离点。
+        return pick(c, manual, SLOT_DEFAULT);
     }
 
-    /** 同 {@link #pick(Context, boolean)} */
+    /** 同 {@link #pick(Context, boolean)}；{@code ideasSlot} 见 {@link #k} */
     public static synchronized NoteStats pick(Context c, boolean manual, boolean ideasSlot) {
+        // App 本记页入口：按「只看想法 / 是否有选书」落到具体槽位
+        return pick(c, manual, slotOf(c, ideasSlot));
+    }
+
+    /**
+     * 按槽位抽一条（0 默认 / 1 只看想法 / 2 选书）。
+     *
+     * @param manual true = 用户点了「换一条」（立刻前进一条）；
+     *               false = 常规展示（同一天内返回当天那条，跨天才自动前进）
+     */
+    private static synchronized NoteStats pick(Context c, boolean manual, int slot) {
+        boolean ideasSlot = (slot == SLOT_IDEA);
         long t0 = android.os.SystemClock.uptimeMillis();     // 取一帧内容的耗时（写入诊断日志）
         SharedPreferences p = sp(c);
         // 每日一签：同一天不主动换
-        if (!manual && dayKey().equals(p.getString(k(K_DAY, ideasSlot), ""))) {
-            NoteStats cur = currentIn(c, ideasSlot);
+        if (!manual && dayKey().equals(p.getString(k(K_DAY, slot), ""))) {
+            NoteStats cur = currentIn(c, slot);
             // 严格档要**复核今天这条是否真的带想法**（v0.5.3，R08）：
             // v0.5.2 的跨层回落可能把一条纯划线写成"今天这条"，此后每天都会沿用下去
             if (cur != null && (!ideasSlot || cur.hasIdea())) return cur;
         }
 
-        List<String[]> b = batch(c, ideasSlot);
-        int pos = p.getInt(k(K_BATCH_POS, ideasSlot), -1) + 1;
+        List<String[]> b = batch(c, slot);
+        int pos = p.getInt(k(K_BATCH_POS, slot), -1) + 1;
         NoteStats n = resolve(c, b, pos);
         // 档位不符（升级前落下的混合批次）也当成"没抽到" → 重建这一把
         if (pos < 0 || pos >= b.size() || n == null || (ideasSlot && !n.hasIdea())) {
             // 这一把翻完了（或里面的书被清了）→ 抽新的一把
-            b = newBatch(c, ideasSlot);
-            saveBatch(c, ideasSlot, b);
+            b = newBatch(c, slot);
+            saveBatch(c, slot, b);
             pos = 0;
             n = resolve(c, b, pos);
         }
         if (n == null) return null;
 
-        int m = total(c, ideasSlot);
-        int taken = p.getInt(k(K_TAKEN, ideasSlot), 0) + 1;
+        int m = poolSizeFor(c, slot);            // 🆕 TASK-057：选书档 ⇒ 这本书的条目数
+        int taken = p.getInt(k(K_TAKEN, slot), 0) + 1;
         if (m > 0 && taken > m) taken = 1;         // 全库看完一轮 → 序号回到 1
         p.edit()
-                .putInt(k(K_BATCH_POS, ideasSlot), pos)
-                .putString(k(K_DAY, ideasSlot), dayKey())
-                .putInt(k(K_TAKEN, ideasSlot), taken)
-                .putString(k(K_CUR_B, ideasSlot), n.bookId)
-                .putString(k(K_CUR_K, ideasSlot), n.bookmarkId)
-                .putString(k(K_HIST, ideasSlot),
-                        pushHist(p.getString(k(K_HIST, ideasSlot), ""), n.bookId, n.bookmarkId))
+                .putInt(k(K_BATCH_POS, slot), pos)
+                .putString(k(K_DAY, slot), dayKey())
+                .putInt(k(K_TAKEN, slot), taken)
+                .putString(k(K_CUR_B, slot), n.bookId)
+                .putString(k(K_CUR_K, slot), n.bookmarkId)
+                .putString(k(K_HIST, slot),
+                        pushHist(p.getString(k(K_HIST, slot), ""), n.bookId, n.bookmarkId))
                 .apply();                          // apply：主线程不落 fsync（commit 会卡一帧）
         // 诊断：一次取用的耗时与坐标。v0.4.4 曾经是 700ms/次（全量建池 + 缓存从未命中），
         // 这条日志让"又卡起来了"能一眼看出来（本机 logcat 吞第三方日志，只走文件通道）
-        CardDebug.note(c, "pick manual=" + manual + " slot=" + ideasSlot
+        CardDebug.note(c, "pick manual=" + manual + " slot=" + slot
                 + " ms=" + (android.os.SystemClock.uptimeMillis() - t0)
                 + " pos=" + pos + "/" + b.size() + " M=" + m
                 + " cur=" + n.bookId + "|" + n.bookmarkId);
@@ -1352,15 +1443,22 @@ public final class NoteStore {
      * 历史空时（第一次打开就点上一条）退到这一把里的前一条，环形 —— 用户不会撞墙。
      */
     public static synchronized NoteStats pickPrev(Context c) {
-        return pickPrev(c, false);
+        // 🔴 桌面卡片入口 ⇒ 恒 SLOT_DEFAULT（与 {@link #pick(Context, boolean)} 同一隔离点）
+        return pickPrev(c, SLOT_DEFAULT);
     }
 
-    /** 同 {@link #pickPrev(Context)}，{@code ideasSlot} 见 {@link #pick} */
+    /** 同 {@link #pickPrev(Context)}；App 本记页入口（按「只看想法 / 选书」落槽） */
     public static synchronized NoteStats pickPrev(Context c, boolean ideasSlot) {
+        return pickPrev(c, slotOf(c, ideasSlot));
+    }
+
+    /** 按槽位取上一条（0 默认 / 1 只看想法 / 2 选书） */
+    private static synchronized NoteStats pickPrev(Context c, int slot) {
+        boolean ideasSlot = (slot == SLOT_IDEA);        // 🆕 TASK-057：槽位→严格档（历史里跳过纯划线）
         SharedPreferences p = sp(c);
-        JSONArray hist = histOf(p.getString(k(K_HIST, ideasSlot), ""));
-        String curB = p.getString(k(K_CUR_B, ideasSlot), "");
-        String curK = p.getString(k(K_CUR_K, ideasSlot), "");
+        JSONArray hist = histOf(p.getString(k(K_HIST, slot), ""));
+        String curB = p.getString(k(K_CUR_B, slot), "");
+        String curK = p.getString(k(K_CUR_K, slot), "");
 
         // 栈顶若不是当前条（跨天自动前进后没来得及对齐等），就从栈顶本身找起
         int start = 0;
@@ -1389,22 +1487,22 @@ public final class NoteStore {
 
         SharedPreferences.Editor ed = p.edit();
         if (n == null) {
-            List<String[]> b = batch(c, ideasSlot);
+            List<String[]> b = batch(c, slot);
             if (b.isEmpty()) return null;
-            int pos = p.getInt(k(K_BATCH_POS, ideasSlot), 0) - 1;
+            int pos = p.getInt(k(K_BATCH_POS, slot), 0) - 1;
             if (pos < 0) pos = b.size() - 1;
             n = resolve(c, b, pos);
             if (n == null || (ideasSlot && !n.hasIdea())) return null;
-            ed.putInt(k(K_BATCH_POS, ideasSlot), pos);
+            ed.putInt(k(K_BATCH_POS, slot), pos);
         }
 
-        int taken = p.getInt(k(K_TAKEN, ideasSlot), 1) - 1;
+        int taken = p.getInt(k(K_TAKEN, slot), 1) - 1;
         if (taken < 1) taken = 1;
-        ed.putInt(k(K_TAKEN, ideasSlot), taken)
-                .putString(k(K_CUR_B, ideasSlot), n.bookId)
-                .putString(k(K_CUR_K, ideasSlot), n.bookmarkId)
-                .putString(k(K_HIST, ideasSlot), rest.toString())
-                .putString(k(K_DAY, ideasSlot), dayKey())
+        ed.putInt(k(K_TAKEN, slot), taken)
+                .putString(k(K_CUR_B, slot), n.bookId)
+                .putString(k(K_CUR_K, slot), n.bookmarkId)
+                .putString(k(K_HIST, slot), rest.toString())
+                .putString(k(K_DAY, slot), dayKey())
                 .apply();
         return n;
     }
@@ -1416,39 +1514,45 @@ public final class NoteStore {
      * 序号是"累计已看条数"（「换一条」+1、「上一条」-1），跨把累加，看完全库一圈回到 1。
      */
     public static int[] progress(Context c) {
-        return progress(c, false);
+        // 🔴 桌面卡片入口 ⇒ 恒 SLOT_DEFAULT（进度行「第 N / 共 M 条」不能被 App 的选书改掉）
+        return progress(c, SLOT_DEFAULT);
     }
 
-    /** 同 {@link #progress(Context)}，{@code ideasSlot} 见 {@link #pick} */
-    public static int[] progress(Context c, boolean ideasSlot) {
-        int m = total(c, ideasSlot);
+    /**
+     * 🆕 TASK-057：**按槽位**取进度（0 默认 / 1 只看想法 / 2 选书）。
+     *
+     * 🔴 渲染层（{@code CardRenderer}）必须走这个 int 版：桌面卡片与 App 都会调它，
+     * 传 {@code host.noteSlot}（桌面恒 0、App 由 {@code MainActivity} 注入）。
+     */
+    public static int[] progress(Context c, int slot) {
+        int m = poolSizeFor(c, slot);            // 🆕 TASK-057：选书档 ⇒ 这本书的条目数
         if (m <= 0) {
             // 索引还没建好（首次装好还没同步）→ 退到"这一把的长度"，至少不是空白
-            m = batch(c, ideasSlot).size();
+            m = batch(c, slot).size();
             if (m <= 0) return null;
         }
-        int n = sp(c).getInt(k(K_TAKEN, ideasSlot), 0);
+        int n = sp(c).getInt(k(K_TAKEN, slot), 0);
         if (n < 1) n = 1;
         if (n > m) n = m;
         return new int[]{n, m};
     }
 
-    /** 当前展示的那条（不做任何前进），用于刷新后重绘 */
+    /** 当前展示的那条（不做任何前进），用于刷新后重绘。桌面卡片入口 ⇒ 恒 SLOT_DEFAULT */
     public static synchronized NoteStats current(Context c) {
-        return current(c, false);
+        return current(c, SLOT_DEFAULT);
     }
 
-    /** 同 {@link #current(Context)}，{@code ideasSlot} 见 {@link #pick} */
-    public static synchronized NoteStats current(Context c, boolean ideasSlot) {
-        NoteStats n = currentIn(c, ideasSlot);
-        return n != null ? n : pick(c, false, ideasSlot);
+    /** 按槽位取当前条（0 默认 / 1 只看想法 / 2 选书）；App 侧请传 {@code NoteStore.slotFor(c)} */
+    public static synchronized NoteStats current(Context c, int slot) {
+        NoteStats n = currentIn(c, slot);
+        return n != null ? n : pick(c, false, slot);
     }
 
     /** 从 (K_CUR_B, K_CUR_K) 还原当前条，不做前进 */
-    private static NoteStats currentIn(Context c, boolean ideasSlot) {
+    private static NoteStats currentIn(Context c, int slot) {
         SharedPreferences p = sp(c);
-        return resolveSlot(c, p.getString(k(K_CUR_B, ideasSlot), ""),
-                p.getString(k(K_CUR_K, ideasSlot), ""));
+        return resolveSlot(c, p.getString(k(K_CUR_B, slot), ""),
+                p.getString(k(K_CUR_K, slot), ""));
     }
 
     // ── 历史栈（JSON 数组，栈顶在前）──
@@ -1490,12 +1594,149 @@ public final class NoteStore {
 
     /** 切「只看想法」—— 内容都在本地，切一下只是换一套抽取状态，不用重读任何文件 */
     public static void setIdeasOnly(Context c, boolean v) {
+        // 🆕 TASK-057（K11，Q6 = 乙）：与「选书」互斥 —— 切到「想法」档即退出选书。
+        // 反向由 setPickedBook 负责（选书 ⇒ 强制回「全部」档）。语义 = **后动者胜**，
+        // 两边都不留"点了没反应"的死键。
+        if (v) sp(c).edit().putString(K_PICK_BOOK, "").apply();
         sp(c).edit().putBoolean(K_IDEAS_ONLY, v).apply();
     }
 
-    /** 两套抽取状态（默认档 / 只看想法）的键名与批次文件 —— 后缀 `_i` 区分 */
-    private static String k(String base, boolean ideasSlot) {
-        return ideasSlot ? base + "_i" : base;
+    // ══════════════════ 🆕 TASK-057（K11）：选书档 ══════════════════
+
+    /** 当前选中的书（`""` = 未选 ⇒ 走原随机池）。桌面卡片不读该键。 */
+    public static String pickedBook(Context c) {
+        String v = sp(c).getString(K_PICK_BOOK, "");
+        return v == null ? "" : v;
+    }
+
+    /**
+     * 选中一本书（`bookId` 空串 = 恢复「全部书籍」）。
+     *
+     * 🔴 四件事一次做掉（缺一条就会"选了没用"）：
+     *   ① 写 `K_PICK_BOOK`，并把「只看想法」强制关掉（Q6 互斥 ⇒ 选书只作用于「全部」档）；
+     *   ② **作废选书档这一把**（内存 + `nt_batch_p.json`）—— 否则沿用旧批次，选书不生效；
+     *   ③ **选书档的抽签状态归零**（`day` / `batch_pos` / `taken` / 当前条 / 历史）——
+     *      `day` 不清的话 {@link #pick} 会走"每日一签"短路，把旧的条原样返回；
+     *   ④ 🔴 **一个字节都不碰默认档**（`SLOT_DEFAULT`）—— 桌面卡片用的就是默认档，
+     *      碰了它就会把桌面「今日一签」连人带序号一起换掉（真机复现过，见 {@link #F_BATCH_P}）。
+     */
+    public static synchronized void setPickedBook(Context c, String bookId) {
+        String v = (bookId == null) ? "" : bookId;
+        SharedPreferences p = sp(c);
+        SharedPreferences.Editor e = p.edit().putString(K_PICK_BOOK, v);
+        if (v.length() > 0) e.putBoolean(K_IDEAS_ONLY, false);
+        e.apply();
+
+        // ② 作废选书档这一把（走 saveBatch：同时换掉内存缓存 + 覆写批次文件，重启也不会读到旧的）
+        saveBatch(c, SLOT_PICK, new ArrayList<String[]>());
+
+        // ③ 选书档抽签状态归零 —— 顺序遍历从这本书的第 1 条开始
+        p.edit()
+                .putInt(k(K_BATCH_POS, SLOT_PICK), -1)
+                .putInt(k(K_TAKEN, SLOT_PICK), 0)
+                .remove(k(K_DAY, SLOT_PICK))
+                .putString(k(K_CUR_B, SLOT_PICK), "")
+                .putString(k(K_CUR_K, SLOT_PICK), "")
+                .putString(k(K_HIST, SLOT_PICK), "")
+                .apply();
+        CardDebug.note(c, "pickedBook = " + (v.length() == 0 ? "(全部书籍)" : v)
+                + " （只动 slot=2，桌面默认档未触碰）");
+    }
+
+    /** 可选书籍条目（书名 / 条数 / 本地是否已就绪）。 */
+    public static final class BookRef {
+        public String id;
+        public String title;
+        /** 条数 = 划线 + 想法（取索引里的 `noteCount + reviewCount`） */
+        public int count;
+        /** 本地是否已有内容文件（**决定这本书选了能不能真读出东西**） */
+        public boolean ready;
+    }
+
+    /**
+     * 🆕 TASK-057：选书列表的料 —— **索引原序**（= 预热序，最近有笔记的在前），零新请求。
+     *
+     * `ready` = 本地已有 `nt_<id>.json` / `ni_<id>.json`（判据与 {@link #candidates} 一致）。
+     * 🔴 之所以把 `ready` 一并带出而不在列表里过滤掉：索引 200+ 本、本地预热到的只是子集，
+     * 若只列已就绪的，用户会以为"我的书少了"；标出来让他自己选更诚实。
+     */
+    public static List<BookRef> bookList(Context c) {
+        List<BookRef> out = new ArrayList<BookRef>();
+        JSONArray idx = index(c);
+        if (idx == null) return out;
+        for (int i = 0; i < idx.length(); i++) {
+            JSONObject b = idx.optJSONObject(i);
+            if (b == null) continue;
+            String id = b.optString("bookId", "");
+            if (id.length() == 0) continue;
+            BookRef r = new BookRef();
+            r.id = id;
+            String t = b.optString("title", "");
+            r.title = (t.length() == 0) ? "（未知书名）" : t;
+            r.count = b.optInt("noteCount", 0) + b.optInt("reviewCount", 0);
+            r.ready = hasLocal(c, id);
+            out.add(r);
+        }
+        return out;
+    }
+
+    /** 本地是否已有这本书的内容文件（两个层任一有非空文件即可） */
+    private static boolean hasLocal(Context c, String id) {
+        File a = f(c, P_MARK + id + ".json");
+        if (a.exists() && a.length() > 0) return true;
+        File b = f(c, P_IDEA + id + ".json");
+        return b.exists() && b.length() > 0;
+    }
+
+    /**
+     * 当前「池子」规模 —— 供进度行「第 N / 共 M 条」。
+     *
+     * 常规 = 全库总数（{@link #total}）；**选书档（slot 2）= 这本书的条目数**，
+     * 否则进度会显示成"第 1 / 共 5483 条"（全库），与眼前这本书对不上。
+     */
+    private static int poolSizeFor(Context c, int slot) {
+        if (slot == SLOT_PICK) {
+            String pick = pickedBook(c);
+            if (pick.length() > 0) {
+                int sz = itemsOfBook(c, pick).size();
+                if (sz > 0) return sz;
+            }
+        }
+        return total(c, slot == SLOT_IDEA);
+    }
+
+    /**
+     * 抽取状态的键名 —— 🆕 TASK-057 由布尔改**三槽位**（0 默认 / 1 只看想法 / 2 选书）。
+     *
+     * 与旧 `k(base, boolean)` 逐位兼容：旧 `true`（只看想法）= 新 {@link #SLOT_IDEA}（后缀 `_i`），
+     * 旧 `false` = 新 {@link #SLOT_DEFAULT}（无后缀）⇒ **老用户的历史状态不会失配**。
+     */
+    private static String k(String base, int slot) {
+        if (slot == SLOT_IDEA) return base + "_i";
+        if (slot == SLOT_PICK) return base + "_p";
+        return base;
+    }
+
+    /**
+     * 当前该用哪个槽位（**App 本记页专用**）：
+     * 只看想法 ⇒ {@link #SLOT_IDEA}；否则选了书 ⇒ {@link #SLOT_PICK}；否则 {@link #SLOT_DEFAULT}。
+     *
+     * 🔴 桌面卡片**不走这里** —— 它的两个入口（`pick(c,manual)` / `pickPrev(c)`）硬编码
+     * {@link #SLOT_DEFAULT}，从根上不读 `K_PICK_BOOK`（卡面 A6）。
+     */
+    private static int slotOf(Context c, boolean ideasSlot) {
+        if (ideasSlot) return SLOT_IDEA;
+        return pickedBook(c).length() > 0 ? SLOT_PICK : SLOT_DEFAULT;
+    }
+
+    /**
+     * 🆕 TASK-057：**App 本记页**该用的槽位（公开给渲染层）。
+     *
+     * `MainActivity` 在设内容前把它喂给 `WeekCardView.setNoteSlot(int)`，
+     * 渲染层的进度行（{@code NoteStore.progress(ctx, host.noteSlot)}）与卡片行为都读它。
+     */
+    public static int slotFor(Context c) {
+        return slotOf(c, ideasOnly(c));
     }
 
     private static SharedPreferences sp(Context c) {

@@ -133,6 +133,16 @@
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_gravity="top" />
+
+            <!-- 🆕 TASK-057（K11）：本记页「选书」弹层。**只挂在这里**（App 阅读页），
+                 桌面悬浮卡那套路径整条链路都碰不到它 ⇒ A6「桌面本记形态零影响」结构性成立。
+                 收起态 GONE（不占位、不吃触摸）；展开时覆盖整个阅读区（模态），
+                 点上半屏遮罩/「关闭」即收起。放在最后 ⇒ 盖在 nav_drop 之上。 -->
+            <com.inkread.weekread.feature.NotePickView
+                android:id="@+id/note_pick"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone" />
         </FrameLayout>
 
         <!-- ══════════ ② 设置（大标签②）══════════ -->

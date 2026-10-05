@@ -14,6 +14,7 @@ import com.inkread.weekread.core.PeriodStats;
 import com.inkread.weekread.core.StatsStore;
 import com.inkread.weekread.feature.InsightPageView;
 import com.inkread.weekread.feature.NoteExport;
+import com.inkread.weekread.feature.NotePickView;
 import com.inkread.weekread.feature.WeekCardView;
 import com.inkread.weekread.net.NoteSync;
 import com.inkread.weekread.net.UpdateChecker;
@@ -103,6 +104,13 @@ public class MainActivity extends Activity {
     private TodoPageController todoCtrl;
     /** 🆕 TASK-048：洞察页容器（本卡 = 区块骨架 + 5 分区空态；内容由 K4~K8/K10 填）。 */
     private InsightPageView insightPage;
+    /**
+     * 🆕 TASK-057（K11）：本记页「选书」弹层（半屏列表 + 搜索）。
+     *
+     * 只属于 App 阅读页（挂在 `mp_reader` 下）；桌面悬浮卡那条链路不装配它 ⇒ A6 桌面零影响。
+     * 收起态 `GONE`；`onPickNote()` 里 {@code open(bookList, pickedBook)} 后置 `VISIBLE`。
+     */
+    private NotePickView notePick;
     /** 🆕 TASK-051（K6）：年度首拉在途标记 —— 防止反复进洞察页时重复发请求（卡面 A4）。 */
     private boolean annualLoading;
     /** 🆕 TASK-052（K7）：累计首拉在途标记 —— 与 {@link #annualLoading} 同法（卡面 A5）。 */
@@ -253,6 +261,7 @@ public class MainActivity extends Activity {
         navDrop.setTriggerless(true);
         picker = (PeriodPickerView) findViewById(R.id.picker);
         insightPage = (InsightPageView) findViewById(R.id.insight);
+        notePick = (NotePickView) findViewById(R.id.note_pick);
         pageReader = findViewById(R.id.mp_reader);
         pageSettings = findViewById(R.id.mp_settings);
         pageLab = findViewById(R.id.mp_lab);
@@ -325,7 +334,33 @@ public class MainActivity extends Activity {
             public void onToggleIdeas() {
                 toggleIdeas();                  // v0.4.5：卡片最左那格「筛选」
             }
+
+            @Override
+            public void onPickNote() {
+                showNotePick();                 // 🆕 TASK-057（K11）：底部「选书」格 ⇒ 弹半屏列表
+            }
         });
+
+        // ── 🆕 TASK-057（K11）：选书弹层（半屏列表 + 搜索）──
+        // 选中 ⇒ 写 prefs（NoteStore.setPickedBook）后**重新抽一条**（showNote(false)），
+        // 否则屏幕还停在旧随机池抽出来的那一条上，"选了没反应"。
+        if (notePick != null) {
+            notePick.setListener(new NotePickView.Listener() {
+                @Override
+                public void onPick(String bookId) {
+                    chooseBook(bookId);
+                }
+
+                @Override
+                public void onDismiss() {
+                    hideNotePick();
+                }
+            });
+        }
+        // 搜索框要能顶出软键盘：把窗口软键盘模式钉成 adjustResize —— 键盘弹出时阅读区被压缩，
+        // 弹层（MATCH_PARENT）跟着变矮、搜索框始终留在键盘上方（adjustPan 会把整页顶出去）。
+        getWindow().setSoftInputMode(
+                android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
 
         anchorWeek = PeriodRange.startOf(PeriodRange.WEEKLY, 0);
         anchorMonth = PeriodRange.startOf(PeriodRange.MONTHLY, 0);
@@ -417,6 +452,7 @@ public class MainActivity extends Activity {
                     // 🔴 TASK-044-R1：本段是下拉扳机，不是普通页签。
                     //    （SegTabView 对"再点已选中段"也会回调 —— 这里靠 mainPage 自己判断分流。）
                     if (mainPage == MP_READER && !remotePhone) {
+                        hideNotePick();      // 🆕 TASK-057：别让下拉浮层跟选书弹层叠在一起
                         navDrop.toggle();
                         return;
                     }
@@ -647,6 +683,10 @@ public class MainActivity extends Activity {
         //    修法取审查首选：在此一刀切早退 —— 它是本方法**所有**调用点的公共入口。
         if (remotePhone) return;
 
+        // 🆕 TASK-057（K11）：任何页面切换（大标签 / 下拉形态）都先收起选书弹层 ——
+        // 它是模态，留着会盖在别的形态上。放在这里 = 所有导航的公共入口，不会漏路径。
+        hideNotePick();
+
         navDrop.setSelected(indexOf(tabMode));
         refreshMainTabLabels();     // 🆕 TASK-044-R1：大标签① 文案跟随形态（「本周▽」→「本月▽」…）
 
@@ -677,7 +717,7 @@ public class MainActivity extends Activity {
         // 「全部 / 只看想法」不再独占屏顶一行（v0.4.5）—— 它是卡片内按钮行最左边那一格，
         // 由 WeekCardView 自己画，这里只需要把状态同步给它（进度行与筛选格都读这个标记）
         boolean isNote = PeriodRange.NOTE.equals(tabMode);
-        card.setNoteSlot(NoteStore.ideasOnly(this));
+        card.setNoteSlot(NoteStore.slotFor(this));
 
         if (PeriodRange.BOOK.equals(tabMode)) {
             // 「本书」没有周期可选 —— 步进选择器整条收掉，把高度让给进度条
@@ -919,6 +959,8 @@ public class MainActivity extends Activity {
         findViewById(R.id.sep_card).setVisibility(View.GONE);
         findViewById(R.id.btn_refresh).setVisibility(View.GONE);
         findViewById(R.id.tv_remote_notice).setVisibility(View.VISIBLE);
+        // 🆕 TASK-057：手机端形态下卡片相关的 UI 全隐 ⇒ 选书弹层一并收起（不留可见残影）
+        findViewById(R.id.note_pick).setVisibility(View.GONE);
     }
 
     @Override
@@ -1126,7 +1168,7 @@ public class MainActivity extends Activity {
     /** 把某条内容放到本记页（「换一条」/「上一条」/ 常规展示共用，v0.4.2 抽出来） */
     private void showNoteItem(NoteStats n) {
         // 进度行按「当前模式」取数：只看想法模式下用的是另一套序号空间（见 NoteStore.pick）
-        card.setNoteSlot(NoteStore.ideasOnly(this));
+        card.setNoteSlot(NoteStore.slotFor(this));
         // v0.9（TASK-016）：App 内本记页的字号由「导出字号」档决定（小/中/大 = 15/17/19 号），
         // 不再按字数自动分档。
         // 🔴 **两条注入路径里的"App 那条"**（桌面卡片那条在
@@ -1172,11 +1214,54 @@ public class MainActivity extends Activity {
      */
     private void toggleIdeas() {
         NoteStore.setIdeasOnly(this, !NoteStore.ideasOnly(this));
-        card.setNoteSlot(NoteStore.ideasOnly(this));
+        card.setNoteSlot(NoteStore.slotFor(this));
         // 非 manual：目标档里已有"今天这条"就沿用，没有才新抽；抽不到 → 起一次同步
         // （「只看想法」的池子小得多，第一次切过去很可能还没预热到本地）
         if (!showNote(false)) noteSync(false);
         card.invalidate();        // 换格上的文字（全部 ↔ 想法）与反白状态
+    }
+
+    // ══════════════ 🆕 TASK-057（K11）：选书弹层 ══════════════
+
+    /**
+     * 点底部「选书」格 ⇒ 弹半屏列表。
+     *
+     * 料 = {@link NoteStore#bookList}（索引原序，**零新请求**）；当前选中项 = {@link NoteStore#pickedBook}。
+     * 详情见 {@link NotePickView}。
+     */
+    private void showNotePick() {
+        if (notePick == null) return;
+        notePick.open(NoteStore.bookList(this), NoteStore.pickedBook(this));
+        notePick.setVisibility(View.VISIBLE);
+    }
+
+    /** 收起弹层（点空白 / 关闭 / 选中后 / 离开本记页都走这里） */
+    private void hideNotePick() {
+        if (notePick == null || notePick.getVisibility() != View.VISIBLE) return;
+        notePick.onHidden();                 // 清焦点 + 收软键盘
+        notePick.setVisibility(View.GONE);
+        // 弹层盖过的那块要重画：GONE 之后底层卡片/浮层的像素不会自己回来，显式 invalidate 一次
+        if (card != null) card.invalidate();
+        if (pageReader != null) pageReader.invalidate();
+    }
+
+    /**
+     * 在弹层里选了某本书（`bookId` 空串 = 「全部书籍」）。
+     *
+     * 🔴 顺序不能反：先 {@link NoteStore#setPickedBook}（写 prefs + 作废当前批次 + 抽签状态归零），
+     * 再收起弹层，最后 {@link #showNote(boolean)} 重新抽一条 —— 否则屏幕还停着旧池的那一条。
+     * `showNote(false)` 里 `pick` 的"每日一签"短路已被 `setPickedBook` 清掉 `day` 键，
+     * 所以一定会按新档重抽（详见 `NoteStore#setPickedBook` 注释）。
+     */
+    private void chooseBook(String bookId) {
+        NoteStore.setPickedBook(this, bookId);
+        hideNotePick();
+        if (bookId.length() == 0) {
+            // 恢复「全部书籍」⇒ 走原随机池；顺带把「只看想法」的档位同步回去（它没被动过）
+            card.setNoteSlot(NoteStore.slotFor(this));
+        }
+        if (!showNote(false)) noteSync(false);   // 选的书本地还没预热 ⇒ 起一次同步补齐
+        card.invalidate();                       // 进度行（第 N / 共 M 条）跟着换池子
     }
 
     /**

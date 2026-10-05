@@ -7,8 +7,8 @@ import android.view.MotionEvent;
  * 卡片的触摸与滚动（TASK-007 从 {@link WeekCardView} 整段平移而来）：
  *
  * · 只有「本书」/「本记」形态需要接收触摸 —— 本书 = 右下角「打开」；
- *   本记 = 左下「上一条」+ 右下「换一条」（App 全屏档另有「导出」与「筛选」格），
- *   且 v0.4.4 起本记态还要区分**滑动**（滚正文）与**点击**（按按钮）。
+ *   本记 = 左下「上一条」+ 右下「换一条」（App 全屏档另有「导出」「筛选」与
+ *   🆕 TASK-057 的「选书」格），且 v0.4.4 起本记态还要区分**滑动**（滚正文）与**点击**（按按钮）。
  * · v0.4.1 修的正是这里：原来开头一句 `if (!isBook()) return false;` 把本记态的
  *   触摸全放掉了，App 内的「换一条」因此是个**画上去的假按钮**（点它没有任何反应）。
  * · 周/月形态保持原样（不处理触摸）—— 桌面卡片那边整张卡是 NOT_TOUCHABLE，
@@ -92,6 +92,9 @@ final class CardInteraction {
                     if (host.noteListener != null) host.noteListener.onPrevNote();
                 } else if (hit(host.openBox, x, y)) {
                     if (host.noteListener != null) host.noteListener.onNextNote();
+                } else if (host.fullscreen && hit(host.pickBox, x, y)) {
+                    // 🆕 TASK-057（K11）：点「选书」格 ⇒ 宿主弹半屏选书列表
+                    if (host.noteListener != null) host.noteListener.onPickNote();
                 } else if (host.fullscreen && hit(host.exportBox, x, y)) {
                     if (host.noteListener != null) host.noteListener.onExportNote();
                 }
