@@ -86,6 +86,21 @@ final class CardRenderer {
     private static final float MONTH_FULL_GAP = 8f;
     private static final float MONTH_FULL_ROW_GAP = 8f;
 
+    // ── 🆕 TASK-054（K9）「本月各书籍阅读排名」（月全屏页**下方**新开的一段）──
+    // 版面：标题一行 + 每书一行（`名次 | 书名 | 时长`），行高按卡面定死 ≈32px。
+    // 🔴 这一段**只在 App 全屏档**画（`drawMonthFullBody` 专用）—— 桌面卡片月形态零影响。
+    /** 标题与行内文字字号（号）—— 17 号 = 20.4px，与页内其它副信息同档 */
+    private static final float RANK_SZ = 17f;
+    /** 行高（号）—— 26.67 号 × 1.2 = 32.0px（卡面「行高约 32px」）*/
+    private static final float RANK_ROW_H = 26.67f;
+    /** 名次槽宽（号）—— 两位数「10」也放得下，书名起点因此对齐 */
+    private static final float RANK_NUM_W = 34f;
+    /** 书名与右侧时长之间的最小净空（号）*/
+    private static final float RANK_DUR_GAP = 12f;
+    private static final String MONTH_RANK_TITLE = "本月各书籍阅读排名";
+    private static final String MONTH_RANK_EMPTY = "本月还没有读完 / 在读的书";
+    private static final String MONTH_RANK_UNKNOWN = "（未知书名）";
+
     // ── v0.3.5.1「本书」版式（方案 A 左封右文）──
     // 封面左立（比例 250:360，t6 规格实测）；书名右区折行两行（不再缩字）；
     // 章节名灰字；时长(左)+百分比(右)；进度条全宽贴近「打开」。
@@ -218,6 +233,9 @@ final class CardRenderer {
         // 这样"上一帧有按钮、这一帧没了"（切形态 / 换一条 / 收起）也能正确撤掉触摸窗。
         host.expandBox.setEmpty();
         host.todoBoxes.clear();        // 待办勾选框矩形每帧重建（非待办形态 ⇒ 保持空 ⇒ 桌面小窗收走）
+        // 🆕 TASK-054：月页可滚量每帧重算 —— 先清零，只有真走「月全屏」分支时才回填。
+        // 这样切到别的形态 / 桌面卡片（fullscreen=false）⇒ 恒 0 ⇒ 不吃手势、零位移。
+        host.monthScrollMax = 0f;
         float w = host.getWidth(), h = host.getHeight();
         if (host.phMain != null) {
             drawCentered(c, w / 2f, h * 0.42f, host.phMain, SZ_EMPTY * host.unit, INK);
@@ -700,7 +718,11 @@ final class CardRenderer {
         int todayIdx = host.stats.todayIndex();
         float availW = right - left;
 
-        // ── ① 信息块（上方）──
+        // 🆕 TASK-054（K9）：本函数从"边算边画"改成**「先算几何 → 再统一绘制」**，
+        // 因为「整页可滚」要求**在落笔之前**就知道内容总高（才知道滚多远、要不要滚）。
+        // 🔴 所有几何公式与加本卡之前**逐字一致**（含让位规则），只在末尾多了 ③ 排名区。
+
+        // ── ① 信息块（上方）[几何]：主数字字号自适应仍在这里做，绘制段直接用结果 ──
         String big = CardLayout.fmtTotal(host.stats.totalSec);
         float bigSize = SZ_BIG_FULL * host.unit;
         float top = ruleY + padY * 1.05f;
@@ -715,31 +737,23 @@ final class CardRenderer {
             bigSize -= 1f;
             host.p.setTextSize(bigSize);
         }
-        c.drawText(big, left, top + bigSize, host.p);
-        host.p.setFakeBoldText(false);
 
-        // 右列竖排：日均阅读 / 较上月 / 阅读 x/y 天
+        // 右列竖排：日均阅读 / 较上月 / 阅读 x/y 天（文案先算好，绘制段统一画）
         float subSize = SZ_SUB_FULL * host.unit;
         float subPitch = subSize * 1.34f;
-        host.p.setTextSize(subSize);
-        host.p.setColor(GRAY);
         float subX = left + availW * 0.54f;
         float subBase = top + subSize * 1.05f;
-        c.drawText("日均阅读 " + CardLayout.fmtTotal(host.stats.avgSec), subX, subBase, host.p);
-        int subLines = 1;
-        if (host.stats.compare != null && !host.stats.compare.isNaN()) {
-            double v = host.stats.compare;
-            c.drawText("较上月 " + (v >= 0 ? "↑" : "↓") + Math.round(Math.abs(v) * 100) + "%",
-                    subX, subBase + subPitch, host.p);
-            subLines++;
-        }
-        c.drawText("阅读 " + host.stats.readDays + "/" + dayCount + " 天",
-                subX, subBase + subPitch * subLines, host.p);
-        subLines++;
+        boolean hasCmp = host.stats.compare != null && !host.stats.compare.isNaN();
+        int subLines = hasCmp ? 2 : 1;               // 「日均」1 行 +（可选）「较上月」1 行
+        String cmpText = hasCmp
+                ? "较上月 " + (host.stats.compare >= 0 ? "↑" : "↓")
+                        + Math.round(Math.abs(host.stats.compare) * 100) + "%"
+                : null;
+        String daysText = "阅读 " + host.stats.readDays + "/" + dayCount + " 天";
 
-        float blockBottom = Math.max(top + bigSize, subBase + subPitch * (subLines - 1));
+        float blockBottom = Math.max(top + bigSize, subBase + subPitch * subLines);
 
-        // ── ② 大号日历（自适应，永远装得下）──
+        // ── ② 大号日历（几何；自适应，🔴 格边长公式一字未改）──
         float gap = MONTH_FULL_GAP;
         float rowGap = MONTH_FULL_ROW_GAP;
         float headSize = SZ_CAL_HEAD_FULL * host.unit;
@@ -808,6 +822,48 @@ final class CardRenderer {
             }
         }
 
+        // 摘要行基线（🆕 TASK-047 原式**一字未改**，只是把 statY 提前算出来供排名区定位）。
+        // 基线 = 格底 + max(0.95 字身高, min(1.5 行高, 剩余)÷2)：
+        //   · 前半是**净空下界** —— 5 行月（格已顶到 52 封顶）格底只剩 ~38px，按"剩余÷2"只有 19px，
+        //     字块顶会贴到格底（实测仅 3px）；加下限后净空 ≈6px、离卡底仍留 ~8px；
+        //   · 后半让**大留白**（2 行月，剩余 100px+）时最多再往下带 0.75 行，不至于飘到卡底。
+        float statY = statOn
+                ? gridTop + gridH + Math.max(statSize * 0.95f,
+                                             Math.min(statH * 1.5f, gapBelow) * 0.5f)
+                : gridTop + gridH;
+
+        // ── ③ 🆕 TASK-054（K9）「本月各书籍阅读排名」（几何）──
+        // 位于日历 / 摘要行**下方**（Q3 原文「在本月页…超出时整个本月页面可滑动」）。
+        java.util.List<PeriodStats.Longest> rankItems = monthRankItems();
+        float rankRowH = RANK_ROW_H * host.unit;            // ≈32px
+        float rankTitleH = RANK_SZ * host.unit * 1.9f;
+        float rankTop = statY + statSize * 0.60f;           // 紧贴摘要行下沿（留半个字高净空，与 A6 不重叠）
+        int rankRows = Math.max(1, rankItems.size());       // 无数据也占一行（那行画空态文案）
+        float rankH = rankTitleH + rankRows * rankRowH;
+        float contentH = rankTop + rankH + padY * 0.85f;    // 内容总高（含底部内边距）
+
+        // 🔴 **装得下就不滚**：monthScrollMax = 0 ⇒ 下面的 translate 恒为 0
+        //    ⇒ 本页与加本卡之前**逐像素等价**（卡面 R2 的「保守做法」：格边长不缩，靠滚动容纳）。
+        host.monthScrollMax = Math.max(0f, contentH - h);
+        float sy = host.monthScrollY;
+        if (sy > host.monthScrollMax) sy = host.monthScrollMax;
+        if (sy < 0f) sy = 0f;
+
+        // 抬头（含分隔线）**固定不动**：只把分隔线以下的**正文区**整体上移 sy 并裁剪到视口内。
+        c.save();
+        c.clipRect(0f, ruleY + 1f, w, h);
+        c.translate(0f, -sy);
+
+        // ══ ① [绘制] 信息块 ══
+        c.drawText(big, left, top + bigSize, host.p);
+        host.p.setFakeBoldText(false);
+        host.p.setTextSize(subSize);
+        host.p.setColor(GRAY);
+        c.drawText("日均阅读 " + CardLayout.fmtTotal(host.stats.avgSec), subX, subBase, host.p);
+        if (cmpText != null) c.drawText(cmpText, subX, subBase + subPitch, host.p);
+        c.drawText(daysText, subX, subBase + subPitch * subLines, host.p);
+
+        // ══ ② [绘制] 大号日历 ══
         host.p.setStyle(Paint.Style.FILL);
         host.p.setTextAlign(Paint.Align.CENTER);
         host.p.setTextSize(headSize);
@@ -828,20 +884,98 @@ final class CardRenderer {
             else                   drawCalCell(c, x, y, cell, host.stats.daySec[i] > 0);
         }
 
-        // 🆕 TASK-047（K2）：摘要行 —— 落在日历**下方**的留白里。
-        // 基线 = 格底 + max(0.95 字身高, min(1.5 行高, 剩余)÷2)：
-        //   · 前半是**净空下界** —— 5 行月（格已顶到 52 封顶）格底只剩 ~38px，按"剩余÷2"只有 19px，
-        //     字块顶会贴到格底（实测仅 3px）；加下限后净空 ≈6px、离卡底仍留 ~8px；
-        //   · 后半让**大留白**（2 行月，剩余 100px+）时最多再往下带 0.75 行，不至于飘到卡底。
-        if (statOn) {
-            float statY = gridTop + gridH
-                    + Math.max(statSize * 0.95f,
-                               Math.min(statH * 1.5f, gapBelow) * 0.5f);
-            drawStatLine(c, (left + right) / 2f, statY, left, right);
-        }
+        // ══ ②.5 [绘制] 摘要行（TASK-047 K2）══
+        if (statOn) drawStatLine(c, (left + right) / 2f, statY, left, right);
+
+        // ══ ③ [绘制] 排名区（🆕 TASK-054 K9）══
+        drawMonthRank(c, left, right, rankTop, rankTitleH, rankRowH, rankItems);
+
+        c.restore();
 
         host.p.setColor(INK);
         host.p.setTextAlign(Paint.Align.LEFT);
+        host.p.setStyle(Paint.Style.FILL);
+    }
+
+    /**
+     * 🆕 TASK-054（K9）：月全屏页的「**本月各书籍阅读排名**」。
+     *
+     * 版面（一行一本书）：`名次 | 书名（缩字 → 省略号） | 时长`，行高 = {@link #RANK_ROW_H}（≈32px）。
+     *
+     * 🔴 **零排序、零过滤** —— 直接按 {@code stats.longest} **原序**逐条画：服务端已经按
+     * `readTime` 降序、并且已经滤掉 ≤5 分钟的项（卡面 E4）⇒ App 侧再动一下，A4/A5 两条断言
+     * 就都不成立（这也是"红利"所在，不写一行排序代码）。
+     *
+     * 缺书名（回包只有 `albumInfo`、没有 `book`）的条目**不丢行** —— 画「（未知书名）」占位，
+     * 否则名次会整体上移、与回包原序对不上（与 TASK-053 K8 同款处理）。
+     */
+    private void drawMonthRank(Canvas c, float left, float right, float top,
+                               float titleH, float rowH,
+                               java.util.List<PeriodStats.Longest> items) {
+        float sz = RANK_SZ * host.unit;
+
+        host.p.setStyle(Paint.Style.FILL);
+        host.p.setFakeBoldText(false);
+        host.p.setTextAlign(Paint.Align.LEFT);
+        host.p.setColor(INK);
+        host.p.setTextSize(sz);
+        c.drawText(MONTH_RANK_TITLE, left, top + sz * 0.95f, host.p);
+
+        int n = (items == null) ? 0 : items.size();
+        if (n == 0) {
+            // 空态（A7）：本月一条 ranking 都没有 ⇒ 明说一句，别留一片空白让人误判为"画漏了"
+            host.p.setColor(GRAY);
+            c.drawText(MONTH_RANK_EMPTY, left, top + titleH + sz * 1.25f, host.p);
+            return;
+        }
+
+        float numW = RANK_NUM_W * host.unit;
+        float durGap = RANK_DUR_GAP * host.unit;
+        for (int i = 0; i < n; i++) {
+            PeriodStats.Longest it = items.get(i);
+            float base = top + titleH + (i + 0.74f) * rowH;
+
+            // 名次（灰；固定槽宽 ⇒ 所有书名起点对齐）
+            host.p.setTextSize(sz);
+            host.p.setColor(GRAY);
+            host.p.setTextAlign(Paint.Align.LEFT);
+            c.drawText(String.valueOf(i + 1), left, base, host.p);
+
+            // 时长（右对齐；先量宽，倒推书名可用宽）
+            String dur = CardLayout.fmtTotal(it == null ? 0 : it.readTime);
+            host.p.setTextAlign(Paint.Align.RIGHT);
+            float durW = host.p.measureText(dur);
+            c.drawText(dur, right, base, host.p);
+
+            // 书名（INK 主色；先缩字、仍放不下才「…」）
+            String title = (it == null || it.title == null || it.title.length() == 0)
+                    ? MONTH_RANK_UNKNOWN : it.title;
+            host.p.setTextAlign(Paint.Align.LEFT);
+            host.p.setColor(INK);
+            float avail = (right - durW - durGap) - (left + numW);
+            float ts = sz;
+            host.p.setTextSize(ts);
+            while (host.p.measureText(title) > avail && ts > sz * 0.62f) {
+                ts -= 0.4f;
+                host.p.setTextSize(ts);
+            }
+            String show = (host.p.measureText(title) > avail)
+                    ? host.layout.ellipsize(title, avail) : title;   // 用当前字号量，口径一致
+            c.drawText(show, left + numW, base, host.p);
+        }
+        host.p.setTextAlign(Paint.Align.LEFT);
+        host.p.setColor(INK);
+    }
+
+    /**
+     * 🆕 TASK-054（K9）：本月排名的料 —— 直接取 {@code stats.longest}（**零过滤、零排序**）。
+     * null 安全：老缓存 / 非 monthly 回包 ⇒ 空集合 ⇒ 排名区画空态。
+     */
+    private java.util.List<PeriodStats.Longest> monthRankItems() {
+        if (host.stats == null || host.stats.longest == null) {
+            return java.util.Collections.emptyList();
+        }
+        return host.stats.longest;
     }
 
     /** 2×2 Bayer 序，索引 = `(row % 2) * 2 + (col % 2)`。正交 2px 点阵的 rank 依据。 */

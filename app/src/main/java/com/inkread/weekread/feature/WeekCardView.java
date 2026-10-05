@@ -220,6 +220,22 @@ public class WeekCardView extends View {
      * ② 墨水屏上惯性滑动会拖出一串残影，而自绘滚动可以做到"跟手、松手即停"。
      */
     float noteScrollY = 0f;
+
+    // ── 🆕 TASK-054（K9）：本月全屏页的滚动（**整页滚**，不是局部区滚）──
+
+    /**
+     * 「本月」全屏页的滚动量（px）。**只滚正文**（分隔线以下的：信息块 + 日历 + 摘要行 + 排名区），
+     * 抬头固定在原位 —— 与 {@link #noteScrollY} 同款取舍，用户始终知道自己在看哪一页。
+     *
+     * 🔴 **只对 App 全屏档 + 本月形态生效**（判据 `fullscreen && isMonthly()`）；
+     * 桌面卡片月形态走 {@code CardRenderer.drawMonthBody} 那条路径，**本字段一个字节都不影响**
+     * （卡面 A3 的逐像素对照就靠这条隔离）。未溢出时恒 0 ⇒ 版面与加本卡之前逐像素一致。
+     */
+    float monthScrollY = 0f;
+    /** 本月页可滚上限（px，绘制时算）= 内容总高 − 视口高；**0 = 装得下**（不吃手势、无位移） */
+    float monthScrollMax = 0f;
+    float monthDownY = 0f, monthDownScroll = 0f;
+    boolean monthDrag = false;
     /**
      * 本记正文的**行高 / 内容总高 / 可视高 / 滚动上限**（绘制时算，触摸与滚动用）。
      *
@@ -346,6 +362,8 @@ public class WeekCardView extends View {
         noteHint = null;            // 换形态了，上一个形态的空态提示不再适用（v0.5.3）
         achievementText = null;     // 换形态了，成就行作废；controller 随 setStats 按新形态重算（v0.9）
         collapseNote();             // 切形态 ⇒ 展开态复位（TASK-017 拍板：不记住展开态）
+        monthScrollY = 0f;          // 🆕 TASK-054：切形态 ⇒ 月页滚动复位（与展开态同规）
+        monthScrollMax = 0f;
         invalidate();
     }
 
@@ -379,6 +397,7 @@ public class WeekCardView extends View {
         refreshing = false;
         phMain = null;
         emptyNote = note;
+        monthScrollY = 0f;      // 🆕 TASK-054：换了一份统计（换月 / 刷新 / 切周月）⇒ 月页滚回顶部
         invalidate();
     }
 
