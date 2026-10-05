@@ -80,6 +80,25 @@ final class InsightRenderer {
     /** 第 i 个分区的标题（给自动化断言用）。 */
     String titleOf(int i) { return secs.get(i).title(); }
 
+    /**
+     * 🆕 K8（TASK-053）：分区实例的序号（按**引用**查找；找不到 ⇒ -1）。
+     * 排行区要做「手势分区」（命中排行矩形才内滚），容器得先知道排行区排在第几个。
+     */
+    int indexOf(Section s) {
+        for (int i = 0; i < secs.size(); i++) if (secs.get(i) == s) return i;
+        return -1;
+    }
+
+    /**
+     * 🆕 K8（TASK-053）：第 {@code i} 个分区在**内容坐标系**里的顶边 y（含抬头留白，
+     * 🔴 **不含滚动位移**）。容器把手势命中点换算成「分区矩形」时要用它。
+     */
+    float sectionTop(int i, float w, float vh, float unit) {
+        float y = headerHeight(unit);
+        for (int k = 0; k < i && k < secs.size(); k++) y += secs.get(k).height(w, vh, unit);
+        return y;
+    }
+
     // ── 量高 ──
 
     /** 抬头区高（只有一小段上边距 —— 大标题已删，见 {@link #HEAD_PAD_UNITS}）。 */
@@ -177,24 +196,6 @@ final class InsightRenderer {
             public void draw(Canvas c, float w, float vh, float top, float unit, Paint p) {
                 float bodyTop = drawSectionHead(c, w, top, unit, p, title);
                 drawCenteredIn(c, w, bodyTop, SZ_BODY * unit * 1.9f * lines, unit, p, empty);
-            }
-        };
-    }
-
-    /**
-     * 占位分区：正文高度 = **视口高的 `ratio` 倍**。
-     * 排行区（K8/`TASK-053`）要按「40~45% 屏高」预留，就是走这条 ——
-     * 让它的高度**只由屏高决定**，不随后序卡改文案而漂移。
-     */
-    static Section placeholderRatio(final String title, final String empty, final float ratio) {
-        return new Section() {
-            public String title() { return title; }
-            public float height(float w, float vh, float unit) {
-                return secHeadH(unit) + vh * ratio;
-            }
-            public void draw(Canvas c, float w, float vh, float top, float unit, Paint p) {
-                float bodyTop = drawSectionHead(c, w, top, unit, p, title);
-                drawCenteredIn(c, w, bodyTop, vh * ratio, unit, p, empty);
             }
         };
     }
@@ -874,5 +875,222 @@ final class InsightRenderer {
 
         p.setTextAlign(Paint.Align.LEFT);
         p.setStyle(Paint.Style.FILL);
+    }
+
+    // ══════════════════════ K8（TASK-053）：读书排行（全年 · 有界高 + 内滚）══════════════════════
+
+    /**
+     * 排行区**内容视口**高 = 洞察页视口高的比例。
+     * 🔴 卡面「不占据洞察页过多空间」⇒ 固定 40~45% 屏高，取中位 **0.42**。
+     * 分区总高 = {@link #secHeadH} + `vh × RANK_VIEWPORT_RATIO`（≈ 41% 屏高 @S4）。
+     */
+    static final float RANK_VIEWPORT_RATIO = 0.42f;
+
+    /** 排行行高（×unit ⇒ ≈32px @480×800 —— 卡面「行高约 32px」）。 */
+    private static final float RANK_ROW_UNITS = 27f;
+    /** 名次槽宽（×unit ⇒ ≈31px）。 */
+    private static final float RANK_NO_W = 26f;
+    /** 单行内间隙（×unit）：名次↔书名 / 书名↔徽章 / 徽章↔时长。 */
+    private static final float RANK_GAP_UNITS = 7f;
+    /** 行内字号（×unit ⇒ ≈18px）。 */
+    private static final float RANK_TXT_UNITS = 15f;
+    /** 徽章字号（×unit）与内边距（×unit）。 */
+    private static final float RANK_TAG_SZ_UNITS = 11f;
+    private static final float RANK_TAG_PAD_UNITS = 4f;
+
+    /** 无书名时的占位（回包偶有条目缺 `book`，如年度样本 index8）—— 不丢行，保名次与原序。 */
+    private static final String RANK_NO_TITLE = "（未知书名）";
+
+    /**
+     * 分区④「读书排行」—— **K8 真实实现**（顶替 `TASK-048` 的占位）。
+     *
+     * 🔴 **有界高度 + 内部独立滚动（方案甲）**：
+     *   · 分区高 = 标题行 + **视口高（`vh × RANK_VIEWPORT_RATIO`）** —— 只由屏高决定，
+     *     **不随条数增长**（卡面 A3 / R2）；
+     *   · 列表在视口内自滚（{@link #inner} 位移），🔴 **到顶/到底不穿透**给外层
+     *     （手势分区清晰 —— 排行区内的滑动绝不带动整页，卡面 A4）。
+     *
+     * 🔴 **零排序**：直接用 `longest[]` **原序**（服务端已按 `readTime` 降序，卡面 A5）
+     *    —— 本类**不比较、不排序**、不丢行。
+     *
+     * 🔴 本实例**由容器常驻复用**（{@code InsightPageView} 里 new 一次），
+     *    `rebuildSections()` 只调 {@link #setItems} 换料 ⇒ 内滚位移在数据重绑时不会莫名丢失。
+     */
+    static final class RankSection implements Section {
+
+        /** 排行料（`annually` 的 `longest[]` 原序）。 */
+        private List<PeriodStats.Longest> items = new ArrayList<PeriodStats.Longest>();
+        /** 内滚位移（像素，0 = 顶部）。 */
+        private float inner = 0f;
+
+        /** 换料（🔴 一起把内滚复位到顶：换档/刷新后停在越界位置会画成空白）。 */
+        void setItems(List<PeriodStats.Longest> it) {
+            items = (it == null) ? new ArrayList<PeriodStats.Longest>() : it;
+            inner = 0f;
+        }
+
+        /** 内滚复位（切换回洞察页时与整页一起回到顶部）。 */
+        void resetInner() { inner = 0f; }
+
+        int size() { return items.size(); }
+
+        public String title() { return "读书排行"; }
+
+        /** 视口高（像素）。 */
+        private float vpOf(float vh) { return vh * RANK_VIEWPORT_RATIO; }
+
+        /** 列表**内容**高（全部行）。 */
+        private float listH(float unit) { return RANK_ROW_UNITS * unit * items.size(); }
+
+        /** 视口里能滚的最大位移（≤0 ⇒ 装得下、无需内滚）。 */
+        float maxInner(float vh, float unit) {
+            float m = listH(unit) - vpOf(vh);
+            return m > 0f ? m : 0f;
+        }
+
+        /** 是否需要内滚（卡面 A1：默认 10 名装不下 ⇒ 要能上滑看后续）。 */
+        boolean canScroll(float vh, float unit) { return maxInner(vh, unit) > 0.5f; }
+
+        /**
+         * 内滚一步。{@code delta} &gt; 0 = 内容上移（看更靠后的行）。
+         * @return 是否真的移动了（没动 ⇒ 容器不必重绘）。
+         */
+        boolean scrollBy(float delta, float vh, float unit) {
+            float m = maxInner(vh, unit);
+            float n = inner + delta;
+            if (n < 0f) n = 0f;
+            if (n > m) n = m;
+            if (n == inner) return false;
+            inner = n;
+            return true;
+        }
+
+        public float height(float w, float vh, float unit) {
+            float head = secHeadH(unit);
+            if (items.isEmpty()) return head + emptyBox2(unit);     // 空态盒（与 draw 同高）
+            return head + vpOf(vh) + unit * 4f;
+        }
+
+        public void draw(Canvas c, float w, float vh, float top, float unit, Paint p) {
+            drawRankSection(c, w, vh, top, unit, p, this);
+        }
+    }
+
+    /**
+     * 画排行分区：分区标题 + **视口内**逐行「名次 · 书名 · [徽章] · 时长」。
+     *
+     * 🔴 **裁剪**：`clipRect` 只放行视口那一块 ⇒ 滚出视口的行不落笔（墨水屏少画即少刷）。
+     * 🔴 **纯黑白**：徽章外框坐标取整（1px 实线）；文字走全 App 统一 AA（与其它页同口径）。
+     */
+    private static void drawRankSection(Canvas c, float w, float vh, float top, float unit, Paint p,
+                                        RankSection s) {
+        float pad = w * PAD_X_RATIO;
+        float left = pad, right = w - pad;
+        float y = drawSectionHead(c, w, top, unit, p, "读书排行");
+
+        if (s.items.isEmpty()) {                                    // 空态（卡面 A7）
+            drawCenteredIn(c, w, y, emptyBox2(unit), unit, p, "今年还没有读完/在读的书");
+            return;
+        }
+
+        float vp = s.vpOf(vh);
+        float rowH = RANK_ROW_UNITS * unit;
+        float txtSz = RANK_TXT_UNITS * unit;
+        float gap = RANK_GAP_UNITS * unit;
+
+        // ── 右列（时长）固定槽宽 = 最宽时长文本的宽 ⇒ 各行书名终点对齐、数位变化不抖 ──
+        p.setTextSize(txtSz);
+        float durW = 0f;
+        for (int i = 0; i < s.items.size(); i++) {
+            float tw = p.measureText(CardLayout.fmtTotal(s.items.get(i).readTime));
+            if (tw > durW) durW = tw;
+        }
+
+        float noW = RANK_NO_W * unit;
+        float titleL = left + noW + gap;
+        float durR = right;
+
+        c.save();
+        c.clipRect(left, y, right, y + vp);                          // 🔴 只放行视口
+
+        for (int i = 0; i < s.items.size(); i++) {
+            float rowTop = y + i * rowH - s.inner;
+            if (rowTop + rowH < y || rowTop > y + vp) continue;      // 完全在视口外 ⇒ 跳过
+            PeriodStats.Longest it = s.items.get(i);
+            float cy = rowTop + rowH * 0.5f;
+
+            // ① 名次（右对齐到 left+noW；名次是次要信息 ⇒ GRAY）
+            p.setStyle(Paint.Style.FILL);
+            p.setColor(GRAY);
+            p.setTextAlign(Paint.Align.RIGHT);
+            p.setTextSize(txtSz);
+            c.drawText(String.valueOf(i + 1), left + noW, cy + txtSz * 0.36f, p);
+
+            // ② 徽章（`tags[0]`；无则不留槽）
+            String tag = (it.tags == null || it.tags.isEmpty()) ? null : it.tags.get(0);
+            float tagSz = RANK_TAG_SZ_UNITS * unit;
+            float tagW = 0f;
+            if (tag != null) {
+                p.setTextSize(tagSz);
+                tagW = p.measureText(tag) + 2f * RANK_TAG_PAD_UNITS * unit;
+            }
+
+            // ③ 书名（左；先缩字、缩到底再省略号；书名是主角 ⇒ INK）
+            float titleMax = durR - durW - gap - (tag != null ? tagW + gap : 0f) - titleL;
+            String t = (it.title == null || it.title.length() == 0) ? RANK_NO_TITLE : it.title;
+            String tdraw = fitText(p, t, titleMax, txtSz, 11f * unit);
+            p.setColor(INK);
+            p.setTextAlign(Paint.Align.LEFT);
+            c.drawText(tdraw, titleL, cy + p.getTextSize() * 0.36f, p);
+
+            // ④ 徽章盒（右对齐到「时长左」之前）
+            if (tag != null) {
+                float badgeR = durR - durW - gap;
+                float badgeL = badgeR - tagW;
+                float bh = tagSz * 1.7f;
+                int bx0 = Math.round(badgeL), bx1 = Math.round(badgeR);
+                int by0 = Math.round(cy - bh * 0.5f), by1 = Math.round(cy + bh * 0.5f);
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(1f);
+                p.setColor(GRAY);
+                c.drawRect(bx0 + 0.5f, by0 + 0.5f, bx1 - 0.5f, by1 - 0.5f, p);
+                p.setStyle(Paint.Style.FILL);
+                p.setColor(GRAY);
+                p.setTextAlign(Paint.Align.CENTER);
+                p.setTextSize(tagSz);
+                c.drawText(tag, (bx0 + bx1) * 0.5f, cy + tagSz * 0.36f, p);
+            }
+
+            // ⑤ 时长（右对齐；次要信息 ⇒ GRAY）
+            p.setStyle(Paint.Style.FILL);
+            p.setColor(GRAY);
+            p.setTextAlign(Paint.Align.RIGHT);
+            p.setTextSize(txtSz);
+            c.drawText(CardLayout.fmtTotal(it.readTime), durR, cy + txtSz * 0.36f, p);
+        }
+
+        c.restore();
+        p.setTextAlign(Paint.Align.LEFT);
+        p.setStyle(Paint.Style.FILL);
+    }
+
+    /**
+     * 把 {@code text} 收进 {@code maxW}：先按 0.4 步长缩字号（下限 {@code minSz}），
+     * **缩到底仍超宽 ⇒ 尾部省略号**。返回绘制串（同时把 {@code p} 的字号设成最终值）。
+     */
+    private static String fitText(Paint p, String text, float maxW, float baseSz, float minSz) {
+        float sz = baseSz;
+        p.setTextSize(sz);
+        while (sz > minSz && p.measureText(text) > maxW) {
+            sz -= 0.4f;
+            p.setTextSize(sz);
+        }
+        if (maxW <= 0f) return "";
+        if (p.measureText(text) <= maxW) return text;
+        String ell = "…";
+        float ew = p.measureText(ell);
+        int n = text.length();
+        while (n > 1 && p.measureText(text.substring(0, n)) + ew > maxW) n--;
+        return text.substring(0, n) + ell;
     }
 }

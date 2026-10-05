@@ -30,12 +30,22 @@ public final class InsightPageView extends View {
     /** 与 {@link WeekCardView#UNIT_RATIO} 同尺 —— 两个页面字号必须一致，否则视觉上"换页就变了"。 */
     private static final float UNIT_RATIO = 0.0015f;
 
-    /** 排行区（K8）预留高度 = 视口高的 42%（卡面要求 40~45%，取中位）。 */
-    private static final float RANK_VIEWPORT_RATIO = 0.42f;
-
     private float unit;
 
     private final InsightRenderer renderer = new InsightRenderer();
+
+    /**
+     * 🆕 K8（TASK-053）：排行分区**常驻实例**（内含内滚位移）。
+     * 🔴 为什么不让 `rebuildSections()` 每次 new：那会把内滚位移一并丢掉 ——
+     * 换料时只调 {@link InsightRenderer.RankSection#setItems} 即可。
+     */
+    private final InsightRenderer.RankSection rankSection = new InsightRenderer.RankSection();
+
+    /** K8：排行区的料（= 年度 `longest[]`；🔴 与分区②年度**同源**，零新增请求）。 */
+    private List<PeriodStats.Longest> rankItems;
+
+    /** K8：本次手势是否**落在排行区内**（手势分区 —— 决定这次滑动谁吃）。 */
+    private boolean dragRank = false;
 
     /** 滚动位移（像素，0 = 顶部）。 */
     private float scrollY = 0f;
@@ -116,10 +126,14 @@ public final class InsightPageView extends View {
     /**
      * 🆕 K6（TASK-051）：设定「年度视图」分区（②）的料。
      *
-     * @param st 当年（`mode=annually`）的统计；null ⇒ 画空态
+     * 🆕 K8（TASK-053）：🔴 **顺带喂分区④「读书排行」** —— 排行统计的是**全年**（Q3 拍板），
+     * 料就是同一份年度回包的 `longest[]` ⇒ **同源、零新增请求**（`MainActivity` 无需改动）。
+     *
+     * @param st 当年（`mode=annually`）的统计；null ⇒ ②④ 都画空态
      */
     public void setAnnual(PeriodStats st) {
         annualStats = st;
+        rankItems = (st == null) ? null : st.longest;   // ⚠️ 只借引用，不排序、不过滤
         rebuildSections();
         invalidate();
     }
@@ -140,7 +154,7 @@ public final class InsightPageView extends View {
     /**
      * 注册洞察页的 5 个分区。
      *
-     * 🔴 未落地的分区仍是**占位**（只画空态文案）。K5~K8/K10 落码时：
+     * 🔴 未落地的分区仍是**占位**（只画空态文案）。后序卡（K10）落码时：
      * 把自己那个 `placeholderXxx(...)` 换成一个真实 `Section` 实现即可，
      * **不要动本类的滚动/量高逻辑**。
      *
@@ -155,8 +169,9 @@ public final class InsightPageView extends View {
         renderer.add(InsightRenderer.annualSection(annualStats, "暂无年度数据"));
         // ③ 累计（🆕 TASK-052 K7：**已落地** —— 汇总行 + 陪伴年数 + 勋章计数 + readStat）
         renderer.add(InsightRenderer.overallSection(overallStats, "暂无累计数据"));
-        // ④ 排行（→ TASK-053 K8）── 🔴 高度按视口百分比预留（40~45%），避免后序卡返工（卡面 R3）
-        renderer.add(InsightRenderer.placeholderRatio("读书排行", "暂无阅读排行", RANK_VIEWPORT_RATIO));
+        // ④ 排行（🆕 TASK-053 K8：**已落地** —— 有界高 42% + 内部独立滚动；料 = 年度 longest[]）
+        rankSection.setItems(rankItems);
+        renderer.add(rankSection);
         // ⑤ 画像（🆕 TASK-049 K4 兴趣雷达 + TASK-050 K5 偏好作者/时段：**三件套已落地**；
         //         K10 画像判定继续往这一格加）
         renderer.add(InsightRenderer.profileSection(
@@ -184,12 +199,39 @@ public final class InsightPageView extends View {
     /** 第 i 个分区的标题（验收 A2 断言标题文案）。 */
     public String sectionTitle(int i) { return renderer.titleOf(i); }
 
-    /** 切换回洞察页时把位置复位（避免"上次滚到一半"的错位观感）。 */
+    /**
+     * 切换回洞察页时把位置复位（避免"上次滚到一半"的错位观感）。
+     * 🆕 K8：排行区的**内滚位移一并复位**（否则会停在"看不到第 1 名"的怪位置）。
+     */
     public void resetScroll() {
-        if (scrollY == 0f) return;
         scrollY = 0f;
+        rankSection.resetInner();
         invalidate();
     }
+
+    // ══════════════════════ 🆕 K8（TASK-053）：排行区手势命中 ══════════════════════
+
+    /**
+     * 排行区**内容视口**在屏幕坐标里的顶边 y；-1 = 排行区不在分区表里（理论上不会）。
+     * 换算 = 分区在内容坐标的顶边 − 整页滚动位移 + 分区标题行高。
+     */
+    private float rankBodyTop() {
+        int idx = renderer.indexOf(rankSection);
+        if (idx < 0) return -1f;
+        float top = renderer.sectionTop(idx, getWidth(), getHeight(), unit) - scrollY;
+        return top + InsightRenderer.secHeadH(unit);
+    }
+
+    /** 触点是否落在排行区的**视口矩形**内（🔴 手势分区的唯一判据）。 */
+    private boolean hitRank(float y) {
+        float bt = rankBodyTop();
+        if (bt < 0f) return false;
+        float vp = getHeight() * InsightRenderer.RANK_VIEWPORT_RATIO;
+        return y >= bt && y <= bt + vp;
+    }
+
+    /** 排行区当前是否需要内滚（装得下 ⇒ 不吃手势，让整页滚）。 */
+    private boolean rankScrollable() { return rankSection.canScroll(getHeight(), unit); }
 
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
@@ -207,30 +249,44 @@ public final class InsightPageView extends View {
         renderer.draw(c, w, h, unit, scrollY);
     }
 
-    // ══════════════════════ 触控：单指纵向拖动 ══════════════════════
+    // ══════════════════════ 触控：单指纵向拖动（🆕 K8：与排行区内滚做手势分区）══════════════════════
 
+    /**
+     * 手势分区（方案甲）：
+     * · **按下点在排行区视口内** ⇒ 本次滑动**只**驱动排行区内滚，**绝不**带动整页；
+     * · 其它位置 ⇒ 走原来的整页滚动；
+     * · 🔴 **到顶/到底不穿透**（内滚夹住后不把余量交给外层）—— 避免「想翻排行却整页乱跳」（卡面 A4/R1）。
+     */
     @Override
     public boolean onTouchEvent(MotionEvent e) {
-        // 🔴 装得下就不吃手势（不出现空滚）。也让上层（如有）能拿到这次触摸。
-        if (maxScroll <= 0f) return false;
+        boolean outerCan = maxScroll > 0f;             // 整页装不下 ⇒ 可滚
+        boolean rankCan = rankScrollable();            // 排行装不下 ⇒ 可内滚
+        // 🔴 两者都不可滚才不吃手势（让上层拿到这次触摸）；任一可滚就得接住。
+        if (!outerCan && !rankCan) return false;
 
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
                 lastTouchY = e.getY();
                 dragging = true;
+                // 🔴 命中判定**只在按下那一刻做一次** —— 之后整段滑动都归它，避免半途改判导致跳变。
+                dragRank = rankCan && hitRank(e.getY());
                 return true;
 
             case MotionEvent.ACTION_MOVE: {
                 if (!dragging) return true;
                 float dy = e.getY() - lastTouchY;
                 lastTouchY = e.getY();
-                // 手指上滑（dy < 0）⇒ 内容上移 ⇒ scrollY 增大
-                float next = scrollY - dy;
-                if (next < 0f) next = 0f;
-                if (next > maxScroll) next = maxScroll;
-                if (next != scrollY) {
-                    scrollY = next;
-                    invalidate();                        // 🔴 一帧一次重绘（墨水屏：不做局部/多次失效）
+                // 手指上滑（dy < 0）⇒ 内容上移 ⇒ 位移增大
+                if (dragRank) {
+                    if (rankSection.scrollBy(-dy, getHeight(), unit)) invalidate();
+                } else if (outerCan) {
+                    float next = scrollY - dy;
+                    if (next < 0f) next = 0f;
+                    if (next > maxScroll) next = maxScroll;
+                    if (next != scrollY) {
+                        scrollY = next;
+                        invalidate();                    // 🔴 一帧一次重绘（墨水屏：不做局部/多次失效）
+                    }
                 }
                 return true;
             }
@@ -238,6 +294,7 @@ public final class InsightPageView extends View {
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
                 dragging = false;
+                dragRank = false;
                 return true;
 
             default:
