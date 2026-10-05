@@ -113,7 +113,11 @@ final class InsightRenderer {
             y += sh;
 
             // 分区之间的分隔线：只有「这条线真的在屏上」才画
-            if (y - scrollY > 0f && y - scrollY < vh) {
+            // 🔴 卡外修复（TASK-053 顺带，独立提交）：原先写成 `y - scrollY`，但 `y` 已是
+            //    **屏幕坐标**（起手 = −scrollY，逐段累加）⇒ 等于把 scrollY 减了两遍，
+            //    结果只要整页滚动过，分隔线就整片消失（与上面注释的意图相反）。
+            //    改成直接判 `y`（并保留顶部裁掉一半的情形：线的下沿在 (0, vh) 内才画）。
+            if (y > 0f && y < vh) {
                 p.setStyle(Paint.Style.FILL);
                 p.setColor(LIGHT);
                 c.drawRect(left, y - 1f, right, y, p);
