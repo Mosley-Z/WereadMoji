@@ -88,11 +88,19 @@ public class MainActivity extends Activity {
     private NavDropView navDrop;
     private PeriodPickerView picker;
 
-    /** 🆕 TASK-044：四大标签的页面容器（只切 visibility）。 */
+    /** 🆕 TASK-044：四大标签的页面容器（只切 visibility）。
+     *  🔴 TASK-045：id 前缀用 mp_*（不是 page_*）——避免与 page_settings.xml /
+     *  page_lab.xml 里的 page_init/page_custom/page_lab **内层容器** id 在同一视图树里相撞。 */
     private View pageReader;
     private View pageSettings;
     private View pageLab;
     private View pageTodo;
+    /** 🆕 TASK-045：设置页子页签（初始化 | 自定义），位于 page_settings.xml。 */
+    private SegTabView segSettings;
+    /** 🆕 TASK-045：三页控制器（与 {@link SettingsActivity} / {@link TodoActivity} 共用同一实现）。 */
+    private SettingsPageController settingsCtrl;
+    private LabPageController labCtrl;
+    private TodoPageController todoCtrl;
     /** 🆕 TASK-044：洞察页占位（真实内容 → TASK-048）。 */
     private TextView tvInsightPh;
     /** 🆕 TASK-044：当前大标签下标（阅读/设置/实验室/待办）。 */
@@ -234,10 +242,10 @@ public class MainActivity extends Activity {
         navDrop = (NavDropView) findViewById(R.id.nav_drop);
         picker = (PeriodPickerView) findViewById(R.id.picker);
         tvInsightPh = (TextView) findViewById(R.id.tv_insight_ph);
-        pageReader = findViewById(R.id.page_reader);
-        pageSettings = findViewById(R.id.page_settings);
-        pageLab = findViewById(R.id.page_lab);
-        pageTodo = findViewById(R.id.page_todo);
+        pageReader = findViewById(R.id.mp_reader);
+        pageSettings = findViewById(R.id.mp_settings);
+        pageLab = findViewById(R.id.mp_lab);
+        pageTodo = findViewById(R.id.mp_todo);
 
         // ── TASK-018：手机端遥控器角色（remote_role=phone）⇒ 隐藏卡片相关 UI（A7）──
         // 手机上这个 App 只当遥控器用，统计卡片没有使用场景（ADR-010 决定 4：
@@ -246,12 +254,10 @@ public class MainActivity extends Activity {
         if (RemoteRole.from(this) == RemoteRole.PHONE) {
             remotePhone = true;
             applyPhoneMode();
-            ((Button) findViewById(R.id.btn_settings)).setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    startActivity(new Intent(MainActivity.this, SettingsActivity.class));
-                }
-            });
+            // 🆕 TASK-045：大标签栏与 ②③④ 内容**仍需装配** —— 原靠底部「设置」按钮回到设置页
+            //   把角色改回来，该按钮已删 ⇒ 现在唯一入口就是大标签②，不装配就等于把用户锁死。
+            wireMainTabs();
+            setupMainPages();
             return;
         }
 
@@ -321,15 +327,7 @@ public class MainActivity extends Activity {
         if (k != null && k.length() > 0 && isDebuggableBuild()) StatsStore.setKey(this, k);
 
         // ── 🆕 TASK-044：大标签栏（阅读 / 设置 / 实验室 / 待办）—— **只切页面容器**，不碰 tabMode ──
-        segMain.setLabels(new String[]{
-                getString(R.string.main_tab_reader), getString(R.string.main_tab_settings),
-                getString(R.string.main_tab_lab), getString(R.string.main_tab_todo)});
-        segMain.setListener(new SegTabView.Listener() {
-            @Override
-            public void onSegSelected(int index) {
-                showMainPage(index);
-            }
-        });
+        wireMainTabs();
 
         // ── 🆕 TASK-044：阅读页下拉（本周 / 本月 / 本书 / 本记 / 洞察）—— **只切 tabMode**，不碰页面容器 ──
         navDrop.setLabels(new String[]{
@@ -374,36 +372,98 @@ public class MainActivity extends Activity {
             }
         });
 
-        ((Button) findViewById(R.id.btn_settings)).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                startActivity(new Intent(MainActivity.this, SettingsActivity.class));
-            }
-        });
-
-        // ── 🆕 TASK-044：大标签②③④ 的**占位容器**跳转按钮（真实内容 → TASK-045）──
-        // 本卡只做骨架，先把「设置 / 实验室 / 待办」三个入口用跳转按钮过渡，保证功能不丢；
-        // TASK-045 把三个布局灌进 page_* 容器后，这几个按钮随占位容器一起删除。
-        ((Button) findViewById(R.id.btn_open_settings_tmp)).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                startActivity(new Intent(MainActivity.this, SettingsActivity.class));
-            }
-        });
-        ((Button) findViewById(R.id.btn_open_lab_tmp)).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                startActivity(new Intent(MainActivity.this, SettingsActivity.class));   // 实验室在设置页内
-            }
-        });
-        ((Button) findViewById(R.id.btn_open_todo_tmp)).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                startActivity(new Intent(MainActivity.this, TodoActivity.class));
-            }
-        });
+        // ── 🆕 TASK-045：②③④ 三大标签的内容由控制器装配（与独立页共用同一实现）──
+        // 原 TASK-044 的三个「占位跳转按钮」与底部「设置」按钮**已随占位容器一起删除**。
+        setupMainPages();
 
         readerUiReady = true;      // TASK-031：UI 装配完成，生命周期回调自此可安全跑 show()/refresh()
+    }
+
+    /**
+     * 🆕 TASK-045：装配大标签栏（阅读 / 设置 / 实验室 / 待办）—— **只切页面容器，不碰 tabMode**。
+     *
+     * <p>抽成方法：正常阅读器路径与 {@code remote_role=phone} 路径**都要装**（后者已无底部
+     * 「设置」按钮，大标签② 是其唯一回设置页的入口）。
+     */
+    private void wireMainTabs() {
+        segMain.setLabels(new String[]{
+                getString(R.string.main_tab_reader), getString(R.string.main_tab_settings),
+                getString(R.string.main_tab_lab), getString(R.string.main_tab_todo)});
+        segMain.setListener(new SegTabView.Listener() {
+            @Override
+            public void onSegSelected(int index) {
+                showMainPage(index);
+            }
+        });
+    }
+
+    /**
+     * 🆕 TASK-045：装配「设置 / 实验室 / 待办」三个大标签的内容。
+     *
+     * <p>三块内容由 **与 {@link SettingsActivity} / {@link TodoActivity} 共用的控制器**驱动
+     * （{@link SettingsPageController} / {@link LabPageController} / {@link TodoPageController}）⇒
+     * 逻辑只有一份，不会双份维护。
+     *
+     * <p>🔴 顶部子页签的分工：
+     * <ul>
+     *   <li>设置页内的「初始化 | 自定义」段（{@code seg}）由**本类**装配 —— 因为
+     *       实验室已是**独立大标签**，不再参与这条子页签（reader 端 2 段，而非 3 段）；</li>
+     *   <li>实验室内的 4 段（{@code seg_lab}）由 {@link LabPageController#bindLabTabs()} 装配；</li>
+     *   <li>待办内的 2 段（{@code seg_todo}）由 {@link TodoPageController#bind()} 装配。</li>
+     * </ul>
+     */
+    private void setupMainPages() {
+        // ② 设置（page_init + page_custom）
+        settingsCtrl = new SettingsPageController(this, new SettingsPageController.Listener() {
+            @Override
+            public void onInstallRoleChanged() {
+                // 本页内不需要重装顶部页签 / 实验室子标签（那些是独立页的职责）；
+                // 只需重算设置页自身的分区显隐。
+                settingsCtrl.refreshRoleVisibility();
+            }
+
+            @Override
+            public void onKeySaved() {
+                // App 内嵌页不能 finish()：切回阅读页并按新 Key 强制取数
+                showMainPage(MP_READER);
+                refresh(true);
+            }
+        });
+        settingsCtrl.bind();
+
+        // 设置页子页签（初始化 | 自定义）—— reader 端仅 2 段（实验室已独立成大标签）
+        segSettings = (SegTabView) findViewById(R.id.seg);
+        segSettings.setLabels(new String[]{
+                getString(R.string.tab_init), getString(R.string.tab_custom)});
+        segSettings.setListener(new SegTabView.Listener() {
+            @Override
+            public void onSegSelected(int index) {
+                showSettingsPage(index);
+            }
+        });
+
+        // ③ 实验室（page_lab + seg_lab + 4 子容器）
+        labCtrl = new LabPageController(this);
+        labCtrl.bind();
+        labCtrl.bindLabTabs();
+
+        // ④ 待办（seg_todo + 列表 + 底部按钮）
+        todoCtrl = new TodoPageController(this);
+        todoCtrl.bind();
+    }
+
+    /**
+     * 🆕 TASK-045：设置页内的「初始化 / 自定义」切换（只切 visibility + 回到页顶）。
+     * 实验室是独立大标签，不在此列表内。
+     */
+    private void showSettingsPage(int index) {
+        int orig = (index == 1) ? 1 : 0;
+        findViewById(R.id.page_init).setVisibility(orig == 0 ? View.VISIBLE : View.GONE);
+        findViewById(R.id.page_custom).setVisibility(orig == 1 ? View.VISIBLE : View.GONE);
+        // 切页回到顶部：各页高度不同，留着旧滚动位置会看着像"卡住了"
+        View sv = findViewById(R.id.sv_settings);
+        if (sv instanceof android.widget.ScrollView) ((android.widget.ScrollView) sv).scrollTo(0, 0);
+        if (settingsCtrl != null) settingsCtrl.refreshRoleVisibility();
     }
 
     /**
@@ -501,6 +561,18 @@ public class MainActivity extends Activity {
             navDrop.collapse();
             navDrop.setVisibility(View.GONE);
         }
+        // 🆕 TASK-045：进入非阅读页时按需刷新（内容由控制器驱动）——
+        // 数据可能在别处变过（如控制台改过角色 / 遥控服务状态变化），进页复核一次。
+        if (index == MP_SETTINGS) {
+            showSettingsPage(0);                       // 复位到「初始化」+ 重算分区显隐
+        } else if (index == MP_LAB) {
+            if (labCtrl != null) {
+                labCtrl.refreshRoleUi();               // 角色说明 / 会话控件 / 晃动块
+                labCtrl.refreshBtUi();                 // 蓝牙状态行（读服务真值）
+            }
+        } else if (index == MP_TODO) {
+            if (todoCtrl != null) todoCtrl.refresh();  // 待办列表重画
+        }
     }
 
     /**
@@ -574,8 +646,11 @@ public class MainActivity extends Activity {
      * 不需要打开卡片服务（卡片分区在设置页也被隐藏，见 {@code SettingsActivity#refreshRoleUi}）。
      */
     private void applyPhoneMode() {
-        findViewById(R.id.tab_main).setVisibility(View.GONE);
-        findViewById(R.id.sep_top).setVisibility(View.GONE);
+        // 🔴 TASK-045：**不再隐藏大标签栏**（原 TASK-044 会藏 tab_main / sep_top）。
+        //    理由：原「设置」入口 = 底部按钮，该按钮已随 TASK-045 删除；若连大标签栏一起藏掉，
+        //    remote_role=phone 形态下用户将**无法到达设置页把角色改回来**（等于把自己锁死）。
+        //    ⇒ 大标签栏保留可见，遥控提示行仍替代卡片区（阅读页内）。install_role=phone 走的是
+        //    enterApp() 的早退分支（本方法根本不会被调到），故此改动对手机端安装形态零影响。
         findViewById(R.id.nav_drop).setVisibility(View.GONE);
         findViewById(R.id.picker).setVisibility(View.GONE);
         findViewById(R.id.sep_mid).setVisibility(View.GONE);
@@ -601,6 +676,28 @@ public class MainActivity extends Activity {
         // 回到前台时把桌面卡片对齐一次（可能刚在设置页开关/改过周期）
         CardA11yService.sync();
         refresh();
+        // 🆕 TASK-045：回前台顺带把 ②③④ 三大标签的内容刷新一遍（数据可能在别处变过）
+        refreshEmbeddedPages();
+    }
+
+    /**
+     * 🆕 TASK-045：刷新三个内嵌页（设置 / 实验室 / 待办）。
+     *
+     * <p>内容由控制器驱动，这里只做「进前台 / 切页时复核」，不改变各自的取数时机。
+     */
+    private void refreshEmbeddedPages() {
+        if (settingsCtrl != null) {
+            settingsCtrl.refreshRoleVisibility();
+            settingsCtrl.refreshStatus();
+            settingsCtrl.refreshChannelTip();
+            settingsCtrl.refreshUpdateUi();
+        }
+        if (labCtrl != null) {
+            labCtrl.refreshRoleUi();
+            labCtrl.refreshLockUi();
+            labCtrl.refreshPowerUi();
+            labCtrl.onResume();     // 注册 HID 状态监听 + 刷蓝牙状态行
+        }
     }
 
     @Override
@@ -610,6 +707,21 @@ public class MainActivity extends Activity {
             return;
         }
         CardA11yService.noteOwnUiForeground(false);
+        if (labCtrl != null) labCtrl.onPause();     // 🆕 TASK-045：摘掉会话 / HID 监听（离页不持引用）
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        // 🆕 TASK-045：实验室页的蓝牙「可被发现」回执
+        if (labCtrl != null) labCtrl.onActivityResult(requestCode, resultCode, data);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int req, String[] perms, int[] results) {
+        super.onRequestPermissionsResult(req, perms, results);
+        // 🆕 TASK-045：实验室页「锁屏背景图」的存储读权限回执
+        if (labCtrl != null) labCtrl.onRequestPermissionsResult(req, perms, results);
     }
 
     private void refresh() { refresh(false); }

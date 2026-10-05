@@ -1,0 +1,939 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 实验室大标签（TASK-045 / V1.2.0-beta · App 内导航重构 K0b）。
+     由 settings_layout.xml 的 page_lab 整块迁入（seg_lab + 4 个子容器），
+     供 MainActivity 的大标签③ 容器 <include>。
+     🔴 首行即 seg_lab、无 paddingTop —— 「整体上移」靠不新增留白实现（Q11）。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FFFFFFFF"
+    android:orientation="vertical">
+
+    <ScrollView
+        android:id="@+id/sv_lab"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingLeft="16dp"
+            android:paddingRight="16dp"
+            android:paddingBottom="14dp">
+
+            <!-- ============================================================
+                 实验室页（V1.0 Beta · TASK-018）：实验性功能 —— 遥控翻页
+                 角色开关 + 相关提示；原「设备能力自检」已按
+                 docs/FEATURES/lab.md 清除清单 C1–C5 删除。
+                 ============================================================ -->
+            <LinearLayout
+                android:id="@+id/page_lab"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <!-- ── 页顶不再重复「实验室」标题：页名已由外层顶部标签栏承担 ── -->
+
+                <!-- 🆕 TASK-021 实验室子标签栏（TASK-023 起扩到 3 段「遥控翻页 | 锁屏密码 | 续航优化」） -->
+                <!-- 🆕 2026-09-30 微调：40dp → 36dp，且 marginTop 12dp → 0 —— 与外层大标签栏**紧贴**
+                     （外层 ScrollView 的顶部留白已挪到 page_init / page_custom 各自身上 ⇒ 这两页
+                      的**顶部留白不变**；它们只因大标签栏变矮 5px 而整体上移 5px） -->
+                <com.inkread.weekread.ui.SegTabView
+                    android:id="@+id/seg_lab"
+                    android:layout_width="match_parent"
+                    android:layout_height="36dp" />
+
+                <!-- 🆕 子页 A：遥控翻页（现有内容原样搬入，功能零改动） -->
+                <LinearLayout
+                    android:id="@+id/page_lab_remote"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                <!-- ── 遥控翻页（子标签栏已显示页名，此处不再重复小标题）── -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:lineSpacingExtra="3dp"
+                    android:text="@string/lab_remote_intro"
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/lab_role_label"
+                    android:textColor="#FF000000"
+                    android:textSize="15sp" />
+
+                <RadioGroup
+                    android:id="@+id/rg_remote_role"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:orientation="horizontal">
+
+                    <RadioButton
+                        android:id="@+id/rb_role_off"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginRight="14dp"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/lab_role_off"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_role_eink"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginRight="14dp"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/lab_role_eink"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_role_phone"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/lab_role_phone"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+                </RadioGroup>
+
+                <!-- 按角色变化的说明文本 -->
+                <TextView
+                    android:id="@+id/tv_role_hint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:lineSpacingExtra="3dp"
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="13sp" />
+
+                <!-- ============================================================
+                     🆕 TASK-029：手机端「晃动翻页」（仅 role=手机 显示）
+                     🔴 必须独立成块、放在 ll_remote_session 之外：ll_remote_session 是
+                        role != off 就显示，塞进去会把晃动开关暴露给"墨水屏"角色（验收 A2）。
+                     控件形态沿用本页黑描边风格；⚠ 不用 Material accent 填充（墨水屏近黑会糊）。
+                     ============================================================ -->
+                <LinearLayout
+                    android:id="@+id/ll_shake_block"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <CheckBox
+                        android:id="@+id/cb_shake_enabled"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/lab_shake_label"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+
+                    <!-- 🆕 TASK-029 手感优化：灵敏度三档（低/中/高，默认中）
+                         🔴 墨水屏 accent 近黑 ⇒ RadioButton 必须显式 buttonTint 黑，别用主题色。
+                         总开关关时整行置灰（与下方两个反转开关同规则）。 -->
+                    <LinearLayout
+                        android:id="@+id/ll_shake_sens"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/lab_shake_sens_label"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp" />
+
+                        <RadioGroup
+                            android:id="@+id/rg_shake_sens"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="6dp"
+                            android:orientation="horizontal">
+
+                            <RadioButton
+                                android:id="@+id/rb_shake_sens_low"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:buttonTint="#FF000000"
+                                android:text="@string/lab_shake_sens_low"
+                                android:textColor="#FF000000"
+                                android:textSize="13sp" />
+
+                            <RadioButton
+                                android:id="@+id/rb_shake_sens_mid"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="10dp"
+                                android:buttonTint="#FF000000"
+                                android:text="@string/lab_shake_sens_mid"
+                                android:textColor="#FF000000"
+                                android:textSize="13sp" />
+
+                            <RadioButton
+                                android:id="@+id/rb_shake_sens_high"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="10dp"
+                                android:buttonTint="#FF000000"
+                                android:text="@string/lab_shake_sens_high"
+                                android:textColor="#FF000000"
+                                android:textSize="13sp" />
+                        </RadioGroup>
+                    </LinearLayout>
+
+                    <!-- 🆕 TASK-042：晃动方向「响应哪几组轴」多选（左右 / 上下）——
+                         🔴 与下方两个「反转」开关**语义正交**：本组管"响应不响应"，反转管"翻页方向"。
+                         两组都勾 = 现模式（默认）；禁止双不勾（UI 层挡 + CardPrefs 联合兜底）。
+                         ⚠ 不用 Material accent 填充（墨水屏近黑会糊），沿用黑 buttonTint。 -->
+                    <LinearLayout
+                        android:id="@+id/ll_shake_axis"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/lab_shake_axis_label"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp" />
+
+                        <CheckBox
+                            android:id="@+id/cb_shake_axis_lr"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="6dp"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/lab_shake_axis_lr"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp" />
+
+                        <CheckBox
+                            android:id="@+id/cb_shake_axis_ud"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="10dp"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/lab_shake_axis_ud"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+
+                    <CheckBox
+                        android:id="@+id/cb_shake_lr_rev"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/lab_shake_rev_lr"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+
+                    <CheckBox
+                        android:id="@+id/cb_shake_ud_rev"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/lab_shake_rev_ud"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+
+                    <!-- 动态「当前映射」自证行（refreshShakeUi 实时拼） -->
+                    <TextView
+                        android:id="@+id/tv_shake_map"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:lineSpacingExtra="3dp"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+
+                    <!-- 说明行（亮屏要求 / 与音量键共存） -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/lab_shake_hint"
+                        android:textColor="#FF3C3C3C"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <!-- 遥控会话控件（role != off 才显示，见 lab.md） -->
+                <LinearLayout
+                    android:id="@+id/ll_remote_session"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btn_remote_start"
+                            android:layout_width="0dp"
+                            android:layout_height="46dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/btn_ink"
+                            android:minWidth="0dp"
+                            android:minHeight="0dp"
+                            android:stateListAnimator="@null"
+                            android:text="@string/lab_btn_start"
+                            android:textColor="@color/btn_ink_text"
+                            android:textSize="16sp" />
+
+                        <Button
+                            android:id="@+id/btn_remote_stop"
+                            android:layout_width="0dp"
+                            android:layout_height="46dp"
+                            android:layout_marginLeft="8dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/btn_ink"
+                            android:minWidth="0dp"
+                            android:minHeight="0dp"
+                            android:stateListAnimator="@null"
+                            android:text="@string/lab_btn_stop"
+                            android:textColor="@color/btn_ink_text"
+                            android:textSize="16sp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tv_remote_status"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:lineSpacingExtra="3dp"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/lab_idle_label"
+                        android:textColor="#FF000000"
+                        android:textSize="15sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <EditText
+                            android:id="@+id/et_remote_idle"
+                            android:layout_width="96dp"
+                            android:layout_height="wrap_content"
+                            android:inputType="number"
+                            android:maxLength="4"
+                            android:textColor="#FF000000"
+                            android:textSize="15sp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginLeft="8dp"
+                            android:text="@string/lab_idle_unit"
+                            android:textColor="#FF000000"
+                            android:textSize="15sp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/lab_idle_tip"
+                        android:textColor="#FF3C3C3C"
+                        android:textSize="13sp" />
+
+                    <!-- 🔴 A11⑤ 按键过滤互斥的可操作提示（只写已验证事实） -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/lab_mutex_tip"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+
+                    <!-- 角色切换后需重开无障碍服务（组件变了） -->
+                    <Button
+                        android:id="@+id/btn_lab_a11y"
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:layout_marginTop="10dp"
+                        android:background="@drawable/btn_ink"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:stateListAnimator="@null"
+                        android:text="@string/btn_open_a11y"
+                        android:textColor="@color/btn_ink_text"
+                        android:textSize="15sp" />
+                </LinearLayout>
+                </LinearLayout><!-- /page_lab_remote -->
+
+                <!-- ============================================================
+                     🆕 TASK-033 子页：蓝牙控制（HID 外设通道）
+                     启用开关 + 状态 + 测试翻页 + 配对/重连引导。
+                     默认整块 GONE，由 seg_lab 切页控制。
+                     🔴 墨水屏端：整个控件块隐藏、只留说明 ⇒ 保证"零侵入"（验收 A10）。
+                     ============================================================ -->
+                <LinearLayout
+                    android:id="@+id/page_lab_bt"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <!-- 页顶简介（手机端 / 墨水屏端文案由 refreshBtUi 分派） -->
+                    <TextView
+                        android:id="@+id/tv_bt_intro"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/lab_bt_intro"
+                        android:textColor="#FF3C3C3C"
+                        android:textSize="13sp" />
+
+                    <!-- ── 手机端控件块（墨水屏端隐藏）── -->
+                    <LinearLayout
+                        android:id="@+id/ll_bt_controls"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <CheckBox
+                            android:id="@+id/cb_bt_enabled"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/lab_bt_enable"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:id="@+id/tv_bt_unsupported"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/lab_bt_unsupported"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp"
+                            android:visibility="gone" />
+
+                        <TextView
+                            android:id="@+id/tv_bt_status"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:lineSpacingExtra="3dp"
+                            android:textColor="#FF000000"
+                            android:textSize="14sp" />
+
+                        <!-- 🆕 TASK-034：断链恢复引导 —— 只在「已注册但未连接」时显示（refreshBtUi 控制） -->
+                        <TextView
+                            android:id="@+id/tv_bt_reconnect_guide"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/lab_bt_reconnect_guide"
+                            android:textColor="#FFB00020"
+                            android:textSize="13sp"
+                            android:visibility="gone" />
+
+                        <!-- 🆕 TASK-035：首次配对引导 —— 仅在「已启用但从未连过」时显示（refreshBtUi 控制） -->
+                        <TextView
+                            android:id="@+id/tv_bt_pair_guide"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/lab_bt_pair_guide"
+                            android:textColor="#FFB00020"
+                            android:textSize="13sp"
+                            android:visibility="gone" />
+
+                        <!-- 🆕 TASK-035：让本机可被发现（ACTION_REQUEST_DISCOVERABLE）—— 与首次配对引导同显隐 -->
+                        <LinearLayout
+                            android:id="@+id/ll_bt_discover"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:orientation="vertical"
+                            android:visibility="gone">
+
+                            <Button
+                                android:id="@+id/btn_bt_discoverable"
+                                android:layout_width="match_parent"
+                                android:layout_height="44dp"
+                                android:background="@drawable/btn_ink"
+                                android:minWidth="0dp"
+                                android:minHeight="0dp"
+                                android:stateListAnimator="@null"
+                                android:text="@string/lab_bt_btn_discoverable"
+                                android:textColor="@color/btn_ink_text"
+                                android:textSize="15sp" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:lineSpacingExtra="3dp"
+                                android:text="@string/lab_bt_discoverable_tip"
+                                android:textColor="#FF666666"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <!-- 测试翻页：连接成功后立即可验，也兼作"试一下"入口 -->
+                        <LinearLayout
+                            android:id="@+id/ll_bt_test"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/lab_bt_test_label"
+                                android:textColor="#FF000000"
+                                android:textSize="13sp" />
+
+                            <Button
+                                android:id="@+id/btn_bt_test_prev"
+                                android:layout_width="0dp"
+                                android:layout_height="42dp"
+                                android:layout_marginStart="8dp"
+                                android:layout_weight="1"
+                                android:background="@drawable/btn_ink"
+                                android:minWidth="0dp"
+                                android:minHeight="0dp"
+                                android:stateListAnimator="@null"
+                                android:text="@string/lab_bt_test_prev"
+                                android:textColor="@color/btn_ink_text"
+                                android:textSize="15sp" />
+
+                            <Button
+                                android:id="@+id/btn_bt_test_next"
+                                android:layout_width="0dp"
+                                android:layout_height="42dp"
+                                android:layout_marginStart="8dp"
+                                android:layout_weight="1"
+                                android:background="@drawable/btn_ink"
+                                android:minWidth="0dp"
+                                android:minHeight="0dp"
+                                android:stateListAnimator="@null"
+                                android:text="@string/lab_bt_test_next"
+                                android:textColor="@color/btn_ink_text"
+                                android:textSize="15sp" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/lab_bt_test_tip"
+                            android:textColor="#FF3C3C3C"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/lab_bt_pair_tip"
+                            android:textColor="#FF3C3C3C"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/lab_bt_reconnect_tip"
+                            android:textColor="#FF3C3C3C"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/lab_bt_not_conflict_tip"
+                            android:textColor="#FF3C3C3C"
+                            android:textSize="13sp" />
+                    </LinearLayout><!-- /ll_bt_controls -->
+
+                    <!-- ── 墨水屏端说明（手机端隐藏）—— 双侧明示，验收 A10 ── -->
+                    <TextView
+                        android:id="@+id/tv_bt_eink_note"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/lab_bt_eink_note"
+                        android:textColor="#FF3C3C3C"
+                        android:textSize="13sp"
+                        android:visibility="gone" />
+                </LinearLayout><!-- /page_lab_bt -->
+
+                <!-- ============================================================
+                     🆕 TASK-022 子页 B：锁屏密码（应用级软锁）
+                     启用开关 + 4 位密码 + 背景图 + 如实提示（可绕过 / 重启失效 /
+                     依赖卡片无障碍服务）。默认整块 GONE，由 seg_lab 切页控制。
+                     ============================================================ -->
+                <LinearLayout
+                    android:id="@+id/page_lab_lockscreen"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <!-- 子标签栏已显示页名，此处不再重复小标题 -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/lock_intro"
+                        android:textColor="#FF3C3C3C"
+                        android:textSize="13sp" />
+
+                    <CheckBox
+                        android:id="@+id/cb_lock_enabled"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/lock_enable"
+                        android:textColor="#FF000000"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/lock_pin_label"
+                        android:textColor="#FF000000"
+                        android:textSize="15sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <EditText
+                            android:id="@+id/et_lock_pin"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:hint="@string/lock_pin_hint"
+                            android:inputType="number"
+                            android:maxLength="4"
+                            android:textColor="#FF000000"
+                            android:textColorHint="#FF9A9A9A"
+                            android:textSize="15sp" />
+
+                        <Button
+                            android:id="@+id/btn_lock_save"
+                            android:layout_width="wrap_content"
+                            android:layout_height="44dp"
+                            android:layout_marginLeft="8dp"
+                            android:background="@drawable/btn_ink"
+                            android:minWidth="0dp"
+                            android:minHeight="0dp"
+                            android:stateListAnimator="@null"
+                            android:text="@string/lock_btn_save"
+                            android:textColor="@color/btn_ink_text"
+                            android:textSize="15sp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tv_lock_status"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:text="@string/lock_bg_label"
+                        android:textColor="#FF000000"
+                        android:textSize="15sp" />
+
+                    <!-- 🆕 TASK-022-R1：可编辑路径输入框（默认填 Pictures/背景.jpg）。
+                         取消 SAF「选择图片」按钮 —— S4 ROM 无 DocumentsUI，真机必然弹不出。 -->
+                    <EditText
+                        android:id="@+id/et_lock_bg_path"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:hint="@string/lock_bg_path_hint"
+                        android:inputType="text"
+                        android:maxLines="1"
+                        android:textColor="#FF000000"
+                        android:textColorHint="#FF9A9A9A"
+                        android:textSize="15sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btn_lock_bg_load"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/btn_ink"
+                            android:minWidth="0dp"
+                            android:minHeight="0dp"
+                            android:stateListAnimator="@null"
+                            android:text="@string/lock_btn_bg_load"
+                            android:textColor="@color/btn_ink_text"
+                            android:textSize="15sp" />
+
+                        <Button
+                            android:id="@+id/btn_lock_bg_clear"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_marginLeft="8dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/btn_ink"
+                            android:minWidth="0dp"
+                            android:minHeight="0dp"
+                            android:stateListAnimator="@null"
+                            android:text="@string/lock_btn_bg_clear"
+                            android:textColor="@color/btn_ink_text"
+                            android:textSize="15sp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tv_lock_bg_status"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/lock_bg_hint"
+                        android:textColor="#FF6A6A6A"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/lock_tip_a11y"
+                        android:textColor="#FF3C3C3C"
+                        android:textSize="13sp" />
+                </LinearLayout><!-- /page_lab_lockscreen -->
+
+                <!-- ============================================================
+                     🆕 TASK-023 子页 C：续航（省电指令 · pm grant 通道 · ADB 自助档 1）
+                     授权引导（状态 + 命令 + 一键复制 + 分步图文）+ 4 个勾选项 + C1 跳转按钮。
+                     默认整块 GONE，由 seg_lab 切页控制。
+                     ============================================================ -->
+                <LinearLayout
+                    android:id="@+id/page_lab_power"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/power_intro"
+                        android:textColor="#FF3C3C3C"
+                        android:textSize="13sp" />
+
+                    <!-- ── 授权状态行（实时检测 WRITE_SECURE_SETTINGS）── -->
+                    <TextView
+                        android:id="@+id/tv_power_perm"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:lineSpacingExtra="3dp"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+
+                    <!-- ── 命令展示（等宽、可选中）+ 一键复制 ── -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/power_perm_cmd_label"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:id="@+id/tv_power_cmd"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:background="#FFF2F2F2"
+                        android:padding="8dp"
+                        android:textColor="#FF000000"
+                        android:textIsSelectable="true"
+                        android:textSize="12sp"
+                        android:typeface="monospace" />
+
+                    <Button
+                        android:id="@+id/btn_power_copy"
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:layout_marginTop="6dp"
+                        android:background="@drawable/btn_ink"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:stateListAnimator="@null"
+                        android:text="@string/power_btn_copy"
+                        android:textColor="@color/btn_ink_text"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/power_perm_steps"
+                        android:textColor="#FF6A6A6A"
+                        android:textSize="12sp" />
+
+                    <!-- ── 勾选项 1/3：关「开放网络可用」提示（A3）── -->
+                    <CheckBox
+                        android:id="@+id/cb_power_wifi_notif"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/power_item_wifi_notif"
+                        android:textColor="#FF000000"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/power_tip_wifi_notif"
+                        android:textColor="#FF6A6A6A"
+                        android:textSize="12sp" />
+
+                    <!-- ── 勾选项 2/3：关界面动画（A5）── -->
+                    <CheckBox
+                        android:id="@+id/cb_power_anim"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/power_item_anim"
+                        android:textColor="#FF000000"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/power_tip_anim"
+                        android:textColor="#FF6A6A6A"
+                        android:textSize="12sp" />
+
+                    <!-- ── 勾选项 3/3：关时钟屏保（Q3）── -->
+                    <CheckBox
+                        android:id="@+id/cb_power_screensaver"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/power_item_screensaver"
+                        android:textColor="#FF000000"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/power_tip_screensaver"
+                        android:textColor="#FF6A6A6A"
+                        android:textSize="12sp" />
+
+                    <!-- ── C1 · 电池优化白名单跳转（抵消 B2 的后台限制）── -->
+                    <Button
+                        android:id="@+id/btn_power_battery_opt"
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:layout_marginTop="18dp"
+                        android:background="@drawable/btn_ink"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:stateListAnimator="@null"
+                        android:text="@string/power_btn_battery_opt"
+                        android:textColor="@color/btn_ink_text"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/power_battery_opt_tip"
+                        android:textColor="#FF6A6A6A"
+                        android:textSize="12sp" />
+
+                    <!-- ── 底部·增强说明（Shizuku，后续版本）── -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:layout_marginBottom="12dp"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/power_shizuku_hint"
+                        android:textColor="#FF6A6A6A"
+                        android:textSize="12sp" />
+                </LinearLayout><!-- /page_lab_power -->
+            </LinearLayout>
+
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

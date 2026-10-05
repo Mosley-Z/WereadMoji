@@ -1,0 +1,1102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 设置大标签（TASK-045 / V1.2.0-beta · App 内导航重构 K0b）。
+     由 settings_layout.xml 的「初始化 + 自定义」两块原样迁入，供 MainActivity 的
+     大标签② 容器 <include>；SettingsActivity（phone 端）仍用 settings_layout.xml。
+     🔴 两块共用同一个 ScrollView(sv_settings)，切页只切 visibility。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FFFFFFFF"
+    android:orientation="vertical">
+
+    <!-- 顶部页签：初始化 | 自定义
+         🆕 2026-09-30 微调：44dp → 40dp（压掉竖直空白，字号不变） -->
+    <com.inkread.weekread.ui.SegTabView
+        android:id="@+id/seg"
+        android:layout_width="match_parent"
+        android:layout_height="40dp" />
+
+    <ScrollView
+        android:id="@+id/sv_settings"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingLeft="16dp"
+            android:paddingRight="16dp"
+            android:paddingBottom="14dp">
+
+            <!-- ============================================================
+                 初始化页
+                 ============================================================ -->
+            <LinearLayout
+                android:id="@+id/page_init"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingTop="12dp">
+
+                <!-- ================= ⓪ 本机角色（🆕 TASK-031） ================= -->
+                <!-- App 形态「阅读器端 / 手机端」，与「实验室-角色」（remote_role）**正交**、不得混用。
+                     置于页首 = 回答"这台设备是什么"，是首装引导之后的第一项。
+                     🆕 TASK-043：整块包进 section_install_role_init —— 手机端时由 SettingsActivity
+                     **整块搬到「实验室」页顶部**（手机端必须能切回阅读器端，A5）。 -->
+                <LinearLayout
+                    android:id="@+id/section_install_role_init"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_install_role"
+                    android:textColor="#FF000000"
+                    android:textSize="17sp" />
+
+                <RadioGroup
+                    android:id="@+id/rg_install_role"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:orientation="horizontal">
+
+                    <RadioButton
+                        android:id="@+id/rb_inst_reader"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/install_role_reader"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_inst_phone"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/install_role_phone"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+                </RadioGroup>
+
+                <TextView
+                    android:id="@+id/tv_install_role_tip"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:lineSpacingExtra="3dp"
+                    android:text="@string/install_role_tip"
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="13sp" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="12dp"
+                    android:background="#FFD8D8D8" />
+
+                </LinearLayout><!-- /section_install_role_init（TASK-043） -->
+
+                <!-- ================= ① 微信读书 API Key ================= -->
+                <!-- 🆕 TASK-043：手机端整块隐藏（手机不取数，Key 无用）。
+                     reader 端一字不改；由 SettingsActivity 按 install_role 控制。 -->
+                <LinearLayout
+                    android:id="@+id/section_api_key_init"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_api_key"
+                    android:textColor="#FF000000"
+                    android:textSize="17sp" />
+
+                <!-- Key 输入 + 「粘贴」（v0.4.2）：墨水屏手打 27 位 Key 太痛苦，直接读剪贴板 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <EditText
+                        android:id="@+id/et_key"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:hint="@string/hint_api_key"
+                        android:inputType="text"
+                        android:maxLines="1"
+                        android:textColor="#FF000000"
+                        android:textColorHint="#FF9A9A9A"
+                        android:textSize="15sp" />
+
+                    <Button
+                        android:id="@+id/btn_paste"
+                        android:layout_width="wrap_content"
+                        android:layout_height="44dp"
+                        android:layout_marginLeft="8dp"
+                        android:background="@drawable/btn_ink"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:paddingLeft="16dp"
+                        android:paddingRight="16dp"
+                        android:stateListAnimator="@null"
+                        android:text="@string/btn_paste"
+                        android:textColor="@color/btn_ink_text"
+                        android:textSize="15sp" />
+                </LinearLayout>
+
+                <!-- 保存 / 测试连接（v0.4.2）：填完立刻验一次，别靠猜 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btn_save"
+                        android:layout_width="0dp"
+                        android:layout_height="46dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/btn_ink"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:stateListAnimator="@null"
+                        android:text="@string/btn_save"
+                        android:textColor="@color/btn_ink_text"
+                        android:textSize="17sp" />
+
+                    <Button
+                        android:id="@+id/btn_test"
+                        android:layout_width="0dp"
+                        android:layout_height="46dp"
+                        android:layout_marginLeft="10dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/btn_ink"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:stateListAnimator="@null"
+                        android:text="@string/btn_test"
+                        android:textColor="@color/btn_ink_text"
+                        android:textSize="17sp" />
+                </LinearLayout>
+
+                <!-- 取 Key 的说明（v0.4.3：从页尾搬到 Key 区下方，就近说明） -->
+                <TextView
+                    android:id="@+id/tv_hint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:autoLink="web"
+                    android:lineSpacingExtra="4dp"
+                    android:text="@string/settings_hint"
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="13sp" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="12dp"
+                    android:background="#FFD8D8D8" />
+
+                </LinearLayout><!-- /section_api_key_init（TASK-043） -->
+
+                <!-- ================= ② 桌面卡片无障碍 ================= -->
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/label_a11y_group"
+                    android:textColor="#FF000000"
+                    android:textSize="17sp" />
+
+                <Button
+                    android:id="@+id/btn_a11y"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/btn_ink"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:stateListAnimator="@null"
+                    android:text="@string/btn_open_a11y"
+                    android:textColor="@color/btn_ink_text"
+                    android:textSize="15sp" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="12dp"
+                    android:background="#FFD8D8D8" />
+
+                <!-- ================= ③ 桌面卡片 ================= -->
+                <!-- phone 角色整块隐藏（id=section_card_init，见 SettingsActivity） -->
+                <LinearLayout
+                    android:id="@+id/section_card_init"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+    
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/label_card"
+                        android:textColor="#FF000000"
+                        android:textSize="17sp" />
+    
+                    <CheckBox
+                        android:id="@+id/cb_card"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/label_card_switch"
+                        android:textColor="#FF000000"
+                        android:textSize="15sp" />
+    
+                    <!-- 卡片显示周期（① B：这里定默认，卡片左上角点按可临时切换） -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="@string/label_card_period"
+                        android:textColor="#FF000000"
+                        android:textSize="15sp" />
+    
+                    <RadioGroup
+                        android:id="@+id/rg_period"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+    
+                        <RadioButton
+                            android:id="@+id/rb_period_week"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/label_period_week"
+                            android:textColor="#FF000000"
+                            android:textSize="15sp" />
+    
+                        <RadioButton
+                            android:id="@+id/rb_period_month"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/label_period_month"
+                            android:textColor="#FF000000"
+                            android:textSize="15sp" />
+    
+                        <RadioButton
+                            android:id="@+id/rb_period_book"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/label_period_book"
+                            android:textColor="#FF000000"
+                            android:textSize="15sp" />
+    
+                        <RadioButton
+                            android:id="@+id/rb_period_note"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/label_period_note"
+                            android:textColor="#FF000000"
+                            android:textSize="15sp" />
+                    </RadioGroup>
+    
+                    <TextView
+                        android:id="@+id/tv_status"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:lineSpacingExtra="3dp"
+                        android:text=""
+                        android:textColor="#FF3C3C3C"
+                        android:textSize="13sp" />
+    
+                    <!-- v0.6.0：卡片"离开第 1 页自动收起"判据万一被系统漏投、卡片停在隐藏状态，
+                         这里给一个明确的出口，用户不用去猜"是不是坏了"。 -->
+                    <Button
+                        android:id="@+id/btn_reset_card"
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:layout_marginTop="8dp"
+                        android:background="@drawable/btn_ink"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:stateListAnimator="@null"
+                        android:text="@string/btn_reset_card"
+                        android:textColor="@color/btn_ink_text"
+                        android:textSize="15sp" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="12dp"
+                    android:background="#FFD8D8D8" />
+
+                <!-- ================= ④ 怎么用 ================= -->
+
+                <Button
+                    android:id="@+id/btn_help"
+                    android:layout_width="match_parent"
+                    android:layout_height="46dp"
+                    android:layout_marginTop="12dp"
+                    android:background="@drawable/btn_ink"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:stateListAnimator="@null"
+                    android:text="@string/btn_help"
+                    android:textColor="@color/btn_ink_text"
+                    android:textSize="17sp" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="12dp"
+                    android:background="#FFD8D8D8" />
+
+                <!-- ================= ⑤ 版本与更新（v0.5.0） ================= -->
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/label_update"
+                    android:textColor="#FF000000"
+                    android:textSize="17sp" />
+
+                <TextView
+                    android:id="@+id/tv_version"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="13sp" />
+
+                <!-- ── TASK-020：更新通道（正式版 / Beta）──
+                     两个并排选项（RadioGroup 提供原生选中态，墨水屏上最直白）
+                     + 一条**常显**说明行。🔴 无模态弹窗（沿用「墨水屏上弹窗尤其讨厌」约定）。 -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="@string/label_update_channel"
+                    android:textColor="#FF000000"
+                    android:textSize="15sp" />
+
+                <RadioGroup
+                    android:id="@+id/rg_update_channel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:orientation="horizontal">
+
+                    <RadioButton
+                        android:id="@+id/rb_channel_stable"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/channel_stable"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_channel_beta"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/channel_beta"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+                </RadioGroup>
+
+                <!-- 常显说明行（文案由 SettingsActivity 按通道切换；含"版本号不可跨通道比较"，验收 A4） -->
+                <TextView
+                    android:id="@+id/tv_channel_tip"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:lineSpacingExtra="3dp"
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="13sp" />
+
+                <!-- ── TASK-030：云端备用更新源（默认开）──
+                     GitHub 两源都连不上时，回落自托管清单。🔴 如实描述「连不上时的兜底」，
+                     禁写「加速下载 / 多一个下载源」—— 它只在 GitHub 失败时才生效。 -->
+                <CheckBox
+                    android:id="@+id/cb_cloud_fallback"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:buttonTint="#FF000000"
+                    android:text="@string/label_cloud_fallback"
+                    android:textColor="#FF000000"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:lineSpacingExtra="3dp"
+                    android:text="@string/cloud_fallback_tip"
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="13sp" />
+
+                <!-- 一个按钮走完全程：检查 → 下载并安装 → 下载中 xx% -->
+                <Button
+                    android:id="@+id/btn_update"
+                    android:layout_width="match_parent"
+                    android:layout_height="46dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/btn_ink"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:stateListAnimator="@null"
+                    android:text="@string/btn_check_update"
+                    android:textColor="@color/btn_ink_text"
+                    android:textSize="17sp" />
+
+                <TextView
+                    android:id="@+id/tv_update_status"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:lineSpacingExtra="3dp"
+                    android:text=""
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <!-- ============================================================
+                 自定义页
+                 ============================================================ -->
+            <LinearLayout
+                android:id="@+id/page_custom"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingTop="12dp"
+                android:visibility="gone">
+
+                <!-- ── 桌面卡片（TASK-011 起：仅一页模式；后续 012/013/014/016 同区追加）── -->
+                <!-- phone 角色整块隐藏（id=section_card_custom，见 SettingsActivity） -->
+                <LinearLayout
+                    android:id="@+id/section_card_custom"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/label_card"
+                        android:textColor="#FF000000"
+                        android:textSize="17sp" />
+    
+                    <CheckBox
+                        android:id="@+id/cb_single_page"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/label_single_page"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+    
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/label_single_page_tip"
+                        android:textColor="#FF3C3C3C"
+                        android:textSize="13sp" />
+    
+                    <!-- TASK-012：刷新绑定 —— 点「更新于…」按勾选一并补发（只写偏好，不触发卡片重绘） -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/label_refresh_bind"
+                        android:textColor="#FF000000"
+                        android:textSize="15sp" />
+    
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:orientation="horizontal">
+    
+                        <CheckBox
+                            android:id="@+id/cb_bind_week"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/label_bind_week"
+                            android:textColor="#FF000000"
+                            android:textSize="14sp" />
+    
+                        <CheckBox
+                            android:id="@+id/cb_bind_month"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/label_bind_month"
+                            android:textColor="#FF000000"
+                            android:textSize="14sp" />
+    
+                        <CheckBox
+                            android:id="@+id/cb_bind_book"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/label_bind_book"
+                            android:textColor="#FF000000"
+                            android:textSize="14sp" />
+                    </LinearLayout>
+    
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/label_refresh_bind_tip"
+                        android:textColor="#FF3C3C3C"
+                        android:textSize="13sp" />
+    
+                    <!-- TASK-013：阅读成就提示 —— 成就行画在桌面卡片贴底位，默认全关 = 版面与 v0.8.0 一致 -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/label_achv"
+                        android:textColor="#FF000000"
+                        android:textSize="15sp" />
+    
+                    <CheckBox
+                        android:id="@+id/cb_achv"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/label_achv_switch"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+    
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/label_achv_tip"
+                        android:textColor="#FF3C3C3C"
+                        android:textSize="13sp" />
+    
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/label_achv_week"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+    
+                    <RadioGroup
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:orientation="horizontal">
+    
+                        <RadioButton
+                            android:id="@+id/rb_achv_week_off"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/label_achv_kind_off"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp" />
+    
+                        <RadioButton
+                            android:id="@+id/rb_achv_week_perfect"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/label_achv_kind_perfect"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp" />
+    
+                        <RadioButton
+                            android:id="@+id/rb_achv_week_berserk"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/label_achv_kind_berserk"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp" />
+    
+                        <RadioButton
+                            android:id="@+id/rb_achv_week_custom"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/label_achv_kind_custom"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp" />
+                    </RadioGroup>
+    
+                    <EditText
+                        android:id="@+id/et_achv_week"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:hint="@string/hint_achv_week"
+                        android:inputType="numberDecimal"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+    
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/label_achv_month"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+    
+                    <RadioGroup
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:orientation="horizontal">
+    
+                        <RadioButton
+                            android:id="@+id/rb_achv_month_off"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/label_achv_kind_off"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp" />
+    
+                        <RadioButton
+                            android:id="@+id/rb_achv_month_perfect"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/label_achv_kind_perfect"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp" />
+    
+                        <RadioButton
+                            android:id="@+id/rb_achv_month_berserk"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/label_achv_kind_berserk"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp" />
+    
+                        <RadioButton
+                            android:id="@+id/rb_achv_month_custom"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/label_achv_kind_custom"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp" />
+                    </RadioGroup>
+    
+                    <EditText
+                        android:id="@+id/et_achv_month"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:hint="@string/hint_achv_month"
+                        android:inputType="numberDecimal"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+    
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/label_achv_source"
+                        android:textColor="#FF3C3C3C"
+                        android:textSize="13sp" />
+    
+                    <!-- TASK-014：本月呈现 —— 打卡网格 ↔ 阅读热力图（默认热力图）。
+                         只影响本月形态的日期格画法；周/本书/本记不受影响。 -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/label_month_style"
+                        android:textColor="#FF000000"
+                        android:textSize="15sp" />
+    
+                    <RadioGroup
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:orientation="horizontal">
+    
+                        <RadioButton
+                            android:id="@+id/rb_month_style_checkin"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/label_month_style_checkin"
+                            android:textColor="#FF000000"
+                            android:textSize="14sp" />
+    
+                        <RadioButton
+                            android:id="@+id/rb_month_style_heatmap"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/label_month_style_heatmap"
+                            android:textColor="#FF000000"
+                            android:textSize="14sp" />
+                    </RadioGroup>
+    
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/label_month_style_tip"
+                        android:textColor="#FF3C3C3C"
+                        android:textSize="13sp" />
+    
+                    <!-- TASK-016：本记字号（卡片）—— 桌面卡片「本记」正文的字号，固定 + 连续可调。
+                         🔴 max / progress **不在 XML 里写**：取值范围的唯一真源是
+                         CardPrefs.NOTE_CARD_SIZE_MIN/MAX，由 SettingsActivity 在运行时 set，
+                         免得以后调上下限时忘了同步这里。 -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/label_note_card_size"
+                        android:textColor="#FF000000"
+                        android:textSize="15sp" />
+    
+                    <TextView
+                        android:id="@+id/tv_note_card_size"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+    
+                    <SeekBar
+                        android:id="@+id/sb_note_card_size"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:progressDrawable="@drawable/seek_ink"
+                        android:splitTrack="false"
+                        android:thumb="@drawable/seek_thumb" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:lineSpacingExtra="2dp"
+                        android:text="@string/label_note_card_size_tip"
+                        android:textColor="#FF3C3C3C"
+                        android:textSize="13sp" />
+
+                    <!-- ── TASK-025（V1.0.3-beta）：卡片切换方式 + 桌面显示的卡片（卡片池）──
+                         两项都只影响桌面卡片，故放在"桌面卡片"这一分区里（手机角色整块隐藏）。
+                         勾选态由 SettingsActivity 读写 CardPrefs；🆕「至少保留一张」在 Activity 兜底。 -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/custom_switch_mode_title"
+                        android:textColor="#FF000000"
+                        android:textSize="15sp" />
+
+                    <RadioGroup
+                        android:id="@+id/rg_switch_mode"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:orientation="horizontal">
+
+                        <RadioButton
+                            android:id="@+id/rb_switch_loop"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/switch_mode_loop"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp" />
+
+                        <RadioButton
+                            android:id="@+id/rb_switch_list"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/switch_mode_list"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp" />
+                    </RadioGroup>
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:lineSpacingExtra="2dp"
+                        android:text="@string/switch_mode_tip"
+                        android:textColor="#FF3C3C3C"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/custom_card_pool_title"
+                        android:textColor="#FF000000"
+                        android:textSize="15sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:orientation="horizontal">
+
+                        <CheckBox
+                            android:id="@+id/cb_pool_week"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/pool_week"
+                            android:textColor="#FF000000"
+                            android:textSize="14sp" />
+
+                        <CheckBox
+                            android:id="@+id/cb_pool_month"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/pool_month"
+                            android:textColor="#FF000000"
+                            android:textSize="14sp" />
+
+                        <CheckBox
+                            android:id="@+id/cb_pool_book"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/pool_book"
+                            android:textColor="#FF000000"
+                            android:textSize="14sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <CheckBox
+                            android:id="@+id/cb_pool_note"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/pool_note"
+                            android:textColor="#FF000000"
+                            android:textSize="14sp" />
+
+                        <CheckBox
+                            android:id="@+id/cb_pool_todo"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:buttonTint="#FF000000"
+                            android:text="@string/pool_todo"
+                            android:textColor="#FF000000"
+                            android:textSize="14sp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/card_pool_tip"
+                        android:textColor="#FF3C3C3C"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <!-- TASK-016：自定义页第二个分区「本记导出图」—— 与上面的「桌面卡片」分开，
+                     因为两项都叫「字号」，作用范围不同（卡片 / 本记页与导出图），必须分区隔开 -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="@string/label_export_group"
+                    android:textColor="#FF000000"
+                    android:textSize="17sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/label_export_tpl"
+                    android:textColor="#FF000000"
+                    android:textSize="17sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/label_export_tpl_tip"
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/label_paper"
+                    android:textColor="#FF000000"
+                    android:textSize="15sp" />
+
+                <RadioGroup
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <RadioButton
+                        android:id="@+id/rb_paper_plain"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="素白"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_paper_journal"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="手账"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_paper_card"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="卡纸"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+                </RadioGroup>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="@string/label_nsize"
+                    android:textColor="#FF000000"
+                    android:textSize="15sp" />
+
+                <RadioGroup
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <RadioButton
+                        android:id="@+id/rb_nsize_s"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="小字"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_nsize_m"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="中字"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_nsize_l"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:buttonTint="#FF000000"
+                        android:text="大字"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+                </RadioGroup>
+
+                <CheckBox
+                    android:id="@+id/cb_note_sign"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:buttonTint="#FF000000"
+                    android:text="@string/label_show_sign"
+                    android:textColor="#FF000000"
+                    android:textSize="14sp" />
+
+                <CheckBox
+                    android:id="@+id/cb_note_date"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:buttonTint="#FF000000"
+                    android:text="@string/label_show_date"
+                    android:textColor="#FF000000"
+                    android:textSize="14sp" />
+            </LinearLayout>
+
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

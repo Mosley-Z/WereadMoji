@@ -1,7 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 主页（TASK-044 / V1.2.0-beta · App 内导航重构 v1）
+<!-- 主页（TASK-044 骨架 + TASK-045 布局搬迁 / V1.2.0-beta · App 内导航重构 v1）
      结构 = 顶部「大标签栏」（阅读/设置/实验室/待办）+ 内容区（四大标签各一个容器，只切 visibility）。
-     大标签①「阅读」内：下拉行（NavDropView，本周/本月/本书/本记/洞察）→ 周期选择器 → 卡片区 → 按钮行。 -->
+
+     🆕 TASK-045：②③④ 三个容器改为 <include> 引入真实布局：
+       · mp_settings ← layout/page_settings.xml（初始化 + 自定义，来自 settings_layout.xml）
+       · mp_lab      ← layout/page_lab.xml     （实验室 4 子标签，来自 settings_layout.xml）
+       · mp_todo     ← layout/page_todo.xml    （待办列表 + 已完成，来自 activity_todo.xml）
+     🔴 容器 id 用 mp_* 前缀（不用 page_*）——避免与 settings_layout.xml 里的
+        page_init/page_custom/page_lab 内层容器 id 相撞（同一视图树里 id 必须唯一）。
+     🔴 TASK-045：删除阅读页底部的「设置」按钮（大标签② 已承担该入口）。
+        实测已证 `t11` 回归打的是 ELauncher 桌面图标、与本入口无关（见 验证记录/150 §4）。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -29,7 +37,7 @@
 
         <!-- ══════════ ① 阅读（大标签①）══════════ -->
         <FrameLayout
-            android:id="@+id/page_reader"
+            android:id="@+id/mp_reader"
             android:layout_width="match_parent"
             android:layout_height="match_parent">
 
@@ -99,9 +107,8 @@
                     android:textSize="15sp"
                     android:visibility="gone" />
 
-                <!-- 两个独立按钮：刷新 / 设置。
-                     🔴 TASK-044：底部「设置」按钮**本卡保留**（`t11` 回归仍点它）；
-                     —— TASK-045 视觉定稿后再统一改脚本 + 删按钮（同批）。 -->
+                <!-- 刷新按钮行。🆕 TASK-045：原并排的「设置」按钮已删除
+                     （大标签② 即设置入口）；🔴 `t11` 回归实测与本按钮无关（验证记录/150 §4）。 -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -123,20 +130,6 @@
                         android:text="@string/btn_refresh"
                         android:textColor="@color/btn_ink_text"
                         android:textSize="17sp" />
-
-                    <Button
-                        android:id="@+id/btn_settings"
-                        android:layout_width="0dp"
-                        android:layout_height="40dp"
-                        android:layout_marginLeft="12dp"
-                        android:layout_weight="1"
-                        android:background="@drawable/btn_ink"
-                        android:minWidth="0dp"
-                        android:minHeight="0dp"
-                        android:stateListAnimator="@null"
-                        android:text="@string/btn_settings"
-                        android:textColor="@color/btn_ink_text"
-                        android:textSize="17sp" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -149,79 +142,37 @@
                 android:layout_gravity="top" />
         </FrameLayout>
 
-        <!-- ══════════ ② 设置（大标签②；占位，TASK-045 灌入真实内容）══════════ -->
+        <!-- ══════════ ② 设置（大标签②）══════════ -->
         <LinearLayout
-            android:id="@+id/page_settings"
+            android:id="@+id/mp_settings"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:gravity="center"
             android:orientation="vertical"
             android:visibility="gone">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:paddingBottom="16dp"
-                android:text="@string/ph_settings"
-                android:textColor="#FF3C3C3C"
-                android:textSize="15sp" />
-
-            <Button
-                android:id="@+id/btn_open_settings_tmp"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:minWidth="200dp"
-                android:text="@string/btn_open_settings_tmp" />
+            <include layout="@layout/page_settings" />
         </LinearLayout>
 
-        <!-- ══════════ ③ 实验室（大标签③；占位）══════════ -->
+        <!-- ══════════ ③ 实验室（大标签③）══════════ -->
         <LinearLayout
-            android:id="@+id/page_lab"
+            android:id="@+id/mp_lab"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:gravity="center"
             android:orientation="vertical"
             android:visibility="gone">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:paddingBottom="16dp"
-                android:text="@string/ph_lab"
-                android:textColor="#FF3C3C3C"
-                android:textSize="15sp" />
-
-            <Button
-                android:id="@+id/btn_open_lab_tmp"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:minWidth="200dp"
-                android:text="@string/btn_open_lab_tmp" />
+            <include layout="@layout/page_lab" />
         </LinearLayout>
 
-        <!-- ══════════ ④ 待办（大标签④；占位）══════════ -->
+        <!-- ══════════ ④ 待办（大标签④）══════════ -->
         <LinearLayout
-            android:id="@+id/page_todo"
+            android:id="@+id/mp_todo"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:gravity="center"
             android:orientation="vertical"
             android:visibility="gone">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:paddingBottom="16dp"
-                android:text="@string/ph_todo"
-                android:textColor="#FF3C3C3C"
-                android:textSize="15sp" />
-
-            <Button
-                android:id="@+id/btn_open_todo_tmp"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:minWidth="200dp"
-                android:text="@string/btn_open_todo_tmp" />
+            <include layout="@layout/page_todo" />
         </LinearLayout>
     </FrameLayout>
 
