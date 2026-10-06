@@ -280,14 +280,19 @@ public class SettingsPageController {
         // 只写偏好（App 内两处排名读它）：切回「阅读」页时 showReaderPage() 会重放一帧加载它；
         // 若本地还没有全量书架清单，MainActivity 会顺手补拉一次 /shelf/sync。
         // 🔴 不调 CardA11yService.sync() —— 本项**不影响桌面卡片**（排名只在 App 全屏页 / 洞察页）。
+        // 🔴 TASK-062：手机端 `settings_layout.xml` **没有**本控件（「自定义」页对手机整体隐藏，
+        //   只有阅读器端的 `page_settings.xml` 才有）⇒ 必须空安全，否则 phone 走 `SettingsActivity`
+        //   时在此 NPE 崩溃（已抓到崩溃栈：SettingsPageController.bind:284）。
         final CheckBox cbRankShelfOnly = (CheckBox) host.findViewById(R.id.cb_rank_shelf_only);
-        cbRankShelfOnly.setChecked(CardPrefs.isRankShelfOnly(host));
-        cbRankShelfOnly.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(CompoundButton b, boolean checked) {
-                CardPrefs.setRankShelfOnly(host, checked);
-            }
-        });
+        if (cbRankShelfOnly != null) {
+            cbRankShelfOnly.setChecked(CardPrefs.isRankShelfOnly(host));
+            cbRankShelfOnly.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+                @Override
+                public void onCheckedChanged(CompoundButton b, boolean checked) {
+                    CardPrefs.setRankShelfOnly(host, checked);
+                }
+            });
+        }
 
         cbCard.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override

@@ -541,8 +541,13 @@ public class ConsoleActivity extends Activity {
         });
         box.addView(rgType);
 
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.console_opt_title)
+        // 🆕 TASK-062：深色下**弹窗本身**也得转深 —— 否则亮底 + InkTheme 浅字「读不清」
+        //   （本 Activity 主题写死 `Theme.Material.Light.NoActionBar`，AlertDialog 默认恒亮底）。
+        //   亮色仍 `new AlertDialog.Builder(this)`（主题不变 ⇒ 与改造前一致）。
+        AlertDialog.Builder db = InkTheme.isDark(this)
+                ? new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                : new AlertDialog.Builder(this);
+        db.setTitle(R.string.console_opt_title)
                 .setView(box)
                 .setPositiveButton(android.R.string.ok, null)
                 .show();
