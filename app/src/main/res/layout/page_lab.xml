@@ -450,7 +450,7 @@
                             android:buttonTint="#FF000000"
                             android:text="@string/lab_bt_enable"
                             android:textColor="#FF000000"
-                            android:textSize="13sp" />
+                            android:textSize="15sp" />
 
                         <TextView
                             android:id="@+id/tv_bt_unsupported"
@@ -470,7 +470,7 @@
                             android:layout_marginTop="8dp"
                             android:lineSpacingExtra="3dp"
                             android:textColor="#FF000000"
-                            android:textSize="14sp" />
+                            android:textSize="15sp" />
 
                         <!-- 🆕 TASK-034：断链恢复引导 —— 只在「已注册但未连接」时显示（refreshBtUi 控制） -->
                         <TextView
@@ -523,8 +523,8 @@
                                 android:layout_marginTop="4dp"
                                 android:lineSpacingExtra="3dp"
                                 android:text="@string/lab_bt_discoverable_tip"
-                                android:textColor="#FF666666"
-                                android:textSize="12sp" />
+                                android:textColor="#FF3C3C3C"
+                                android:textSize="13sp" />
                         </LinearLayout>
 
                         <!-- 测试翻页：连接成功后立即可验，也兼作"试一下"入口 -->
@@ -541,7 +541,7 @@
                                 android:layout_height="wrap_content"
                                 android:text="@string/lab_bt_test_label"
                                 android:textColor="#FF000000"
-                                android:textSize="13sp" />
+                                android:textSize="14sp" />
 
                             <Button
                                 android:id="@+id/btn_bt_test_prev"

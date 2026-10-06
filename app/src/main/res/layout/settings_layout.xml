@@ -259,7 +259,6 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
 
-    
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -276,72 +275,6 @@
                         android:text="@string/label_card_switch"
                         android:textColor="#FF000000"
                         android:textSize="15sp" />
-    
-                    <!-- 卡片显示周期（① B：这里定默认，卡片左上角点按可临时切换） -->
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:text="@string/label_card_period"
-                        android:textColor="#FF000000"
-                        android:textSize="15sp" />
-    
-                    <RadioGroup
-                        android:id="@+id/rg_period"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal">
-    
-                        <RadioButton
-                            android:id="@+id/rb_period_week"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:buttonTint="#FF000000"
-                            android:text="@string/label_period_week"
-                            android:textColor="#FF000000"
-                            android:textSize="15sp" />
-    
-                        <RadioButton
-                            android:id="@+id/rb_period_month"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:buttonTint="#FF000000"
-                            android:text="@string/label_period_month"
-                            android:textColor="#FF000000"
-                            android:textSize="15sp" />
-    
-                        <RadioButton
-                            android:id="@+id/rb_period_book"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:buttonTint="#FF000000"
-                            android:text="@string/label_period_book"
-                            android:textColor="#FF000000"
-                            android:textSize="15sp" />
-    
-                        <RadioButton
-                            android:id="@+id/rb_period_note"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:buttonTint="#FF000000"
-                            android:text="@string/label_period_note"
-                            android:textColor="#FF000000"
-                            android:textSize="15sp" />
-                    </RadioGroup>
-    
-                    <TextView
-                        android:id="@+id/tv_status"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:lineSpacingExtra="3dp"
-                        android:text=""
-                        android:textColor="#FF3C3C3C"
-                        android:textSize="13sp" />
     
                     <!-- v0.6.0：卡片"离开第 1 页自动收起"判据万一被系统漏投、卡片停在隐藏状态，
                          这里给一个明确的出口，用户不用去猜"是不是坏了"。 -->
@@ -1078,7 +1011,7 @@
                             android:buttonTint="#FF000000"
                             android:text="@string/lab_bt_enable"
                             android:textColor="#FF000000"
-                            android:textSize="13sp" />
+                            android:textSize="15sp" />
 
                         <TextView
                             android:id="@+id/tv_bt_unsupported"
@@ -1098,7 +1031,7 @@
                             android:layout_marginTop="8dp"
                             android:lineSpacingExtra="3dp"
                             android:textColor="#FF000000"
-                            android:textSize="14sp" />
+                            android:textSize="15sp" />
 
                         <!-- 🆕 TASK-034：断链恢复引导 —— 只在「已注册但未连接」时显示（refreshBtUi 控制） -->
                         <TextView
@@ -1151,8 +1084,8 @@
                                 android:layout_marginTop="4dp"
                                 android:lineSpacingExtra="3dp"
                                 android:text="@string/lab_bt_discoverable_tip"
-                                android:textColor="#FF666666"
-                                android:textSize="12sp" />
+                                android:textColor="#FF3C3C3C"
+                                android:textSize="13sp" />
                         </LinearLayout>
 
                         <!-- 测试翻页：连接成功后立即可验，也兼作"试一下"入口 -->
@@ -1169,7 +1102,7 @@
                                 android:layout_height="wrap_content"
                                 android:text="@string/lab_bt_test_label"
                                 android:textColor="#FF000000"
-                                android:textSize="13sp" />
+                                android:textSize="14sp" />
 
                             <Button
                                 android:id="@+id/btn_bt_test_prev"

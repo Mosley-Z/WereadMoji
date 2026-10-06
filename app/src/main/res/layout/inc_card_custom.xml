@@ -12,30 +12,15 @@
     android:layout_height="wrap_content"
     android:orientation="vertical">
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="@string/label_card"
-        android:textColor="#FF000000"
-        android:textSize="17sp" />
-
+    <!-- 🆕 TASK-070：删「桌面卡片」小标题（页内已有分区语境，重复一行占高） -->
     <CheckBox
         android:id="@+id/cb_single_page"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
         android:buttonTint="#FF000000"
         android:text="@string/label_single_page"
         android:textColor="#FF000000"
         android:textSize="14sp" />
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
-        android:text="@string/label_single_page_tip"
-        android:textColor="#FF3C3C3C"
-        android:textSize="13sp" />
 
     <!-- TASK-012：刷新绑定 —— 点「更新于…」按勾选一并补发（只写偏好，不触发卡片重绘） -->
     <TextView
@@ -82,14 +67,6 @@
             android:textColor="#FF000000"
             android:textSize="14sp" />
     </LinearLayout>
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
-        android:text="@string/label_refresh_bind_tip"
-        android:textColor="#FF3C3C3C"
-        android:textSize="13sp" />
 
     <!-- TASK-013：阅读成就提示 —— 成就行画在桌面卡片贴底位，默认全关 = 版面与 v0.8.0 一致 -->
     <TextView

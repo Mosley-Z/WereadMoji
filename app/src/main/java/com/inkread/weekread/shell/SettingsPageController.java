@@ -5,7 +5,6 @@ import com.inkread.weekread.a11y.CardA11yService;
 import com.inkread.weekread.core.AchievementPrefs;
 import com.inkread.weekread.core.CardPrefs;
 import com.inkread.weekread.core.FeatureGate;
-import com.inkread.weekread.core.PeriodRange;
 import com.inkread.weekread.core.StatsStore;
 import com.inkread.weekread.feature.NoteExport;
 import com.inkread.weekread.feature.WeekCardView;
@@ -97,10 +96,8 @@ public class SettingsPageController {
     private EditText etAchvWeekHours;    // 自定义周目标（小时，≤2 位小数）
     private EditText etAchvMonthHours;   // 自定义月目标
 
-    private RadioButton rbWeek;
-    private RadioButton rbMonth;
-    private RadioButton rbBook;
-    private RadioButton rbNote;
+    // 🆕 TASK-070：「卡片显示周期」四选一 + 状态行已从设置页删除（卡片左上角点一下即可切）；
+    //   rbWeek/rbMonth/rbBook/rbNote/tvStatus 五个控件引用与 refreshStatus() 一并移除。
 
     // ── v0.8.1（TASK-014）本月呈现方式 ──
     private RadioButton rbMonthStyleCheckin;   // 打卡网格
@@ -119,7 +116,6 @@ public class SettingsPageController {
     private CheckBox cbPoolNote;               // 卡片池：本记
     private CheckBox cbPoolTodo;               // 卡片池：待办
 
-    private TextView tvStatus;
     private TextView tvVersion;
     private TextView tvUpdateStatus;
     private Button btnUpdate;
@@ -200,11 +196,6 @@ public class SettingsPageController {
         cbPoolNote = (CheckBox) host.findViewById(R.id.cb_pool_note);
         cbPoolTodo = (CheckBox) host.findViewById(R.id.cb_pool_todo);
 
-        rbWeek = (RadioButton) host.findViewById(R.id.rb_period_week);
-        rbMonth = (RadioButton) host.findViewById(R.id.rb_period_month);
-        rbBook = (RadioButton) host.findViewById(R.id.rb_period_book);
-        rbNote = (RadioButton) host.findViewById(R.id.rb_period_note);
-        tvStatus = (TextView) host.findViewById(R.id.tv_status);
         tvVersion = (TextView) host.findViewById(R.id.tv_version);
         tvUpdateStatus = (TextView) host.findViewById(R.id.tv_update_status);
         btnUpdate = (Button) host.findViewById(R.id.btn_update);
@@ -218,11 +209,6 @@ public class SettingsPageController {
         sectionInstallRoleInit = host.findViewById(R.id.section_install_role_init);   // 🆕 TASK-064
 
         cbCard.setChecked(CardPrefs.isEnabled(host));
-        String cp = StatsStore.getCardPeriod(host);
-        rbWeek.setChecked(PeriodRange.WEEKLY.equals(cp));
-        rbMonth.setChecked(PeriodRange.MONTHLY.equals(cp));
-        rbBook.setChecked(PeriodRange.BOOK.equals(cp));
-        rbNote.setChecked(PeriodRange.NOTE.equals(cp));
 
         // ── 本记导出模板 ──
         final RadioButton pPlain = (RadioButton) host.findViewById(R.id.rb_paper_plain);
@@ -303,7 +289,6 @@ public class SettingsPageController {
             public void onCheckedChanged(CompoundButton b, boolean checked) {
                 CardPrefs.setEnabled(host, checked);
                 CardA11yService.sync();
-                refreshStatus();
             }
         });
 
@@ -314,7 +299,6 @@ public class SettingsPageController {
             public void onCheckedChanged(CompoundButton b, boolean checked) {
                 CardPrefs.setSinglePageMode(host, checked);
                 CardA11yService.sync();
-                refreshStatus();
             }
         });
 
@@ -508,25 +492,7 @@ public class SettingsPageController {
             }
         });
 
-        CompoundButton.OnCheckedChangeListener periodListener =
-                new CompoundButton.OnCheckedChangeListener() {
-                    @Override
-                    public void onCheckedChanged(CompoundButton b, boolean checked) {
-                        if (!checked) return;           // 只管"被选中的那个"
-                        int id = b.getId();
-                        String m = (id == R.id.rb_period_month) ? PeriodRange.MONTHLY
-                                : (id == R.id.rb_period_book) ? PeriodRange.BOOK
-                                : (id == R.id.rb_period_note) ? PeriodRange.NOTE
-                                : PeriodRange.WEEKLY;
-                        StatsStore.setCardPeriod(host, m);
-                        CardA11yService.sync();          // 桌面卡片立刻换帧
-                        refreshStatus();
-                    }
-                };
-        rbWeek.setOnCheckedChangeListener(periodListener);
-        rbMonth.setOnCheckedChangeListener(periodListener);
-        rbBook.setOnCheckedChangeListener(periodListener);
-        rbNote.setOnCheckedChangeListener(periodListener);
+        // 🆕 TASK-070：原「卡片显示周期」四选一监听已随控件删除（周期改在卡片左上角点一下切换）。
 
         host.findViewById(R.id.btn_save).setOnClickListener(new View.OnClickListener() {
             @Override
@@ -719,23 +685,6 @@ public class SettingsPageController {
             ((ViewGroup) block.getParent()).removeView(block);
         }
         wantParent.addView(block, 0);                    // 置顶
-    }
-
-    /** 把卡片的真实状态写出来，别让用户以为"开关打开就一定看得见" */
-    public void refreshStatus() {
-        if (tvStatus == null) return;
-        if (!CardPrefs.isEnabled(host)) {
-            tvStatus.setText("卡片已关闭。打开上面的开关即可在桌面显示。");
-            return;
-        }
-        if (CardA11yService.isConnected()) {
-            tvStatus.setText("运行中 ✓　只在桌面显示，切到别的应用自动隐藏。");
-        } else if (CardA11yService.isEnabledInSystem(host)) {
-            tvStatus.setText("已授权，等待系统拉起…（回桌面看一眼，没有就重开一次开关）");
-        } else {
-            // v0.4.3：状态行在「桌面卡片」块末尾，无障碍按钮在它上方，故说"上面"
-            tvStatus.setText("未开启 —— 点上面的「打开系统无障碍设置」，在「已下载的服务」里打开「微读墨记」。");
-        }
     }
 
     /**

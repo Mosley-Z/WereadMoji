@@ -37,19 +37,18 @@
 
     <string name="label_card">桌面卡片</string>
     <string name="label_card_switch">在桌面显示阅读卡片</string>
-    <string name="label_card_period">卡片显示周期（卡片左上角点一下也能临时切）</string>
-    <string name="label_single_page">仅一页模式</string>
-    <string name="label_single_page_tip">仅在确认桌面只有一页时打开：打开后翻页不再隐藏卡片</string>
+    <!-- 🆕 TASK-070：卡片显示周期选择行已删（卡片左上角点一下即可切换，设置页不再重复一处）。
+         原 `label_card_period` / `label_single_page_tip` / `label_refresh_bind_tip` 三条一并删除。 -->
+    <string name="label_single_page">仅一页模式，翻页不再隐藏卡片</string>
     <!-- TASK-012：刷新绑定 -->
     <string name="label_refresh_bind">刷新绑定（点「更新于…」一并刷新勾选项）</string>
     <string name="label_bind_week">本周</string>
     <string name="label_bind_month">本月</string>
     <string name="label_bind_book">本书</string>
-    <string name="label_refresh_bind_tip">手动刷新时顺带更新勾选的形态；「本记」不参与绑定，总是单独刷新</string>
     <!-- TASK-013：阅读成就提示 -->
-    <string name="label_achv">阅读成就提示（桌面卡片贴底一行小字）</string>
+    <string name="label_achv">阅读成就提示</string>
     <string name="label_achv_switch">开启阅读成就提示</string>
-    <string name="label_achv_tip">开启后周/月卡片最底下显示距目标的差距，达成时显示恭喜语；关闭时版面与原来完全一致</string>
+    <string name="label_achv_tip">开启后周/月卡片最底下显示距目标的差距</string>
     <string name="label_achv_week">周目标</string>
     <string name="label_achv_month">月目标</string>
     <string name="label_achv_kind_off">关</string>
@@ -106,8 +105,8 @@
     <string name="remote_svc_label">微读墨记 · 遥控翻页</string>
     <string name="a11y_remote_desc">遥控翻页（实验性）：手机端用它接收音量键并向墨水屏发送翻页指令；墨水屏端用它点击阅读页左右边界完成翻页。不读取屏幕内容；仅在「开始遥控」的会话期间联网。注意：同类按键服务（如开关控制）同机只能启用一个，否则收不到按键。</string>
 
-    <!-- 🆕 TASK-065：128 → 两行（「一屏三行内」原则）。事实一字不变，只压句式。 -->
-    <string name="settings_hint">Key 怎么拿：weread.qq.com/r/weread-skills → 快速配置 → 获取 API Key → 粘贴到上面保存。\nKey 只存本机，仅用于读取你自己的统计，不上传。</string>
+    <!-- 🆕 TASK-070：改为「怎么把 Key 送到墨水屏」的口径（手机端取 Key → 本 App 手机端键盘功能粘贴）。 -->
+    <string name="settings_hint">获取API Key：手机客户端中，我-设置-微信读书Skill-复制Key，可通过本APP手机端键盘功能快速粘贴到墨水屏端。</string>
     <!-- v0.5.0：版本与更新（在线更新） -->
     <string name="label_update">版本与更新</string>
     <string name="btn_check_update">检查更新</string>

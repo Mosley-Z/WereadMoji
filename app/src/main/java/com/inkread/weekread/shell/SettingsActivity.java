@@ -445,7 +445,6 @@ public class SettingsActivity extends Activity {
         settingsCtrl.refreshRoleVisibility();   // 按角色重算显隐（phone 角色隐藏「桌面卡片」分区）
         labCtrl.refreshRoleUi();                // 实验室侧：角色说明 / 会话控件 / 晃动块
         applyDarkTheme();                       // 🆕 TASK-041：深色偏好可能在遥控台改过，回前台重染
-        settingsCtrl.refreshStatus();
         settingsCtrl.refreshChannelTip();       // TASK-020：说明行按当前通道刷新（无弹窗）
         settingsCtrl.refreshUpdateUi();
         labCtrl.refreshLockUi();                // TASK-022：锁屏子页状态（可能在别处改过偏好）
