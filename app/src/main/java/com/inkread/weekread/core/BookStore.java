@@ -256,6 +256,75 @@ public final class BookStore {
         return dir != null && new File(dir, F_SHELF_IDS).exists();
     }
 
+    // ── 🆕 TASK-069：「本书」候选清单（手动选书用）──
+    //
+    // 料全部来自**本地书架快照**（`shelf.json`）⇒ **零新增网络请求**。
+    // 口径 = 「书架前 N 本」∪「当前手动选中的那本」——后者保证永远在列，
+    // 否则选中的书一旦被挤出前 N 本，用户就再也切不回来了。
+
+    /** 「本书」候选清单默认本数（需求原话「最近 3 本」）。 */
+    public static final int BOOK_CANDIDATES = 3;
+
+    /**
+     * 「本书」手选候选清单（与 {@link #shelf} 同形的 JSON 对象数组）。
+     *
+     * <p>口径 = **「书架前 {@code max} 本」∪「当前选中那本」**（并集，不是相加）：
+     * <ul>
+     *   <li>选中那本**排第一**（它是"随时能切回"的那张底牌）；</li>
+     *   <li>若它本来就在前 {@code max} 本里 ⇒ 整表就 {@code max} 本，**不重复**；</li>
+     *   <li>若它已被挤出前 {@code max} 本 ⇒ 整表 {@code max + 1} 本（多出的那一本正是它）。</li>
+     * </ul>
+     * 元素字段与书架快照一致：`bookId` / `title` / `author` / `deepLink` / `cover` / `readUpdateTime`。
+     *
+     * @param max 前几本（需求原话"最近 3 本"）
+     * @return 候选数组；**不返回 null**（没缓存就是空数组）
+     */
+    public static JSONArray bookCandidates(Context c, int max) {
+        JSONArray out = new JSONArray();
+        JSONArray shelf = shelf(c);
+        String pick = CardPrefs.getBookPick(c);
+        int want = (max < 1) ? 1 : max;
+        // ① 先取"书架前 want 本"（去重）
+        JSONArray top = new JSONArray();
+        if (shelf != null) {
+            for (int i = 0; i < shelf.length() && top.length() < want; i++) {
+                JSONObject b = shelf.optJSONObject(i);
+                if (b == null) continue;
+                String id = b.optString("bookId", "");
+                if (id.length() == 0 || hasId(top, id)) continue;
+                top.put(b);
+            }
+        }
+        // ② 选中项优先入列（保证"随时能切回"），已在 top 里就不重复
+        if (pick.length() > 0 && !hasId(top, pick)) {
+            JSONObject hit = findInShelf(shelf, pick);
+            if (hit != null) out.put(hit);
+        }
+        // ③ 接上 top
+        for (int i = 0; i < top.length(); i++) out.put(top.optJSONObject(i));
+        return out;
+    }
+
+    /** 在书架快照里按 bookId 找一本；找不到返回 null。 */
+    public static JSONObject findInShelf(JSONArray shelf, String bookId) {
+        if (shelf == null || bookId == null || bookId.length() == 0) return null;
+        for (int i = 0; i < shelf.length(); i++) {
+            JSONObject b = shelf.optJSONObject(i);
+            if (b != null && bookId.equals(b.optString("bookId", ""))) return b;
+        }
+        return null;
+    }
+
+    /** 数组里是否已有这个 bookId（防御：快照理论上不重复，仍按去重处理）。 */
+    public static boolean hasId(JSONArray arr, String bookId) {
+        if (arr == null || bookId == null) return false;
+        for (int i = 0; i < arr.length(); i++) {
+            JSONObject b = arr.optJSONObject(i);
+            if (b != null && bookId.equals(b.optString("bookId", ""))) return true;
+        }
+        return false;
+    }
+
     // ── 章节目录 ──
 
     public static String chapters(Context c, String bookId) {

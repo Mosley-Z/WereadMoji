@@ -486,6 +486,25 @@ final class CardContentController {
     }
 
     /**
+     * 🆕 TASK-069：用户**手动选定**「本书」之后，立刻按新偏好重取一次。
+     *
+     * <p>调用方 = {@code OverlayController} 的「本书」候选菜单（桌面卡片长按菜单里选了一本）。
+     *
+     * <p>两步：① 先按本地缓存换帧（立刻给"变了"的反馈，哪怕内容还是旧的）；
+     * ② 再拉一次进度（{@code forceShelf=false} —— 书架 6h 缓存仍有效，
+     * **手动选书不该顺带再下 462KB**；选中的那本在快照里，链路自然会优先试它）。
+     */
+    void refreshBookAfterPick() {
+        if (cardView() != null && PeriodRange.BOOK.equals(StatsStore.getCardPeriod(ctx))) {
+            cardView().setMode(PeriodRange.BOOK);
+            cardView().setBook(BookStore.load(ctx));
+        }
+        final String key = StatsStore.getKey(ctx);
+        if (key.length() > 0) fetchBookData(key, false);
+        ov.applyVisibility();
+    }
+
+    /**
      * 补发路的静默周/月请求（TASK-012）：只写缓存，不碰卡片 UI —— 连"刷新中"都不碰。
      * keyGen 丢弃与正式路同规；回调先回收在途计数。
      */

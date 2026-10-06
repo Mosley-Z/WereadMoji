@@ -2,6 +2,7 @@ package com.inkread.weekread.net;
 
 import com.inkread.weekread.core.BookStats;
 import com.inkread.weekread.core.BookStore;
+import com.inkread.weekread.core.CardPrefs;
 import com.inkread.weekread.core.PeriodRange;
 import com.inkread.weekread.core.PeriodStats;
 
@@ -217,6 +218,10 @@ public class WereadApi {
      * 书架里混着公众号（bookId 形如 `MP_WXS_xxx`），它们不一定有阅读进度。
      * 所以前 {@link #TRY_BOOKS} 本逐个试，第一本能拿到 progress 的就用它。
      *
+     * ── 🆕 TASK-069：手动选书优先 ──
+     * {@link CardPrefs#getBookPick} 非空时，**先试用户指定的那本**，失败再按书架序回落 ——
+     * 这就是"手动选 + 自动兜底"的全部实现（不新增任何接口 / 请求形态）。
+     *
      * @param force true = 用户手动刷新（书架缓存最短间隔 {@link BookStore#SHELF_MIN_MS}）
      */
     public static void fetchBook(final Context c, final String apiKey,
@@ -277,10 +282,30 @@ public class WereadApi {
         }
         if (books == null || books.length() == 0) return null;
 
-        // ② 逐个试前几本，直到某本能拿到进度
-        int n = Math.min(TRY_BOOKS, books.length());
-        for (int i = 0; i < n; i++) {
+        // ② 候选序列：**手动选中的那本优先** → 书架前 TRY_BOOKS 本（去重）。
+        //    🆕 TASK-069（V1.2.1-beta）：`readUpdateTime` 的语义是"这本书最后一次被打开/同步"，
+        //    跟用户心里的"我在读哪本"并不总是一回事 ⇒ 给用户一个手动的否决权（CardPrefs#getBookPick）。
+        //    🔴 选中书取不到进度 ⇒ **静默回落自动**，且**不改写偏好**（书暂时没进度 ≠ 用户选错了，
+        //       下次有进度就自动生效 —— 这是拍板⑤）。
+        JSONArray cand = new JSONArray();
+        String pick = CardPrefs.getBookPick(c);
+        if (pick.length() > 0) {
+            JSONObject hit = BookStore.findInShelf(books, pick);
+            if (hit != null) cand.put(hit);          // 不在（最近 200 本）快照里 ⇒ 直接走自动
+        }
+        int looked = 0;
+        for (int i = 0; i < books.length() && looked < TRY_BOOKS; i++) {
             JSONObject b = books.optJSONObject(i);
+            if (b == null) continue;
+            looked++;
+            String id = b.optString("bookId", "");
+            if (id.length() == 0 || BookStore.hasId(cand, id)) continue;
+            cand.put(b);
+        }
+
+        // ③ 逐个试候选，直到某本能拿到进度
+        for (int i = 0; i < cand.length(); i++) {
+            JSONObject b = cand.optJSONObject(i);
             if (b == null) continue;
             String bookId = b.optString("bookId", "");
             if (bookId.length() == 0) continue;

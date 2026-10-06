@@ -519,6 +519,34 @@ public final class CardPrefs {
         sp(c).edit().putBoolean("rank_shelf_only", v).commit();
     }
 
+    // ── 🆕 TASK-069：「本书」手动选书（V1.2.1-beta）──
+    //
+    // 背景：「本书」默认取书架里 `readUpdateTime` 最大的那本（**微信读书说了算**）。
+    // 而这个字段的语义是"这本书最后一次被打开/同步"，跟用户心里的"我在读哪本"并不总是一回事
+    // ⇒ 用户会看到「卡片显示的不是我在读的那本」。
+    //
+    // 本项给用户一个**手动的否决权**：
+    //   · ""（默认）⇒ 自动：取最近在读 —— 与改造前**逐像素零差异**（验收口径）；
+    //   · 非空     ⇒ 优先取这本书的进度；**取不到进度时静默回落自动，且不改写本偏好**
+    //                （书暂时没有进度不代表用户选错了 —— 下次有进度就自动生效）。
+    // 🔴 只存 bookId（不存书名 / 封面）—— 书名封面始终从书架快照现取，避免文案过期。
+    // 🔴 越界/缺失一律回落 ""（与 note_card_size 同一套安全读出纪律）。
+
+    /** 「本书」自动档（= 最近在读）。 */
+    public static final String DEFAULT_BOOK_PICK = "";
+
+    private static final String K_BOOK_PICK = "book_pick";
+
+    /** 手动选中的 bookId；空串 = 自动（最近在读）。null 兜底为自动档。 */
+    public static String getBookPick(Context c) {
+        String v = sp(c).getString(K_BOOK_PICK, DEFAULT_BOOK_PICK);
+        return (v == null) ? DEFAULT_BOOK_PICK : v.trim();
+    }
+
+    public static void setBookPick(Context c, String bookId) {
+        sp(c).edit().putString(K_BOOK_PICK, bookId == null ? "" : bookId.trim()).commit();
+    }
+
     // ── TASK-031：本机角色（安装形态）—— 「这台设备用来读 / 用来当遥控面板」──
     //
     // 🔴 这是 **App 形态**（V1.1.0-beta，ADR-012），与遥控线的 `remote_role`（TCP 传输角色）**正交**、**不得混用**：

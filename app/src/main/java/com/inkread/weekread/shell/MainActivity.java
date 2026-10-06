@@ -13,6 +13,7 @@ import com.inkread.weekread.core.NoteStore;
 import com.inkread.weekread.core.PeriodRange;
 import com.inkread.weekread.core.PeriodStats;
 import com.inkread.weekread.core.StatsStore;
+import com.inkread.weekread.feature.BookPickView;
 import com.inkread.weekread.feature.InsightPageView;
 import com.inkread.weekread.feature.NoteExport;
 import com.inkread.weekread.feature.NotePickView;
@@ -112,6 +113,10 @@ public class MainActivity extends Activity {
      * 收起态 `GONE`；`onPickNote()` 里 {@code open(bookList, pickedBook)} 后置 `VISIBLE`。
      */
     private NotePickView notePick;
+    /** 🆕 TASK-069：「本书」选书弹层（与 {@link #notePick} 同款模态半屏，但料不同） */
+    private BookPickView bookPick;
+    /** 🆕 TASK-069：刷新行右侧的「选书」按钮（仅「本书」形态可见） */
+    private Button btnBookPick;
     /** 🆕 TASK-051（K6）：年度首拉在途标记 —— 防止反复进洞察页时重复发请求（卡面 A4）。 */
     private boolean annualLoading;
     /** 🆕 TASK-052（K7）：累计首拉在途标记 —— 与 {@link #annualLoading} 同法（卡面 A5）。 */
@@ -277,6 +282,8 @@ public class MainActivity extends Activity {
         picker = (PeriodPickerView) findViewById(R.id.picker);
         insightPage = (InsightPageView) findViewById(R.id.insight);
         notePick = (NotePickView) findViewById(R.id.note_pick);
+        bookPick = (BookPickView) findViewById(R.id.book_pick);        // 🆕 TASK-069
+        btnBookPick = (Button) findViewById(R.id.btn_book_pick);       // 🆕 TASK-069
         pageReader = findViewById(R.id.mp_reader);
         pageSettings = findViewById(R.id.mp_settings);
         pageLab = findViewById(R.id.mp_lab);
@@ -369,6 +376,31 @@ public class MainActivity extends Activity {
                 @Override
                 public void onDismiss() {
                     hideNotePick();
+                }
+            });
+        }
+
+        // ── 🆕 TASK-069：「本书」手动选书（半屏弹层）──
+        // 选中 ⇒ 写 CardPrefs#setBookPick 后**重新取一次本书**（force=true：立刻用新偏好走一遍
+        // 书架→进度链）；选「自动」⇒ 写空串，行为与改造前一致。
+        if (btnBookPick != null) {
+            btnBookPick.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    showBookPick();
+                }
+            });
+        }
+        if (bookPick != null) {
+            bookPick.setListener(new BookPickView.Listener() {
+                @Override
+                public void onPick(String bookId) {
+                    chooseBookPick(bookId);
+                }
+
+                @Override
+                public void onDismiss() {
+                    hideBookPick();
                 }
             });
         }
@@ -756,6 +788,12 @@ public class MainActivity extends Activity {
         // 🆕 TASK-057（K11）：任何页面切换（大标签 / 下拉形态）都先收起选书弹层 ——
         // 它是模态，留着会盖在别的形态上。放在这里 = 所有导航的公共入口，不会漏路径。
         hideNotePick();
+        hideBookPick();             // 🆕 TASK-069：同理收起「本书」选书弹层
+        // 🆕 TASK-069：「选书」按钮**只在「本书」形态露出**（其它形态整行只剩「刷新」，
+        //    与改造前逐像素一致）。放在所有分支之前 ⇒ 洞察页（下面早退）也不会漏。
+        if (btnBookPick != null) {
+            btnBookPick.setVisibility(PeriodRange.BOOK.equals(tabMode) ? View.VISIBLE : View.GONE);
+        }
 
         navDrop.setSelected(indexOf(tabMode));
         refreshMainTabLabels();     // 🆕 TASK-044-R1：大标签① 文案跟随形态（「本周▽」→「本月▽」…）
@@ -1065,9 +1103,11 @@ public class MainActivity extends Activity {
         findViewById(R.id.insight).setVisibility(View.GONE);
         findViewById(R.id.sep_card).setVisibility(View.GONE);
         findViewById(R.id.btn_refresh).setVisibility(View.GONE);
+        findViewById(R.id.btn_book_pick).setVisibility(View.GONE);   // 🆕 TASK-069
         findViewById(R.id.tv_remote_notice).setVisibility(View.VISIBLE);
         // 🆕 TASK-057：手机端形态下卡片相关的 UI 全隐 ⇒ 选书弹层一并收起（不留可见残影）
         findViewById(R.id.note_pick).setVisibility(View.GONE);
+        findViewById(R.id.book_pick).setVisibility(View.GONE);        // 🆕 TASK-069
     }
 
     @Override
@@ -1097,7 +1137,6 @@ public class MainActivity extends Activity {
     private void refreshEmbeddedPages() {
         if (settingsCtrl != null) {
             settingsCtrl.refreshRoleVisibility();
-            settingsCtrl.refreshStatus();
             settingsCtrl.refreshChannelTip();
             settingsCtrl.refreshUpdateUi();
         }
@@ -1372,6 +1411,47 @@ public class MainActivity extends Activity {
         // 🆕 TASK-057 R1（2026-10-06）：桌面卡片也跟随「选书」⇒ 通知它按新池子立刻重绘。
         // 此刻 App 在前台、桌面卡片被压成 GONE（ownUi）⇒ 这次 sync 只是把内容换好，回桌面即见。
         CardA11yService.sync();
+    }
+
+    // ══════════════ 🆕 TASK-069（V1.2.1-beta）：「本书」手动选书 ══════════════
+
+    /**
+     * 点「本书」页的「选书」⇒ 弹半屏候选列表。
+     *
+     * <p>料 = {@link BookStore#bookCandidates}（**只读本地书架快照，零新增网络请求**）；
+     * 当前档 = {@link CardPrefs#getBookPick}（空串 = 自动）。
+     */
+    private void showBookPick() {
+        if (bookPick == null) return;
+        bookPick.open(BookStore.bookCandidates(this, BookStore.BOOK_CANDIDATES),
+                CardPrefs.getBookPick(this));
+        bookPick.setVisibility(View.VISIBLE);
+    }
+
+    /** 收起弹层（点空白 / 关闭 / 选中后 / 离开本书页都走这里） */
+    private void hideBookPick() {
+        if (bookPick == null || bookPick.getVisibility() != View.VISIBLE) return;
+        bookPick.onHidden();
+        bookPick.setVisibility(View.GONE);
+        // 弹层盖过的那块要重画：GONE 之后底层卡片的像素不会自己回来
+        if (card != null) card.invalidate();
+        if (pageReader != null) pageReader.invalidate();
+    }
+
+    /**
+     * 在弹层里选了某本（`bookId` 空串 = 「自动（最近在读）」）。
+     *
+     * <p>🔴 顺序不能反：先落偏好 → 收起弹层 → 再**强制取一次**本书。
+     * {@link WereadApi#fetchBook} 在链路里**读偏好**决定优先试哪本，早取会取到旧档。
+     * 取完 {@code refreshBook} 内部会 {@code CardA11yService.sync()} ⇒ 桌面卡片同步换书。
+     *
+     * <p>选「自动」= 写空串 ⇒ 行为与改造前**逐像素一致**（验收 A4）。
+     */
+    private void chooseBookPick(String bookId) {
+        CardPrefs.setBookPick(this, bookId);
+        hideBookPick();
+        refresh(true);                          // force：立刻按新偏好走一遍 书架→进度 链
+        CardDebug.note(this, "book pick=" + (bookId.length() == 0 ? "auto" : bookId));
     }
 
     /**

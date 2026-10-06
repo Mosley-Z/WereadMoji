@@ -16,6 +16,11 @@
     <string name="btn_help">怎么用</string>
     <string name="btn_refresh">刷新</string>
 
+    <!-- 🆕 TASK-069：「本书」手动选书（App 内「选书」按钮）。
+         桌面卡片长按菜单与候选弹层的文案与既有 CardMenuView / NotePickView 同规，
+         直接写在代码里（那两处也是硬编码，保持一致，不新增死资源）。 -->
+    <string name="btn_pick_book">选书</string>
+
     <!-- 🆕 TASK-044（V1.2.0-beta）：App 内导航重构 —— 大标签栏 / 阅读页下拉行 / 占位容器 -->
     <string name="main_tab_settings">设置</string>
     <string name="main_tab_lab">实验室</string>

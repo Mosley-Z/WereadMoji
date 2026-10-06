@@ -71,6 +71,21 @@ final class OverlayController {
      * 所以点第 index 行就取这里第 index 个形态，安全。
      */
     private final java.util.List<String> periodMenuModes = new java.util.ArrayList<String>();
+
+    /**
+     * 🆕 TASK-069：「本书」候选菜单（长按菜单里选「选书…」后弹出）。
+     *
+     * 与 {@link #menuView} / {@link #periodMenuView} 同款的一层透明窗（同一位置），
+     * 三者**互斥显示** —— 开一个先关另外两个。
+     */
+    private CardMenuView bookPickMenuView;
+    /** 候选菜单当前这一屏每行对应的 bookId（索引 0 = 自动档 `""`），与行一一对应。 */
+    private final java.util.List<String> bookPickIds = new java.util.ArrayList<String>();
+    /** 长按菜单里**是否含**「选书…」那一项（= 当前卡片是「本书」形态）。 */
+    private boolean menuHasBookPick = false;
+    /** 「本书」候选菜单是否开着。 */
+    private boolean bookPickOpen = false;
+
     private boolean windowAdded = false;
 
     // ══════════════════════ 本记「展开▽」（v0.9，TASK-017）══════════════════════
@@ -139,19 +154,23 @@ final class OverlayController {
     private static final int PAGE_HIDE_FROM = 2;
 
     /** 长按菜单的四项，与 {@link #HIDE_MS} 一一对应 */
-    private static final String[] MENU_ITEMS = {
+    private static final String[] HIDE_LABELS = {
             "隐藏 15 秒（测试）",
             "隐藏 1 分钟",
             "隐藏 5 分钟",
             "取消"
     };
     /**
-     * 每个菜单项对应的隐藏时长（毫秒）。
+     * 每个隐藏菜单项对应的隐藏时长（毫秒）。
      *
      * 15 秒那档是**测试期**用的（用户拍板：先用短时长提高测试效率），
      * 正式版会把它去掉或挪到最后 —— 排序上把它放第一项，测试时点起来最快。
      */
     private static final long[] HIDE_MS = {15_000L, 60_000L, 300_000L, 0L};
+    /** 🆕 TASK-069：「本书」形态下长按菜单**最前面**多出来的那一项。 */
+    private static final String MENU_LABEL_PICK_BOOK = "选书…";
+    /** 🆕 TASK-069：候选列表第一行（= 恢复"最近在读"自动档）。 */
+    private static final String BOOK_PICK_AUTO_LABEL = "自动（最近在读）";
 
     /** 菜单多久自动消失（毫秒）。没人操作时别一直占着卡片区域的触摸 */
     private static final long MENU_AUTO_MS = 8_000L;
@@ -179,6 +198,14 @@ final class OverlayController {
         @Override
         public void run() {
             dismissPeriodMenu();
+        }
+    };
+
+    /** 🆕 TASK-069：「本书」候选菜单的超时收摊（同一条纪律） */
+    private final Runnable bookPickTimeout = new Runnable() {
+        @Override
+        public void run() {
+            dismissBookPickMenu();
         }
     };
 
@@ -308,11 +335,19 @@ final class OverlayController {
 
             // 长按菜单：铺满卡片的透明窗口，平时 GONE —— 见 CardMenuView 的说明
             menuView = new CardMenuView(ctx);
-            menuView.setItems(MENU_ITEMS);
+            menuView.setItems(HIDE_LABELS);        // 实际清单每次 showMenu 时按形态重建（TASK-069）
             menuView.setListener(new CardMenuView.Listener() {
                 @Override
                 public void onSelect(int index) {
-                    long ms = (index >= 0 && index < HIDE_MS.length) ? HIDE_MS[index] : 0L;
+                    // 🆕 TASK-069：「本书」形态下菜单**第 0 行**是「选书…」⇒ 转入候选菜单
+                    if (menuHasBookPick && index == 0) {
+                        dismissMenu();
+                        showBookPickMenu();
+                        return;
+                    }
+                    // 其余行 = 隐藏时长（索引要减掉前面多出的那一项）
+                    int k = index - (menuHasBookPick ? 1 : 0);
+                    long ms = (k >= 0 && k < HIDE_MS.length) ? HIDE_MS[k] : 0L;
                     dismissMenu();
                     if (ms > 0L) startHide(ms);
                 }
@@ -343,6 +378,26 @@ final class OverlayController {
             });
             wm.addView(periodMenuView, OverlayWindow.paramsMenu(OverlayWindow.typeAccessibility()));
 
+            // 🆕 TASK-069：「本书」候选菜单（长按菜单 → 「选书…」）—— 与上面两张菜单同款的一层透明窗
+            bookPickMenuView = new CardMenuView(ctx);
+            bookPickMenuView.setListener(new CardMenuView.Listener() {
+                @Override
+                public void onSelect(int index) {
+                    String id = (index >= 0 && index < bookPickIds.size()) ? bookPickIds.get(index) : null;
+                    dismissBookPickMenu();
+                    if (id == null || content == null) return;
+                    CardPrefs.setBookPick(ctx, id);          // 空串 = 恢复自动档
+                    CardDebug.note(ctx, "book pick=" + (id.length() == 0 ? "auto" : id));
+                    content.refreshBookAfterPick();          // 立刻按新偏好重取一次
+                }
+
+                @Override
+                public void onDismiss() {
+                    dismissBookPickMenu();
+                }
+            });
+            wm.addView(bookPickMenuView, OverlayWindow.paramsMenu(OverlayWindow.typeAccessibility()));
+
             windowAdded = true;
         } catch (Throwable t) {
             // 🔴 A1：半装配失败时，**已 addView 的窗必须先逐个摘干净，再清引用**。
@@ -359,6 +414,7 @@ final class OverlayController {
             todoViews.clear();
             removeSafely(menuView);
             removeSafely(periodMenuView);
+            removeSafely(bookPickMenuView);
 
             view = null;
             hitView = null;
@@ -368,6 +424,8 @@ final class OverlayController {
             expandView = null;
             menuView = null;
             periodMenuView = null;
+            bookPickMenuView = null;
+            bookPickOpen = false;
             cardH = CardSpec.cardHeight();
             windowAdded = false;
         }
@@ -401,6 +459,10 @@ final class OverlayController {
             }
             if (periodMenuView != null) {
                 wm.updateViewLayout(periodMenuView,
+                        OverlayWindow.paramsMenu(OverlayWindow.typeAccessibility(), h));
+            }
+            if (bookPickMenuView != null) {          // 🆕 TASK-069
+                wm.updateViewLayout(bookPickMenuView,
                         OverlayWindow.paramsMenu(OverlayWindow.typeAccessibility(), h));
             }
             CardDebug.note(ctx, "card height=" + h);
@@ -508,13 +570,28 @@ final class OverlayController {
 
     void showMenu() {
         if (menuView == null) return;
-        dismissPeriodMenu();                 // 两张菜单互斥：开这张前先把另一张收掉
+        dismissPeriodMenu();                 // 三张菜单互斥：开这张前先把另两张收掉
+        dismissBookPickMenu();
+        // 🆕 TASK-069：**只有「本书」形态**才在菜单最前面多一项「选书…」。
+        //   其余形态（周/月/本记/待办）逐像素不变 —— 清单长度都没变。
+        menuHasBookPick = PeriodRange.BOOK.equals(StatsStore.getCardPeriod(ctx));
+        if (menuHasBookPick) {
+            String[] items = new String[HIDE_LABELS.length + 1];
+            items[0] = MENU_LABEL_PICK_BOOK;
+            System.arraycopy(HIDE_LABELS, 0, items, 1, HIDE_LABELS.length);
+            menuView.setItems(items);
+        } else {
+            menuView.setItems(HIDE_LABELS);
+        }
+        menuView.setBoxWidth(0f);            // 复位默认框宽（候选菜单可能把它改宽了）
+        menuView.setMarkedIndex(-1);         // 长按菜单没有"当前档"标记
+        menuView.setLastIsCancel(true);      // 末行「取消」照旧画灰
         st.menuOpen = true;
         if (ui != null) {
             ui.removeCallbacks(menuTimeout);
             ui.postDelayed(menuTimeout, MENU_AUTO_MS);
         }
-        CardDebug.note(ctx, "longPress → menu");
+        CardDebug.note(ctx, "longPress → menu" + (menuHasBookPick ? " (+选书)" : ""));
         applyVisibility();
     }
 
@@ -554,6 +631,77 @@ final class OverlayController {
         st.periodMenuOpen = false;
         if (ui != null) ui.removeCallbacks(periodMenuTimeout);
         applyVisibility();
+    }
+
+    /**
+     * 🆕 TASK-069：打开「本书」候选菜单（桌面长按菜单 → 「选书…」）。
+     *
+     * <p>行 = **第 0 行恒为「自动（最近在读）」**（{@code bookId=""}）+ 候选书（{@link BookStore#bookCandidates}）。
+     * 料全部来自本地书架快照 ⇒ 这一屏**零网络请求**。
+     *
+     * <p>「当前档」用左黑竖条标出（墨屏没有高亮色）：手动选中的那本；没手动选就标在自动档上。
+     * 框宽放到 300px（书名比「隐藏 5 分钟」长），末行**不**画成灰「取消」（那是真书）。
+     */
+    void showBookPickMenu() {
+        if (bookPickMenuView == null) return;
+        dismissMenu();                       // 三张菜单互斥
+        dismissPeriodMenu();
+
+        org.json.JSONArray cands = BookStore.bookCandidates(ctx, BookStore.BOOK_CANDIDATES);
+        String pick = CardPrefs.getBookPick(ctx);
+        bookPickIds.clear();
+        java.util.List<String> rows = new java.util.ArrayList<String>();
+        bookPickIds.add("");                 // 索引 0 = 自动档
+        rows.add(BOOK_PICK_AUTO_LABEL);
+        int marked = 0;                      // 默认标在自动档
+        if (cands != null) {
+            for (int i = 0; i < cands.length(); i++) {
+                org.json.JSONObject b = cands.optJSONObject(i);
+                if (b == null) continue;
+                String id = b.optString("bookId", "");
+                if (id.length() == 0) continue;
+                String title = b.optString("title", "").trim();
+                if (title.length() == 0) title = "（未命名）";
+                bookPickIds.add(id);
+                rows.add(fitPickTitle(title));
+                if (pick.length() > 0 && pick.equals(id)) marked = rows.size() - 1;
+            }
+        }
+        bookPickMenuView.setBoxWidth(300f);  // 书名长，加宽
+        bookPickMenuView.setItems(rows.toArray(new String[rows.size()]));
+        bookPickMenuView.setMarkedIndex(marked);
+        bookPickMenuView.setLastIsCancel(false);   // 末行是真书，别画灰
+        bookPickOpen = true;
+        if (ui != null) {
+            ui.removeCallbacks(bookPickTimeout);
+            ui.postDelayed(bookPickTimeout, MENU_AUTO_MS);
+        }
+        CardDebug.note(ctx, "bookPick menu (" + (rows.size() - 1) + " cands, marked=" + marked + ")");
+        applyVisibility();
+    }
+
+    void dismissBookPickMenu() {
+        if (!bookPickOpen) return;
+        bookPickOpen = false;
+        if (ui != null) ui.removeCallbacks(bookPickTimeout);
+        applyVisibility();
+    }
+
+    /** 候选行书名最多留几个字（见 {@link #fitPickTitle}）。 */
+    private static final int PICK_TITLE_MAX = 12;
+
+    /**
+     * 候选行书名截断：**宁可截字，也不要缩字号**。
+     *
+     * <p>卡片菜单框宽 300px、正文 19.2px（`16 × 屏高 × 0.0015`）⇒ 一行约放 13 个汉字。
+     * 微信读书的书名很长（实测「卡拉马佐夫兄弟（套装上下册）（陀思妥耶夫斯基文集2015）」有 30 字），
+     * 若交给 {@link CardMenuView} 自带的"缩到放得下"，会被压到下限 12px ——
+     * **同一张菜单里字号参差**，正是 TASK-070① 用户点名的那类毛病。
+     * ⇒ 这里先截到 12 字，整张菜单**字号统一**。
+     */
+    private static String fitPickTitle(String t) {
+        if (t == null) return "";
+        return (t.length() > PICK_TITLE_MAX) ? (t.substring(0, PICK_TITLE_MAX) + "…") : t;
     }
 
     /** 隐藏 ms 毫秒后自动恢复（恢复那一瞬间若不在桌面，就等回到桌面再显示） */
@@ -623,6 +771,10 @@ final class OverlayController {
         if (periodMenuView != null) {
             periodMenuView.setVisibility((show && st.periodMenuOpen) ? View.VISIBLE : View.GONE);
         }
+        // 🆕 TASK-069：「本书」候选菜单 —— 同一条纪律（缺了这一句，藏起来的卡片上会留下吃点击的窗）
+        if (bookPickMenuView != null) {
+            bookPickMenuView.setVisibility((show && bookPickOpen) ? View.VISIBLE : View.GONE);
+        }
         CardDebug.note(ctx, "visibility=" + (show ? "VISIBLE" : "GONE")
                 + " (enabled=" + CardPrefs.isEnabled(ctx)
                 + ", st.onDesktop=" + st.onDesktop
@@ -651,6 +803,7 @@ final class OverlayController {
         todoViews.clear();
         removeSafely(menuView);
         removeSafely(periodMenuView);
+        removeSafely(bookPickMenuView);
 
         view = null;
         hitView = null;
@@ -660,7 +813,9 @@ final class OverlayController {
         expandView = null;
         menuView = null;
         periodMenuView = null;
+        bookPickMenuView = null;
         st.periodMenuOpen = false;
+        bookPickOpen = false;
         cardH = CardSpec.cardHeight();
         cardVisible = false;
         expandBoxScreen.setEmpty();

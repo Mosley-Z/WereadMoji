@@ -87,6 +87,9 @@ public class StatsStore {
         clearCache(c);
         NoteStore.clear(c);
         BookStore.clear(c);
+        // 🆕 TASK-069：手动选中的「本书」也是**账号数据**（旧账号的 bookId 对新账号毫无意义）
+        //   ⇒ 换 Key 时一并回到自动档（否则会一直尝试用别人的 bookId 取进度）。
+        CardPrefs.setBookPick(c, "");
     }
 
     // ── 卡片周期偏好（① B：设置页定默认，卡片左上角临时切换，改的是同一个值）──

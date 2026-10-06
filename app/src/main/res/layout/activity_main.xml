@@ -121,6 +121,23 @@
                         android:text="@string/btn_refresh"
                         android:textColor="@color/btn_ink_text"
                         android:textSize="17sp" />
+
+                    <!-- 🆕 TASK-069：只在「本书」形态可见（showReaderPage 控制）。
+                         收起（GONE）时「刷新」独占整行 ⇒ 其它形态版面与改造前一致。 -->
+                    <Button
+                        android:id="@+id/btn_book_pick"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_marginLeft="10dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/btn_ink"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:stateListAnimator="@null"
+                        android:text="@string/btn_pick_book"
+                        android:textColor="@color/btn_ink_text"
+                        android:textSize="17sp"
+                        android:visibility="gone" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -140,6 +157,14 @@
                  点上半屏遮罩/「关闭」即收起。放在最后 ⇒ 盖在 nav_drop 之上。 -->
             <com.inkread.weekread.feature.NotePickView
                 android:id="@+id/note_pick"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone" />
+
+            <!-- 🆕 TASK-069：「本书」选书弹层。**只挂在这里**（App 阅读页），
+                 桌面悬浮卡那套路径整条链路都碰不到它 ⇒ 桌面「本书」形态零影响结构性成立。 -->
+            <com.inkread.weekread.feature.BookPickView
+                android:id="@+id/book_pick"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:visibility="gone" />

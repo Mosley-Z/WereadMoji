@@ -45,8 +45,22 @@ public final class CoverStore {
     private static final String DIR = "covers";
     /** 下载超时（毫秒）。封面不急，放宽一点减少失败率 */
     private static final int TIMEOUT_MS = 15_000;
-    /** 正在下载的 bookId（防重复触发；同进程两个界面共用本类） */
+    /**
+     * 正在下载的 bookId（防重复触发；同进程两个界面共用本类）。
+     *
+     * <p>🆕 TASK-069：同一本书**同时**被两个界面请求是常态 —— App 的本书页与桌面卡片
+     * 都会为"当前这本"调 {@code loadCover}，而且 App 侧选完书后紧接着就
+     * {@code CardA11yService.sync()}（同一进程、同一个本类）。原先"已在下载就直接 return"
+     * 会把**后来者丢掉**：它既不拿图、事后也不会重试 ⇒ 表现为
+     * **"换了书桌面卡片还是占位框，手动刷新一下才出来"**（真机实测）。
+     * ⇒ 记下**所有**等待者，下载完成时逐个回调。
+     */
     private static String inFlight = null;
+    /** 与 {@link #inFlight} 同一本书的所有等待者（回调一律切主线程） */
+    private static final java.util.List<Callback> inFlightCbs =
+            new java.util.ArrayList<Callback>();
+    /** 保护 {@link #inFlight} / {@link #inFlightCbs} 的跨线程访问（工作线程要搬走整批） */
+    private static final Object LOCK = new Object();
 
     private static File fileFor(Context c, String bookId) {
         File dir = new File(c.getExternalFilesDir(null), DIR);
@@ -83,8 +97,16 @@ public final class CoverStore {
             cb.onCover(null);
             return;
         }
-        if (bookId.equals(inFlight)) return;           // 已经在下了，别重复
-        inFlight = bookId;
+        synchronized (LOCK) {
+            if (bookId.equals(inFlight)) {
+                // 🆕 TASK-069：同一本书已在下载 ⇒ 挂到同一批等待者上，**别把后来者丢掉**
+                inFlightCbs.add(cb);
+                return;
+            }
+            inFlight = bookId;
+            inFlightCbs.clear();
+            inFlightCbs.add(cb);
+        }
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -94,11 +116,16 @@ public final class CoverStore {
                 } catch (Throwable ignored) {
                 }
                 final Bitmap bmp = ok ? peek(c, bookId, maxW) : null;
-                inFlight = null;
+                final java.util.List<Callback> cbs;
+                synchronized (LOCK) {
+                    cbs = new java.util.ArrayList<Callback>(inFlightCbs);
+                    inFlightCbs.clear();
+                    inFlight = null;
+                }
                 new Handler(Looper.getMainLooper()).post(new Runnable() {
                     @Override
                     public void run() {
-                        cb.onCover(bmp);
+                        for (int i = 0; i < cbs.size(); i++) cbs.get(i).onCover(bmp);
                     }
                 });
             }
