@@ -117,6 +117,25 @@
                     android:textColor="#FF3C3C3C"
                     android:textSize="13sp" />
 
+                <!-- 🆕 TASK-065：手机角色的"注意事项"折叠卡（仅 role=手机 可见，refreshRoleUi 控制） -->
+                <com.inkread.weekread.ui.FoldHintView
+                    android:id="@+id/fold_role_more"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/tv_role_more"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:lineSpacingExtra="3dp"
+                    android:text="@string/lab_role_hint_phone_more"
+                    android:textColor="#FF3C3C3C"
+                    android:textSize="13sp"
+                    android:visibility="gone" />
+
                 <!-- ============================================================
                      🆕 TASK-029：手机端「晃动翻页」（仅 role=手机 显示）
                      🔴 必须独立成块、放在 ll_remote_session 之外：ll_remote_session 是
@@ -562,32 +581,59 @@
                             android:textColor="#FF3C3C3C"
                             android:textSize="13sp" />
 
-                        <TextView
+                        <!-- 🆕 TASK-065：长段说明收进折叠卡（首屏保持三行内）；点标题行展开 / 收起。 -->
+                        <com.inkread.weekread.ui.FoldHintView
+                            android:id="@+id/fold_bt_pair"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
-                            android:lineSpacingExtra="3dp"
-                            android:text="@string/lab_bt_pair_tip"
-                            android:textColor="#FF3C3C3C"
-                            android:textSize="13sp" />
+                            android:layout_marginTop="12dp" />
 
-                        <TextView
+                        <LinearLayout
+                            android:id="@+id/ll_fold_bt_pair"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:lineSpacingExtra="3dp"
-                            android:text="@string/lab_bt_reconnect_tip"
-                            android:textColor="#FF3C3C3C"
-                            android:textSize="13sp" />
+                            android:orientation="vertical"
+                            android:visibility="gone">
 
-                        <TextView
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:lineSpacingExtra="3dp"
+                                android:text="@string/lab_bt_pair_tip"
+                                android:textColor="#FF3C3C3C"
+                                android:textSize="13sp" />
+                        </LinearLayout>
+
+                        <com.inkread.weekread.ui.FoldHintView
+                            android:id="@+id/fold_bt_more"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:lineSpacingExtra="3dp"
-                            android:text="@string/lab_bt_not_conflict_tip"
-                            android:textColor="#FF3C3C3C"
-                            android:textSize="13sp" />
+                            android:layout_marginTop="8dp" />
+
+                        <LinearLayout
+                            android:id="@+id/ll_fold_bt_more"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:visibility="gone">
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:lineSpacingExtra="3dp"
+                                android:text="@string/lab_bt_reconnect_tip"
+                                android:textColor="#FF3C3C3C"
+                                android:textSize="13sp" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:lineSpacingExtra="3dp"
+                                android:text="@string/lab_bt_not_conflict_tip"
+                                android:textColor="#FF3C3C3C"
+                                android:textSize="13sp" />
+                        </LinearLayout>
                     </LinearLayout><!-- /ll_bt_controls -->
 
                     <!-- ── 墨水屏端说明（手机端隐藏）—— 双侧明示，验收 A10 ── -->

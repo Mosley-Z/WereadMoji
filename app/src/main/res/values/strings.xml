@@ -111,7 +111,8 @@
     <string name="remote_svc_label">微读墨记 · 遥控翻页</string>
     <string name="a11y_remote_desc">遥控翻页（实验性）：手机端用它接收音量键并向墨水屏发送翻页指令；墨水屏端用它点击阅读页左右边界完成翻页。不读取屏幕内容；仅在「开始遥控」的会话期间联网。注意：同类按键服务（如开关控制）同机只能启用一个，否则收不到按键。</string>
 
-    <string name="settings_hint">获取 API Key：浏览器打开 weread.qq.com/r/weread-skills，点「快速配置」登录微信读书，再点「获取 API Key」复制（wrk- 开头），粘贴到上面保存。\n\nKey 只存在本机，仅用于读取你自己的阅读统计，不会上传。</string>
+    <!-- 🆕 TASK-065：128 → 两行（「一屏三行内」原则）。事实一字不变，只压句式。 -->
+    <string name="settings_hint">Key 怎么拿：weread.qq.com/r/weread-skills → 快速配置 → 获取 API Key → 粘贴到上面保存。\nKey 只存本机，仅用于读取你自己的统计，不上传。</string>
     <!-- v0.5.0：版本与更新（在线更新） -->
     <string name="label_update">版本与更新</string>
     <string name="btn_check_update">检查更新</string>
@@ -151,7 +152,7 @@
     <string name="label_install_role">本机角色</string>
     <string name="install_role_reader">阅读器端</string>
     <string name="install_role_phone">手机端</string>
-    <string name="install_role_tip">同一 APK 两种形态：「阅读器端」= 正常看阅读统计 + 桌面卡片（默认）；「手机端」= 当遥控控制面板用，主入口直接进「设置-实验室」，只显示与手机相关的子标签。切换后重开 App 生效。此选择只存本机、不上传。</string>
+    <string name="install_role_tip">同一 APK 两种形态：阅读器端 = 看阅读统计 + 桌面卡片（默认）；手机端 = 当遥控面板用，主入口进「设置-实验室」。切换后重开 App 生效。只存本机、不上传。</string>
     <string name="install_role_changed">已切换本机角色，重开 App 后生效。</string>
     <string name="install_role_dialog_title">这台设备用来做什么？</string>
     <string name="install_role_dialog_msg">为手机端安装：把它当遥控面板用 —— 主入口直接进「设置-实验室」，不显示阅读统计。\n为阅读器安装：正常看阅读统计与桌面卡片。\n\n以后可在「设置 - 初始化 - 本机角色」里随时更改。</string>
@@ -173,8 +174,10 @@
     <string name="lab_role_eink">墨水屏</string>
     <string name="lab_role_phone">手机</string>
     <string name="lab_role_hint_off">未启用遥控。选「墨水屏」或「手机」后，才会出现下面的开关与提示。</string>
-    <string name="lab_role_hint_eink">本机 = 墨水屏端：接收手机发来的翻页指令，点击阅读页左右边界翻页。用法：① 本机先连上手机热点；② 点「开始遥控」；③ 在手机上也点「开始遥控」，等它连入。需先在系统无障碍里打开「微读墨记 · 遥控」。</string>
-    <string name="lab_role_hint_phone">本机 = 手机端：捕获音量键，把翻页指令发给墨水屏。用法：① 打开手机热点；② 点「开始遥控」；③ 等墨水屏连入后，按音量键即可翻页。⚠ 手机屏幕熄灭或锁屏后，系统不再向本 App 派发音量键，请保持屏幕点亮（可调最低亮度）。想息屏时也用：可在系统「自由窗口」里把本应用归入「游戏场景应用」，开启「息屏挂机」，并把息屏设为「始终显示」（系统侧设置，未实测）。也可开启下面的「晃动翻页」：晃一晃手机就能翻页。需先在系统无障碍里打开「微读墨记 · 遥控」。</string>
+    <string name="lab_role_hint_eink">本机 = 墨水屏端：接收手机发来的翻页指令，点击阅读页左右边界翻页。用法：① 本机连上手机热点 → ② 点「开始遥控」 → ③ 手机上也点「开始遥控」，等它连入。需先在系统无障碍里打开「微读墨记 · 遥控」。</string>
+    <!-- 🆕 TASK-065：226 → 主屏 2 行；长尾（息屏 / 晃动 / 无障碍）收进折叠卡 lab_role_hint_phone_more。 -->
+    <string name="lab_role_hint_phone">本机 = 手机端：捕获音量键，把翻页指令发给墨水屏。用法：① 开手机热点 → ② 点「开始遥控」 → ③ 等墨水屏连入，按音量键翻页。</string>
+    <string name="lab_role_hint_phone_more">· 屏幕熄灭 / 锁屏后收不到音量键 → 保持亮屏（可调最低亮度）。\n· 也能用「晃动翻页」：晃一晃手机即可（见下方）。\n· 需先在系统无障碍里打开「微读墨记 · 遥控」。</string>
     <string name="lab_btn_start">开始遥控</string>
     <string name="lab_btn_stop">结束遥控</string>
     <string name="lab_status_prefix">状态：</string>
@@ -220,7 +223,11 @@
             ② 不得出现「读取屏幕内容」字样；③ 不写"装上即用"（必须一次性配对）。
          只写已验证事实：需一次性配对；墨水屏端无需启用、也不影响被手机控制（HID 走 OS 输入源层，不经墨水屏 App）。 -->
     <string name="lab_tab_bt">蓝牙控制</string>
-    <string name="lab_bt_intro">把本机当「蓝牙键盘」：本机发翻页键，墨水屏上的微信读书直接翻页（走蓝牙，不用连热点）。默认关闭，与现在完全一样。</string>
+    <string name="lab_bt_intro">把本机当「蓝牙键盘」：发翻页键，墨水屏上的微信读书直接翻页（走蓝牙，不用热点）。默认关闭。</string>
+    <!-- 🆕 TASK-065：折叠卡标题（自绘 FoldHintView），把长段说明收进折叠，首屏保持三行内。 -->
+    <string name="fold_bt_pair">首次配对（三步）</string>
+    <string name="fold_bt_more">连不上怎么办 / 注意事项</string>
+    <string name="fold_role_more">注意事项（点开）</string>
     <string name="lab_bt_enable">启用蓝牙控制（本机当蓝牙键盘）</string>
     <string name="lab_bt_unsupported">⚠ 本机不支持蓝牙控制（需 Android 9 及以上）。下面的开关不可用，翻页请改用「热点翻页」。</string>
     <string name="lab_bt_status_prefix">状态：</string>
@@ -230,21 +237,23 @@
     <string name="lab_bt_test_label">测试翻页：</string>
     <string name="lab_bt_test_prev">上一页</string>
     <string name="lab_bt_test_next">下一页</string>
-    <string name="lab_bt_test_tip">连接成功后，点上面的「上一页 / 下一页」可立即验证：墨水屏上的微信读书应跟着翻页（不会弹划线/想法页）。</string>
-    <string name="lab_bt_pair_tip">首次使用要配对一次：① 先打开上面的开关（本机注册为蓝牙键盘）；② 在墨水屏的系统「设置 · 蓝牙」里选「与新设备配对」，扫描并点本机的蓝牙名；③ 两边确认配对码。⚠ 若本机与这台墨水屏以前配对过，请先在两侧「取消配对 / 忘记此设备」，再按上面重新配对（旧配对里没有蓝牙键盘能力，不重新配对连不上）。配对一次后，以后打开开关，多数情况下墨水屏会自动连回。</string>
-    <string name="lab_bt_reconnect_tip">若一直连不上：请在墨水屏的「设置 · 已连接的设备」→「之前连接的设备」里，点本机蓝牙名即可连回（重连由墨水屏一侧发起）。</string>
-    <string name="lab_bt_not_conflict_tip">「蓝牙控制」与「热点翻页」是两条独立通道。开启「蓝牙控制」时，本机原有的热点遥控会话会自动结束，避免两个通道打架。</string>
+    <string name="lab_bt_test_tip">连接成功后点上面按钮即可验证：墨水屏应跟着翻页（不会弹划线 / 想法页）。</string>
+    <!-- 🆕 TASK-065（A2「一处权威」）：配对**全步骤**只在 help.txt 一份；页内只留要点摘要，
+         去掉了与 lab_bt_pair_guide / help.txt 的三处重复。 -->
+    <string name="lab_bt_pair_tip">⚠ 曾与这台墨水屏配对过：先在两侧「取消配对 / 忘记此设备」再重配 —— 旧配对里没有蓝牙键盘能力，不重配连不上。配对一次后，打开开关多会自动连回。完整步骤见「怎么用」。</string>
+    <string name="lab_bt_reconnect_tip">若一直连不上：在墨水屏「设置 · 已连接的设备 → 之前连接的设备」里点本机蓝牙名即可连回。</string>
+    <string name="lab_bt_not_conflict_tip">「蓝牙控制」与「热点翻页」二选一：开蓝牙控制时，热点遥控会自动结束。</string>
     <string name="lab_bt_eink_note">本机 = 墨水屏端：无需开启「蓝牙控制」，也不影响被手机端的蓝牙控制（翻页键由系统直接接收，不经本 App）。这一页只是说明，不开启本项就没有任何后台行为。</string>
     <!-- 🆕 TASK-034：断链探测 + 恢复引导（含 ROM 无 HID profile 的显式提示） -->
     <string name="lab_bt_status_lost">已断开（等待墨水屏重连）</string>
-    <string name="lab_bt_reconnect_guide">👉 恢复方法：墨水屏上打开「设置 · 已连接的设备」，在「之前连接的设备」里点本机蓝牙名，即可连回。重连只能由墨水屏一侧发起，手机这边点不动。</string>
+    <string name="lab_bt_reconnect_guide">👉 恢复：墨水屏「设置 · 已连接的设备 → 之前连接的设备」→ 点本机蓝牙名。重连只能由墨水屏发起，手机这边点不动。</string>
     <string name="lab_bt_noprofile">⚠ 本机系统未提供「蓝牙控制」所需的蓝牙键盘能力，开关不可用。翻页请改用「热点翻页」。</string>
     <string name="lab_bt_noti_init">保持手机蓝牙键盘注册（息屏可用）</string>
     <string name="lab_bt_noti_registered">等待墨水屏连接…</string>
     <string name="lab_bt_noti_connected">已连接 %1$s</string>
     <string name="lab_bt_noti_disconnected">已断开 · 请在墨水屏点「连接」</string>
     <!-- 🆕 TASK-035：首次配对引导（App 内让本机可被发现） -->
-    <string name="lab_bt_pair_guide">👉 首次配对（三步）：① 打开上面的开关；② 点下面按钮让本机可被发现，在系统弹窗点「允许」；③ 墨水屏上：设置 → 蓝牙 →「与新设备配对」，扫描点本机蓝牙名，两侧确认配对码。\n⚠ 曾与本机配对过：请先在两侧「取消配对 / 忘记设备」再重配，否则连不上。</string>
+    <string name="lab_bt_pair_guide">👉 首次配对：① 打开开关；② 点下面「让本机可被发现」并允许；③ 到墨水屏扫描本机蓝牙名配对。完整步骤见「怎么用」。</string>
     <string name="lab_bt_btn_discoverable">让本机可被发现（配对用）</string>
     <string name="lab_bt_discoverable_tip">只在配对时需要。允许后本机 5 分钟内可被墨水屏发现；到时间会自动恢复隐藏，不影响日常使用。</string>
     <string name="lab_bt_discoverable_ok">已允许：本机 %1$d 秒内可被墨水屏发现，请到墨水屏上扫描配对。</string>

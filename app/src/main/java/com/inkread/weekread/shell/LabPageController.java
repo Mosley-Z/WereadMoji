@@ -10,6 +10,7 @@ import com.inkread.weekread.remote.RemoteKeyService;
 import com.inkread.weekread.remote.RemoteLinkManager;
 import com.inkread.weekread.remote.RemoteRole;
 import com.inkread.weekread.remote.ShakeDetector;
+import com.inkread.weekread.ui.FoldHintView;
 import com.inkread.weekread.ui.SegTabView;
 
 import android.Manifest;
@@ -103,6 +104,8 @@ public class LabPageController {
     private Button btnBtTestPrev;
     private Button btnBtTestNext;
     private TextView tvBtEinkNote;       // 墨水屏端说明（手机端隐藏）
+    private View foldRoleMore;           // 🆕 TASK-065：手机角色「注意事项」折叠卡标题行
+    private View tvRoleMore;             // 🆕 TASK-065：手机角色「注意事项」折叠卡内容
     /** 防回环：refreshBtUi() 回填勾选态时会触发监听，置位期间忽略回调。 */
     private boolean mBtUiSyncing;
 
@@ -174,6 +177,16 @@ public class LabPageController {
         btnBtTestPrev = (Button) host.findViewById(R.id.btn_bt_test_prev);
         btnBtTestNext = (Button) host.findViewById(R.id.btn_bt_test_next);
         tvBtEinkNote = (TextView) host.findViewById(R.id.tv_bt_eink_note);
+
+        // ── 🆕 TASK-065 折叠引导卡（首次配对 / 连不上怎么办）——
+        //    长段说明收进折叠卡，首屏只留"状态 + 主操作 + 一句提示"（一屏三行内）。
+        bindFold(R.id.fold_bt_pair, R.id.ll_fold_bt_pair, R.string.fold_bt_pair);
+        bindFold(R.id.fold_bt_more, R.id.ll_fold_bt_more, R.string.fold_bt_more);
+
+        // ── 🆕 TASK-065 热点翻页页的角色「注意事项」折叠卡（仅 role=手机 可见）──
+        foldRoleMore = host.findViewById(R.id.fold_role_more);
+        tvRoleMore = host.findViewById(R.id.tv_role_more);
+        bindFold(R.id.fold_role_more, R.id.tv_role_more, R.string.fold_role_more);
 
         // ── 🆕 TASK-022 锁屏密码子页（应用级软锁）──
         // 落盘在 LockPrefs（盐 + SHA-256，非明文）；开关默认关 ⇒ 老用户升级后零差异。
@@ -457,6 +470,31 @@ public class LabPageController {
         // ⛔ 只做"让系统主动把本机暴露给墨水屏"，**不做自动配对**（Android 不允许第三方静默配对）。
         btnBtDiscoverable.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { requestDiscoverable(); }
+        });
+    }
+
+    /**
+     * 🆕 TASK-065：装配一个**折叠引导卡** —— 标题行（自绘 {@link FoldHintView}）+ 内容容器
+     * （初始 GONE）。点标题行切换内容可见性。**只动可见性，不改任何功能行为**（验收 A6）。
+     *
+     * <p>内容容器在布局里是普通 LinearLayout ⇒ 内部 TextView 的排版 / 绑定逻辑一律不动。
+     *
+     * @param headerId 标题行（{@code FoldHintView}）的资源 id
+     * @param bodyId   内容容器（初始 {@code gone}）的资源 id
+     * @param titleRes 标题文案资源 id
+     */
+    private void bindFold(int headerId, int bodyId, int titleRes) {
+        final View body = host.findViewById(bodyId);
+        View head = host.findViewById(headerId);
+        if (!(head instanceof FoldHintView) || body == null) return;
+        final FoldHintView fold = (FoldHintView) head;
+        fold.setTitle(host.getString(titleRes));
+        fold.setExpanded(false);
+        body.setVisibility(View.GONE);
+        fold.setListener(new FoldHintView.Listener() {
+            @Override public void onToggle(boolean expanded) {
+                body.setVisibility(expanded ? View.VISIBLE : View.GONE);
+            }
         });
     }
 
@@ -891,6 +929,12 @@ public class LabPageController {
         }
         if (llRemoteSession != null) {
             llRemoteSession.setVisibility(role == RemoteRole.OFF ? View.GONE : View.VISIBLE);
+        }
+        // 🆕 TASK-065：手机角色的「注意事项」折叠卡 —— 仅 role=手机 可见；其他角色连同内容一起收
+        if (foldRoleMore != null) {
+            boolean phoneRole = (role == RemoteRole.PHONE);
+            foldRoleMore.setVisibility(phoneRole ? View.VISIBLE : View.GONE);
+            if (!phoneRole && tvRoleMore != null) tvRoleMore.setVisibility(View.GONE);
         }
         // 🆕 TASK-029：晃动翻页块**仅手机角色**可见（A2 —— 墨水屏 / 关闭角色下不可见且零响应）
         if (llShakeBlock != null) {
