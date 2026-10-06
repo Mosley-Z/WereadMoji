@@ -287,16 +287,31 @@ public class HidLink {
      * @return true = down 已受理。
      */
     public boolean sendKey(int usage) {
+        return sendKey(usage, HidConst.MOD_NONE);
+    }
+
+    /**
+     * 🆕 TASK-061：**带修饰键**的按键（down → 30ms → up，异步抬手）。
+     *
+     * <p>修饰键落在 8 字节 payload 的**第 0 字节**（bit 位图，见 {@code HidConst.MOD_*}）；
+     * 抬手时整包清零 —— 与既有 {@link #sendKey(int)} 同一套报文结构，**零协议改动**。
+     *
+     * @param usage    HID 键盘 usage（{@code HidConst.KEY_*}）
+     * @param modifier HID 修饰位图（{@code HidConst.MOD_*}）；0 = 无
+     * @return true = down 已受理
+     */
+    public boolean sendKey(int usage, int modifier) {
         final BluetoothHidDevice hid = mHid;
         final BluetoothDevice host = mHost;
         if (hid == null || host == null) {
             Log.w(TAG, "sendKey 跳过：未连接（hid=" + (hid != null) + " host=" + (host != null) + "）");
             return false;
         }
-        byte[] down = new byte[] { 0, 0, (byte) usage, 0, 0, 0, 0, 0 };
+        byte[] down = new byte[] { (byte) modifier, 0, (byte) usage, 0, 0, 0, 0, 0 };
         try {
             boolean ok = hid.sendReport(host, 1, down);
-            Log.i(TAG, "sendReport key=0x" + Integer.toHexString(usage) + " down=" + ok);
+            Log.i(TAG, "sendReport key=0x" + Integer.toHexString(usage)
+                    + " mod=0x" + Integer.toHexString(modifier) + " down=" + ok);
             // 200ms 后 up（避免过长占用；调用方通常是设置页/服务线程，用 Handler 由调用方处更好，
             // 此处为最小实现用后台线程）
             new Thread(new Runnable() {
@@ -310,6 +325,43 @@ public class HidLink {
             return ok;
         } catch (Throwable t) {
             Log.w(TAG, "sendReport 异常 " + t);
+            return false;
+        }
+    }
+
+    /**
+     * 🆕 TASK-061：**同步**发一次按键（down → holdMs → up），**阻塞调用线程**。
+     *
+     * <p>为什么需要它：{@link #sendKey(int, int)} 每键都另起一条 `HidLink-up` 线程且**不等它结束**，
+     * 批量打字（整段发送）会 (a) 并发起几十条线程、(b) down/up 顺序不可控 ⇒ 丢键。
+     * 本方法把 down+up 收进**调用线程**内完成，调用方按可调间隔串行调用即可。
+     *
+     * <p>🔴 必须在**非主线程**调用（会 sleep）。
+     *
+     * @param usage    HID 键盘 usage
+     * @param modifier HID 修饰位图（{@code HidConst.MOD_*}）
+     * @param holdMs   down 与 up 之间的保持时长（钳到 ≥4ms；太小对端可能来不及识别）
+     * @return true = down 已受理
+     */
+    public boolean sendKeyBlocking(int usage, int modifier, int holdMs) {
+        final BluetoothHidDevice hid = mHid;
+        final BluetoothDevice host = mHost;
+        if (hid == null || host == null) {
+            return false;
+        }
+        try {
+            boolean ok = hid.sendReport(host, 1,
+                    new byte[] { (byte) modifier, 0, (byte) usage, 0, 0, 0, 0, 0 });
+            int hold = holdMs < 4 ? 4 : holdMs;
+            try {
+                Thread.sleep(hold);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+            hid.sendReport(host, 1, new byte[] { 0, 0, 0, 0, 0, 0, 0, 0 });
+            return ok;
+        } catch (Throwable t) {
+            Log.w(TAG, "sendKeyBlocking 异常 " + t);
             return false;
         }
     }

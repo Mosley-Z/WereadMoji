@@ -398,6 +398,7 @@
     <string name="console_volkey_note">开启后占用手机音量键：翻页期间本机音量调不了，不用时关掉即可恢复。手机熄屏后仍可用音量键翻页（已实测）。</string>
     <!-- 🆕 TASK-040：连接页（底部导航 + 自检 + 设备列表 + 日志 + 入口 + 引导） -->
     <string name="console_nav_flip">翻页</string>
+    <string name="console_nav_keypad">按键</string>
     <string name="console_nav_connect">连接</string>
     <string name="console_conn_selfcheck">系统自检</string>
     <string name="console_conn_local">本机蓝牙</string>

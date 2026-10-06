@@ -15,6 +15,7 @@ import android.widget.Toast;
 
 import com.inkread.weekread.R;
 import com.inkread.weekread.core.CardPrefs;
+import com.inkread.weekread.remote.HidConst;
 import com.inkread.weekread.remote.HidKeepAliveService;
 import com.inkread.weekread.remote.HidLink;
 import com.inkread.weekread.remote.RemoteLinkManager;
@@ -22,6 +23,7 @@ import com.inkread.weekread.remote.RemoteProtocol;
 import com.inkread.weekread.ui.ConnectPageView;
 import com.inkread.weekread.ui.FlipKeyView;
 import com.inkread.weekread.ui.InkTheme;
+import com.inkread.weekread.ui.KeyPadView;
 import com.inkread.weekread.ui.StatusChipView;
 
 /**
@@ -33,9 +35,12 @@ import com.inkread.weekread.ui.StatusChipView;
  *   与热点通道的方向设置**命名隔离、互不影响**。
  * <p>TASK-040 补「连接」页：底部导航在「翻页 / 连接」两页之间切换；连接页 = 自检 + 设备列表 +
  *   实时日志 + 可被发现 / 电池白名单入口（{@link ConnectPageView}）。
+ * <p>🆕 TASK-060 补「按键」页：底栏扩为**三页**（翻页 / 按键 / 连接）—— 按键页 = 十字键 + 确认 +
+ *   系统键（{@link KeyPadView}），把 HID 键盘的**方向 / 确认 / 可达系统键**用起来。
  *
  * <p>🔴 **只服务手机端**（{@code install_role=phone}）；阅读器端不实例化本类、本布局，行为零差异。
- * <p>🔴 发送一律走既有 {@link RemoteLinkManager#sendCommand(int)}（HID 优先分派，一行不改）。
+ * <p>🔴 **发送两条路**：翻页仍走 {@link RemoteLinkManager#sendCommand(int)}（HID 优先分派，一行不改）；
+ *   🆕 TASK-060 的按键页因要发**任意键盘 usage**（文本指令表达不了）而直接走 {@link HidLink#sendKey(int)}。
  * <p>🔴 **本类不新增任何能力**：状态是只读订阅（{@link HidKeepAliveService.StateListener}），不碰协议/权限。
  */
 public class ConsoleActivity extends Activity {
@@ -43,19 +48,31 @@ public class ConsoleActivity extends Activity {
     /** 🆕 TASK-040：ACTION_REQUEST_DISCOVERABLE 的请求码（与设置页 TASK-035 同款语义）。 */
     private static final int REQ_BT_DISCOVERABLE = 3601;
 
+    // ── 🆕 TASK-060：页索引（原先是 `showingConnect` 布尔 —— 两页扩三页后改枚举式）──
+    /** 翻页页（主）。 */
+    private static final int PAGE_FLIP = 0;
+    /** 按键页（十字键 + 确认 + 系统键）。 */
+    private static final int PAGE_KEYPAD = 1;
+    /** 连接页（自检 / 日志）。 */
+    private static final int PAGE_CONNECT = 2;
+
     private StatusChipView chip;
     private FlipKeyView flip;
+    private KeyPadView keypad;
     private TextView gear;
     private TextView darkBtn;
     private View flipPage;
+    private View keypadPage;
     private View connectScroll;
     private View nav;
     private View topbar;
     private View root;
     private ConnectPageView connectPage;
     private TextView navFlip;
+    private TextView navKeypad;
     private TextView navConnect;
-    private boolean showingConnect = false;
+    /** 当前页（三页互斥显示）。 */
+    private int page = PAGE_FLIP;
 
     /**
      * HID 状态订阅（TASK-033 既有回调）。🔴 回调可能在 binder 线程 ⇒ 一律切主线程再改 View。
@@ -79,15 +96,18 @@ public class ConsoleActivity extends Activity {
 
         chip = (StatusChipView) findViewById(R.id.console_chip);
         flip = (FlipKeyView) findViewById(R.id.console_flip);
+        keypad = (KeyPadView) findViewById(R.id.console_keypad);
         gear = (TextView) findViewById(R.id.console_gear);
         darkBtn = (TextView) findViewById(R.id.console_dark);
         root = findViewById(R.id.console_root);
         topbar = findViewById(R.id.console_topbar);
         nav = findViewById(R.id.console_nav);
         flipPage = findViewById(R.id.console_flip);
+        keypadPage = findViewById(R.id.console_keypad);
         connectScroll = findViewById(R.id.console_connect_scroll);
         connectPage = (ConnectPageView) findViewById(R.id.console_connect);
         navFlip = (TextView) findViewById(R.id.console_nav_flip);
+        navKeypad = (TextView) findViewById(R.id.console_nav_keypad);
         navConnect = (TextView) findViewById(R.id.console_nav_connect);
 
         // 🆕 TASK-040：连接页——「让本机可被发现」由本 Activity 发 startActivityForResult
@@ -100,13 +120,20 @@ public class ConsoleActivity extends Activity {
         navFlip.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                showPage(false);
+                showPage(PAGE_FLIP);
+            }
+        });
+        // 🆕 TASK-060：底栏「按键」入口
+        navKeypad.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showPage(PAGE_KEYPAD);
             }
         });
         navConnect.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                showPage(true);
+                showPage(PAGE_CONNECT);
             }
         });
 
@@ -117,11 +144,19 @@ public class ConsoleActivity extends Activity {
             }
         });
 
+        // 🆕 TASK-060：按键页 —— View 只抛**自己的键 id**，由本类映射成 HID usage 再发
+        keypad.setListener(new KeyPadView.Listener() {
+            @Override
+            public void onKey(int keyId) {
+                sendKey(keyId);
+            }
+        });
+
         chip.setListener(new StatusChipView.Listener() {
             @Override
             public void onChipTap() {
                 // 🆕 TASK-040：点胶囊 ⇒ 直接进「连接」页（自助排障），不再只是一句 Toast
-                showPage(true);
+                showPage(PAGE_CONNECT);
             }
 
             @Override
@@ -209,7 +244,8 @@ public class ConsoleActivity extends Activity {
         }
         chip.setStatus(st, text);
         flip.setConnected(connected);
-        if (showingConnect && connectPage != null) {
+        keypad.setConnected(connected);           // 🆕 TASK-060：未连接 ⇒ 按键页同样置灰
+        if (page == PAGE_CONNECT && connectPage != null) {
             connectPage.refresh();     // 🆕 TASK-040：连接页在前台时同步刷新
         }
     }
@@ -246,33 +282,36 @@ public class ConsoleActivity extends Activity {
         // 自绘 View 重画
         if (chip != null) chip.invalidate();
         if (flip != null) flip.invalidate();
+        if (keypad != null) keypad.invalidate();   // 🆕 TASK-060
 
         applyNavColors();
     }
 
     /** 底部导航选中态着色（供 {@link #showPage} 与 {@link #applyTheme} 共用）。 */
     private void applyNavColors() {
-        if (navFlip == null || navConnect == null) return;
-        navFlip.setTextColor(showingConnect ? InkTheme.ink2(this) : InkTheme.bamboo(this));
-        navConnect.setTextColor(showingConnect ? InkTheme.bamboo(this) : InkTheme.ink2(this));
+        if (navFlip == null || navConnect == null || navKeypad == null) return;
+        navFlip.setTextColor(page == PAGE_FLIP ? InkTheme.bamboo(this) : InkTheme.ink2(this));
+        navKeypad.setTextColor(page == PAGE_KEYPAD ? InkTheme.bamboo(this) : InkTheme.ink2(this));
+        navConnect.setTextColor(page == PAGE_CONNECT ? InkTheme.bamboo(this) : InkTheme.ink2(this));
     }
 
-    // ── 🆕 TASK-040：两页切换（翻页 / 连接）──
+    // ── 🆕 TASK-040：多页切换（翻页 / 按键 / 连接；TASK-060 由两页扩为三页）──
 
-    /** 在「翻页」页与「连接」页之间切换，并同步底部导航选中态（docs/09 §5.5）。 */
-    private void showPage(boolean connect) {
-        showingConnect = connect;
-        flipPage.setVisibility(connect ? View.GONE : View.VISIBLE);
-        connectScroll.setVisibility(connect ? View.VISIBLE : View.GONE);
+    /** 切到指定页，并同步底部导航选中态（docs/09 §5.5）。 */
+    private void showPage(int p) {
+        page = p;
+        flipPage.setVisibility(p == PAGE_FLIP ? View.VISIBLE : View.GONE);
+        keypadPage.setVisibility(p == PAGE_KEYPAD ? View.VISIBLE : View.GONE);
+        connectScroll.setVisibility(p == PAGE_CONNECT ? View.VISIBLE : View.GONE);
         applyNavColors();
-        if (connect && connectPage != null) connectPage.refresh();
+        if (p == PAGE_CONNECT && connectPage != null) connectPage.refresh();
     }
 
     @Override
     public void onBackPressed() {
-        // 在「连接」页时，返回先回「翻页」页（避免一按就退出遥控台）
-        if (showingConnect) {
-            showPage(false);
+        // 不在「翻页」页时，返回先回「翻页」页（避免一按就退出遥控台）
+        if (page != PAGE_FLIP) {
+            showPage(PAGE_FLIP);
             return;
         }
         super.onBackPressed();
@@ -442,6 +481,49 @@ public class ConsoleActivity extends Activity {
         boolean ok = RemoteLinkManager.get().sendCommand(cmd);
         if (!ok) {
             Toast.makeText(this, R.string.console_not_connected, Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // ── 🆕 TASK-060：按键页发送 ──
+
+    /**
+     * 把按键页抛上来的**本类键 id** 映射成 HID 键盘 usage 并发出去。
+     *
+     * <p>🔴 **为什么不走 {@link RemoteLinkManager#sendCommand(int)}**：那条路只认
+     * {@code RemoteProtocol} 的文本指令（翻页 / 上一条），**表达不了任意键盘 usage**；
+     * 按键页要发的是一整排 usage ⇒ 直接在 HID 层发（复用 {@link HidLink#sendKey(int)}，
+     * **零协议改动**）。TCP 通道**没有**这个能力 ⇒ 未连接时置灰 + Toast，**不静默丢**。
+     */
+    private void sendKey(int keyId) {
+        int usage = usageOf(keyId);
+        if (usage < 0) return;
+        HidLink hid = HidKeepAliveService.link();
+        boolean ok = (hid != null) && hid.isHostConnected() && hid.sendKey(usage);
+        if (!ok) {
+            Toast.makeText(this, R.string.console_not_connected, Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /**
+     * 键 id → HID 键盘 usage。
+     *
+     * <p>🔴 映射表**只在这里** —— {@link KeyPadView} 属于 `ui` 包，按 `docs/02` §1 的依赖方向
+     * （`ui` 只出边到 `core`）**不认识** {@code HidConst}。
+     */
+    private static int usageOf(int keyId) {
+        switch (keyId) {
+            case KeyPadView.K_UP:        return HidConst.KEY_UP;
+            case KeyPadView.K_DOWN:      return HidConst.KEY_DOWN;
+            case KeyPadView.K_LEFT:      return HidConst.KEY_LEFT;
+            case KeyPadView.K_RIGHT:     return HidConst.KEY_RIGHT;
+            case KeyPadView.K_OK:        return HidConst.KEY_ENTER;
+            case KeyPadView.K_TAB:       return HidConst.KEY_TAB;
+            case KeyPadView.K_SPACE:     return HidConst.KEY_SPACE;
+            case KeyPadView.K_BACKSPACE: return HidConst.KEY_BACKSPACE;
+            case KeyPadView.K_DELETE:    return HidConst.KEY_DELETE;
+            case KeyPadView.K_HOME:      return HidConst.KEY_HOME;
+            case KeyPadView.K_END:       return HidConst.KEY_END;
+            default:                     return -1;
         }
     }
 }

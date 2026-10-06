@@ -62,6 +62,13 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
 
+        <!-- 🆕 TASK-060：按键页（十字键 + 确认 + 系统键） -->
+        <com.inkread.weekread.ui.KeyPadView
+            android:id="@+id/console_keypad"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
         <ScrollView
             android:id="@+id/console_connect_scroll"
             android:layout_width="match_parent"
@@ -76,7 +83,7 @@
         </ScrollView>
     </FrameLayout>
 
-    <!-- 底部导航（docs/09 §5.5）：翻页 / 连接 -->
+    <!-- 底部导航（docs/09 §5.5）：翻页 / 按键 / 连接 -->
     <LinearLayout
         android:id="@+id/console_nav"
         android:layout_width="match_parent"
@@ -92,6 +99,17 @@
             android:gravity="center"
             android:text="@string/console_nav_flip"
             android:textColor="@color/ink_bamboo"
+            android:textSize="15sp" />
+
+        <!-- 🆕 TASK-060：按键页入口 -->
+        <TextView
+            android:id="@+id/console_nav_keypad"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="@string/console_nav_keypad"
+            android:textColor="@color/ink_text2"
             android:textSize="15sp" />
 
         <TextView
