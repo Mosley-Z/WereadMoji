@@ -8,6 +8,7 @@ import com.inkread.weekread.ui.SegTabView;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.ScrollView;
@@ -206,6 +207,10 @@ public class SettingsActivity extends Activity {
      *
      * <p>🔴 **只对 phone + 深色启用**；reader 分支**一行不改**（验收 A6）。深色关闭时本方法直接返回，
      * 不改动任何颜色 —— 保证亮色下与改造前**逐像素一致**。
+     *
+     * <p>🔴🔴 **染色必须"无副作用"**：所有背景改动都走 {@link #darkCopyOf}（先克隆再改），
+     * **禁止**就地修改 {@code v.getBackground()} 得到的 drawable —— 那是 {@code Resources} 的
+     * **进程级共享缓存对象**，改了会永久污染同进程内后续所有实例（TASK-063 根因）。
      */
     private void applyDarkTheme() {
         boolean dark = CardPrefs.getInstallRole(this) == CardPrefs.INSTALL_ROLE_PHONE
@@ -268,8 +273,9 @@ public class SettingsActivity extends Activity {
                 } catch (Throwable ignored) {
                 }
             }
-            // 背景：递归处理纯色 / StateListDrawable / LayerDrawable，命中映射才替换
-            if (v.getBackground() != null) darkenDrawable(v.getBackground());
+            // 背景：命中映射才替换 —— 🔴 **必须换一份克隆件**，绝不能就地改（根因见 darkCopyOf）
+            Drawable nb = darkCopyOf(v.getBackground(), null);
+            if (nb != null) v.setBackground(nb);
 
             // XML 里 many 按钮用 @color/btn_ink_text（ColorStateList：按下白 / 常态黑）作文字色。
             // getCurrentTextColor() 拿到的是解析后的"黑"，可以映射；但按下态仍是白 —— 一并把
@@ -324,38 +330,84 @@ public class SettingsActivity extends Activity {
     }
 
     /**
-     * 递归把 Drawable 树里的"亮色"换成暗色：支持 ColorDrawable / StateListDrawable / LayerDrawable / GradientDrawable。
+     * 把「亮色背景」换成等价的**深色背景**，**返回一份新建的、本视图独占的 drawable**；
+     * 无需替换（未命中映射 / 非可识别类型）或无法克隆时返回 {@code null}（调用方保持原背景，零副作用）。
      *
-     * <p>设置页按钮底是 {@code @drawable/btn_ink}（selector：常态白底黑边、按下黑底）—— 只有逐个 item 拆开
-     * 才能把"白底"换掉；{@link android.graphics.drawable.GradientDrawable} 还能改描边色。
+     * <p>🔴🔴 **根因说明（TASK-063 · 「亮色设置页大面积黑底」）**
+     * <p>{@code v.getBackground()} 返回的 drawable 来自 {@code Resources} 的**进程级 drawable 缓存**
+     * （纯色走 {@code ResourcesImpl#mColorDrawableCache}，键 =（颜色, assetCookie），**与主题无关**）。
+     * 旧实现直接对它 {@code ColorDrawable#setColor()} / {@code GradientDrawable#setColor()}，
+     * 等于把这份"公共白底"**永久改黑** —— 之后同进程内**任何**新建实例（哪怕亮色）inflate 同一布局时
+     * 都会复用同一份已被污染的 drawable ⇒ **亮色下整片黑底**（真机复现：亮色实例 {@code rootBg=0xff070a0f}，
+     * 而 {@code applyDarkTheme dark=false}）。
+     *
+     * <p>因此本方法**只改克隆件**：{@code getConstantState().newDrawable().mutate()} 克隆，
+     * 再在克隆件上改色；共享对象一个字节都不动。
+     *
+     * @param stateSet 该 drawable 在父 selector 里的状态集（用于判定"按下"档），无则 {@code null}
      */
-    private static void darkenDrawable(android.graphics.drawable.Drawable d) {
-        if (d == null) return;
+    private static Drawable darkCopyOf(Drawable d, int[] stateSet) {
+        if (d == null) return null;
         try {
+            // ① 纯色：命中映射才换（新建实例，天然不与缓存共享）
             if (d instanceof android.graphics.drawable.ColorDrawable) {
                 int cur = ((android.graphics.drawable.ColorDrawable) d).getColor();
-                int bc = darkOf(cur);
-                if (bc != -1) ((android.graphics.drawable.ColorDrawable) d).setColor(bc);
-            } else if (d instanceof android.graphics.drawable.GradientDrawable) {
-                // 裸 GradientDrawable（非 selector 包装）：按其"填充色是否亮"处理不可靠，
-                // 统一按描边按钮形态处理（常态墨底界线）。
-                applyInkButtonShape((android.graphics.drawable.GradientDrawable) d, null);
-            } else if (d instanceof android.graphics.drawable.StateListDrawable) {
-                android.graphics.drawable.StateListDrawable s = (android.graphics.drawable.StateListDrawable) d;
-                int n = s.getStateCount();
-                for (int i = 0; i < n; i++) {
-                    android.graphics.drawable.Drawable item = s.getStateDrawable(i);
-                    if (item instanceof android.graphics.drawable.GradientDrawable) {
-                        applyInkButtonShape((android.graphics.drawable.GradientDrawable) item, s.getStateSet(i));
+                int next = darkOf(cur);
+                return (next == -1) ? null : new android.graphics.drawable.ColorDrawable(next);
+            }
+            // ② 描边按钮 selector：逐 item **克隆**后改色，再装进新的 StateListDrawable
+            if (d instanceof android.graphics.drawable.StateListDrawable) {
+                android.graphics.drawable.StateListDrawable s =
+                        (android.graphics.drawable.StateListDrawable) d;
+                android.graphics.drawable.StateListDrawable out =
+                        new android.graphics.drawable.StateListDrawable();
+                boolean changed = false;
+                for (int i = 0; i < s.getStateCount(); i++) {
+                    int[] ss = s.getStateSet(i);
+                    Drawable item = s.getStateDrawable(i);
+                    Drawable one = darkCopyOf(item, ss);
+                    if (one != null) {
+                        changed = true;
+                        out.addState(ss, one);
                     } else {
-                        darkenDrawable(item);
+                        out.addState(ss, item);
                     }
                 }
-            } else if (d instanceof android.graphics.drawable.LayerDrawable) {
-                android.graphics.drawable.LayerDrawable l = (android.graphics.drawable.LayerDrawable) d;
-                for (int i = 0; i < l.getNumberOfLayers(); i++) darkenDrawable(l.getDrawable(i));
+                return changed ? out : null;
             }
-        } catch (Throwable ignored) {
+            // ③ 裸 GradientDrawable：克隆件上套"深色描边按钮"形态
+            if (d instanceof android.graphics.drawable.GradientDrawable) {
+                Drawable copy = cloneDrawable(d);
+                if (copy == null) return null;
+                applyInkButtonShape((android.graphics.drawable.GradientDrawable) copy, stateSet);
+                return copy;
+            }
+            // ④ 其它（RippleDrawable / LayerDrawable / ClipDrawable / 位图…）**一律不动** ——
+            //    宁可少染，也绝不污染共享对象。
+            return null;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * 克隆一个 drawable（含其独占的 ConstantState）。
+     *
+     * <p>用 {@code getConstantState().newDrawable().mutate()} 而非直接引用：前者保证后续
+     * {@code setColor}/{@code setStroke} 只作用于副本，不会回写 {@code Resources} 的共享缓存。
+     * 克隆失败返回 {@code null}（调用方放弃改动 ⇒ 宁可不染）。
+     */
+    @SuppressWarnings("deprecation")
+    private static Drawable cloneDrawable(Drawable d) {
+        try {
+            android.graphics.drawable.Drawable.ConstantState cs = d.getConstantState();
+            if (cs == null) return null;
+            Drawable copy = cs.newDrawable();
+            if (copy == null) return null;
+            copy.mutate();
+            return copy;
+        } catch (Throwable t) {
+            return null;
         }
     }
 
