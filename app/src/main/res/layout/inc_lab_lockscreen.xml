@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  🆕 TASK-068 · 共用子布局：实验室 · 锁屏密码子页（TASK-022）
+  🔴 由 settings_layout.xml / page_settings.xml / page_lab.xml 三份布局**共用**，
+     改这里一处即三端同步（原为两份独立重复布局，逐字相同）。
+  ⚠️ 抽取纯 `<include>` 化：控件 id / 层级 / 属性一字未改 ⇒ 两端逐像素零差异。
+-->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/page_lab_lockscreen"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:visibility="gone">
+
+    <!-- 子标签栏已显示页名，此处不再重复小标题 -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:lineSpacingExtra="3dp"
+        android:text="@string/lock_intro"
+        android:textColor="#FF3C3C3C"
+        android:textSize="13sp" />
+
+    <CheckBox
+        android:id="@+id/cb_lock_enabled"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:buttonTint="#FF000000"
+        android:text="@string/lock_enable"
+        android:textColor="#FF000000"
+        android:textSize="15sp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/lock_pin_label"
+        android:textColor="#FF000000"
+        android:textSize="15sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <EditText
+            android:id="@+id/et_lock_pin"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="@string/lock_pin_hint"
+            android:inputType="number"
+            android:maxLength="4"
+            android:textColor="#FF000000"
+            android:textColorHint="#FF9A9A9A"
+            android:textSize="15sp" />
+
+        <Button
+            android:id="@+id/btn_lock_save"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_marginLeft="8dp"
+            android:background="@drawable/btn_ink"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:stateListAnimator="@null"
+            android:text="@string/lock_btn_save"
+            android:textColor="@color/btn_ink_text"
+            android:textSize="15sp" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tv_lock_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:textColor="#FF000000"
+        android:textSize="14sp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:text="@string/lock_bg_label"
+        android:textColor="#FF000000"
+        android:textSize="15sp" />
+
+    <!-- 🆕 TASK-022-R1：可编辑路径输入框（默认填 Pictures/背景.jpg）。
+         取消 SAF「选择图片」按钮 —— S4 ROM 无 DocumentsUI，真机必然弹不出。 -->
+    <EditText
+        android:id="@+id/et_lock_bg_path"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:hint="@string/lock_bg_path_hint"
+        android:inputType="text"
+        android:maxLines="1"
+        android:textColor="#FF000000"
+        android:textColorHint="#FF9A9A9A"
+        android:textSize="15sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btn_lock_bg_load"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_weight="1"
+            android:background="@drawable/btn_ink"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:stateListAnimator="@null"
+            android:text="@string/lock_btn_bg_load"
+            android:textColor="@color/btn_ink_text"
+            android:textSize="15sp" />
+
+        <Button
+            android:id="@+id/btn_lock_bg_clear"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_marginLeft="8dp"
+            android:layout_weight="1"
+            android:background="@drawable/btn_ink"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:stateListAnimator="@null"
+            android:text="@string/lock_btn_bg_clear"
+            android:textColor="@color/btn_ink_text"
+            android:textSize="15sp" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tv_lock_bg_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:textColor="#FF000000"
+        android:textSize="14sp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:lineSpacingExtra="3dp"
+        android:text="@string/lock_bg_hint"
+        android:textColor="#FF6A6A6A"
+        android:textSize="12sp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:lineSpacingExtra="3dp"
+        android:text="@string/lock_tip_a11y"
+        android:textColor="#FF3C3C3C"
+        android:textSize="13sp" />
+</LinearLayout><!-- /page_lab_lockscreen -->
