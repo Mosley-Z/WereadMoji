@@ -1,13 +1,13 @@
 {
-  "versionCode": 41,
-  "versionName": "1.0.0",
-  "tag": "v1.0.0",
-  "notes": "① 阅读侧大升级：App 内导航重构 —— 顶部三大标签（阅读 / 设置 / 待办），阅读页下拉可切换 5 个界面。② 统计扩容：新增「年度视图」「累计视图」「读书排行」「本月书籍排名」「阅读画像」。③ 新增「待办」标签（App 内增删改勾选）+ 桌面卡片待办区。④ 卡片切换模式：周报 / 月报卡片按「显示池」点选循环切换。⑤ 书籍排名支持「只统计书架上的书」，本记支持选书。⑥ 修若干稳定性问题。",
-  "apk": "dist/weread-stats-1.0.0.apk",
+  "versionCode": 42,
+  "versionName": "1.2.0-beta",
+  "tag": "v1.2.0-beta",
+  "notes": "① 阅读侧大升级：App 内导航重构 —— 顶部四大标签（阅读 / 设置 / 实验室 / 待办），阅读页下拉可切换 5 个界面。② 统计扩容：新增「年度视图」「累计视图」「读书排行」「本月书籍排名」「阅读画像」。③ 卡片切换模式 + 书籍排名「只统计书架上的书」+ 本记选书。④ 遥控台新增「按键」「键盘」两页（蓝牙 HID 文本输入）。⑤ 优化部分显示效果。",
+  "apk": "dist/weread-stats-1.2.0-beta.apk",
   "size": 440777,
-  "sha256": "10466170ed379fdec63e3177ca4fbcbeba3072c54c0c53fb6989e779f3ac3421",
+  "sha256": "a56fb25aefdd7a52a70c8d1e2569ee5bf001d0dcc9d80b1d76fb5104ebbfd315",
   "urls": [
-    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v1.0.0/dist/weread-stats-1.0.0.apk",
-    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v1.0.0/dist/weread-stats-1.0.0.apk"
+    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v1.2.0-beta/dist/weread-stats-1.2.0-beta.apk",
+    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v1.2.0-beta/dist/weread-stats-1.2.0-beta.apk"
   ]
 }
