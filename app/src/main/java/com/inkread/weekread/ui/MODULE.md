@@ -11,7 +11,7 @@
 | `TabBarView` | 主页页面选项卡（5 段）。⚠️ v1.2 起 `MainActivity` **不再使用**（改用 `SegTabView` + `NavDropView`），类保留待其它引用 |
 | `PeriodPickerView` | 周期步进选择器（上下周/月） |
 | `CardMenuView` | 卡片上的弹出菜单 |
-| `KeyPadView` | 🆕 v1.2（TASK-060）遥控台「**按键**」页自绘键盘 —— 十字方向键（↑↓←→ + 居中「确认」）+ 实测可达系统键（退格/空格/删除/跳格/行首/行尾，3×2 网格）。未连接 ⇒ 整体 40% 置灰。🔴 只往上抛**本类键 id**（`K_UP`…`K_END`），**不认识 HID usage**（映射在 `shell/ConsoleActivity`） |
+| `KeyPadView` | 🆕 v1.2（TASK-060）遥控台「**按键**」页自绘键盘；🆕 **TASK-062 形态重做** —— **环形轮盘**（外圈 4 扇区 = 上/下/左/右 + 圆心圆盘 = 确认「OK」）+ 实测可达系统键（退格/空格/删除/跳格/行首/行尾，**2 列 × 3 行圆角矩形**）。未连接 ⇒ 整体 40% 置灰。🔴 取色统一走 `setColorAlpha()`（**固有 α × 连接态 α**）—— 深色档多色**自带透明度**，若写成 `setColor + setAlpha(255)` 会把固有 α 覆盖成不透明（曾致确认键底/字同色 ⇒「OK」隐身）。🔴 只往上抛**本类键 id**（`K_UP`…`K_END`），**不认识 HID usage**（映射在 `shell/ConsoleActivity`） |
 | `KeyboardPageView` | 🆕 v1.2（TASK-061）遥控台「**键盘**」页 —— 多行 `EditText` + 状态行 + 「实时同步输入」`CheckBox` + 「发送 / 清空」+ 五个常用键（回车/退格/空格/跳格/删除）。🔴 只抛**语义事件**（`onSendAll(String)` / `onCommonKey(int keyId)` / `onSyncDelta(删尾, 插段)` / `onRealtimeChanged(boolean)`），**不认识 HID usage / 不做 ASCII 过滤**（`HidKeymap` 在 `remote`、映射在 `shell`）。发送期间按钮由外部 `setSending(boolean)` 置灰；`rebuild()` 供切页重挂 IME |
 
 ## 对外接口（关键 public API）
