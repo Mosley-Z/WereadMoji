@@ -13,10 +13,10 @@ import android.view.View;
  *
  * 为什么不用两个 Activity：设置项的读写本来就是即时生效的（勾了就存），
  * 拆成两个 Activity 只会多一次整屏刷新、还得在两页之间同步已填的 Key。
- * 用同一页内的两个容器 + 顶部页签切换，state 天然共享，也和主页 {@link TabBarView}
- * 是同一套视觉语言（纯黑白、选中加粗 + 底部黑条）。
+ * 用同一页内的两个容器 + 顶部页签切换，state 天然共享，也与主页大标签栏
+ * （同为本类实例）是同一套视觉语言（纯黑白、选中加粗 + 底部黑条）。
  *
- * 与 TabBarView 的差别：这里是通用 N 段，标签可在代码里改（默认两段）。
+ * 标签由调用方经 {@link #setLabels} 给定：设置页 2~3 段，主页大标签 3~4 段。
  */
 public class SegTabView extends View {
 

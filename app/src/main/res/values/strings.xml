@@ -15,10 +15,8 @@
     <string name="btn_test">测试连接</string>
     <string name="btn_help">怎么用</string>
     <string name="btn_refresh">刷新</string>
-    <string name="btn_settings">设置</string>
 
     <!-- 🆕 TASK-044（V1.2.0-beta）：App 内导航重构 —— 大标签栏 / 阅读页下拉行 / 占位容器 -->
-    <string name="main_tab_reader">阅读</string>
     <string name="main_tab_settings">设置</string>
     <string name="main_tab_lab">实验室</string>
     <string name="main_tab_todo">待办</string>
@@ -30,13 +28,6 @@
     <!-- TASK-048：原 `insight_placeholder`（"洞察页（开发中）…"）已随占位 TextView 一并删除 ——
          洞察页改为 InsightPageView 自绘（分区标题/空态文案按本项目惯例硬编码在渲染器里，
          与 CardRenderer 一致），此处不再需要该字符串。 -->
-    <string name="ph_settings">设置页内容将在下一版迁入本页（TASK-045）</string>
-    <string name="ph_lab">实验室内容将在下一版迁入本页（TASK-045）</string>
-    <string name="ph_todo">待办内容将在下一版迁入本页（TASK-045）</string>
-    <string name="btn_open_settings_tmp">打开设置（临时）</string>
-    <string name="btn_open_lab_tmp">打开实验室（临时）</string>
-    <string name="btn_open_todo_tmp">打开待办（临时）</string>
-
     <string name="help_title">微读墨记 · 怎么用</string>
 
     <string name="label_card">桌面卡片</string>
@@ -73,7 +64,6 @@
     <string name="label_period_month">本月</string>
     <string name="label_period_book">本书</string>
     <string name="label_period_note">本记</string>
-    <string name="btn_export">导出</string>
     <string name="btn_open_a11y">打开系统无障碍设置</string>
     <string name="btn_reset_card">重新同步卡片显示（卡片该出现却没出现时点这里）</string>
 
@@ -350,8 +340,6 @@
     <string name="todo_delete">删除</string>
     <!-- 卡片抬头与空态 -->
     <string name="todo_card_title">待办事项</string>
-    <string name="todo_card_empty">暂无待办</string>
-    <string name="todo_card_full">展开看全部</string>
     <!-- 自绘「纯黑白」时间选择弹窗（替代系统时钟轮盘 —— 钟面 accent 近黑、墨水屏不可读） -->
     <string name="todo_time_title">选择时间</string>
     <string name="todo_time_hour">时</string>
