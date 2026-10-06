@@ -1,13 +1,13 @@
 {
-  "versionCode": 40,
-  "versionName": "1.1.1-beta",
-  "tag": "v1.1.1-beta",
-  "notes": "① 手机端新增「遥控台」与深色模式：遥控台顶栏一键切换深浅配色（仅手机端）。② 手机端「晃动翻页」支持方向自选（左右 / 上下 可分别开关）。③ 手机端设置页精简：只保留「初始化（本机角色 · 检查更新）」与「实验室（蓝牙控制 · 热点翻页等）」，隐藏对手机端无用的模块。④ 修若干稳定性问题（前台服务早退清理、晃动翻页随连接状态即时生效等）。🔴 蓝牙遥控需先在墨水屏「设置·已连接的设备」完成一次配对，且重连只能由墨水屏发起。",
-  "apk": "dist/weread-stats-1.1.1-beta.apk",
-  "size": 391412,
-  "sha256": "d6a84c3e8013bea2c54562c90525067cb3b404fae990c86ef5fdc1806638c14d",
+  "versionCode": 41,
+  "versionName": "1.0.0",
+  "tag": "v1.0.0",
+  "notes": "① 阅读侧大升级：App 内导航重构 —— 顶部三大标签（阅读 / 设置 / 待办），阅读页下拉可切换 5 个界面。② 统计扩容：新增「年度视图」「累计视图」「读书排行」「本月书籍排名」「阅读画像」。③ 新增「待办」标签（App 内增删改勾选）+ 桌面卡片待办区。④ 卡片切换模式：周报 / 月报卡片按「显示池」点选循环切换。⑤ 书籍排名支持「只统计书架上的书」，本记支持选书。⑥ 修若干稳定性问题。",
+  "apk": "dist/weread-stats-1.0.0.apk",
+  "size": 440777,
+  "sha256": "10466170ed379fdec63e3177ca4fbcbeba3072c54c0c53fb6989e779f3ac3421",
   "urls": [
-    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v1.1.1-beta/dist/weread-stats-1.1.1-beta.apk",
-    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v1.1.1-beta/dist/weread-stats-1.1.1-beta.apk"
+    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v1.0.0/dist/weread-stats-1.0.0.apk",
+    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v1.0.0/dist/weread-stats-1.0.0.apk"
   ]
 }
