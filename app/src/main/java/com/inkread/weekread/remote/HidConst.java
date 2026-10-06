@@ -67,6 +67,41 @@ public final class HidConst {
     /** 应用 / 菜单键（Android `MENU`）。 */
     public static final int KEY_APP = 0x65;
 
+    // ── 🆕 TASK-061：可打印字符的「基准键」usage（供 `HidKeymap` 按偏移算字母 / 数字）──
+    //
+    //  · 字母 a..z = 0x04..0x1D（**大小写同 usage**，大写额外置 `MOD_LSHIFT`）；
+    //  · 数字 1..9 = 0x1E..0x26，0 = 0x27（不连续，单独给）；
+    //  · 符号键的**下档**用下列基准 usage，**上档**再加 `MOD_LSHIFT`（映射见 `HidKeymap.of`）。
+
+    /** 字母基准：`a`=0x04 … `z`=0x1D。 */
+    public static final int KEY_A = 0x04;
+    /** 数字基准：`1`=0x1E … `9`=0x26。 */
+    public static final int KEY_1 = 0x1E;
+    /** 数字 `0`（不在连续段内，单独给）。 */
+    public static final int KEY_0 = 0x27;
+    /** 符号 减号 / 上档 下划线。 */
+    public static final int KEY_MINUS = 0x2D;
+    /** 符号 等号 / 上档 加号。 */
+    public static final int KEY_EQUAL = 0x2E;
+    /** 符号 左方括号 / 上档 左花括号。 */
+    public static final int KEY_LBRACKET = 0x2F;
+    /** 符号 右方括号 / 上档 右花括号。 */
+    public static final int KEY_RBRACKET = 0x30;
+    /** 符号 反斜杠 / 上档 竖线。 */
+    public static final int KEY_BACKSLASH = 0x31;
+    /** 符号 分号 / 上档 冒号。 */
+    public static final int KEY_SEMICOLON = 0x33;
+    /** 符号 单引号 / 上档 双引号。 */
+    public static final int KEY_APOSTROPHE = 0x34;
+    /** 符号 反引号 / 上档 波浪号。 */
+    public static final int KEY_GRAVE = 0x35;
+    /** 符号 逗号 / 上档 小于号。 */
+    public static final int KEY_COMMA = 0x36;
+    /** 符号 句点 / 上档 大于号。 */
+    public static final int KEY_DOT = 0x37;
+    /** 符号 斜杠 / 上档 问号。 */
+    public static final int KEY_SLASH = 0x38;
+
     // ── 🆕 TASK-061：键盘修饰键位图（Report 第 0 字节；bit0=LCtrl … bit7=RGUI）──
 
     /** 无修饰键。 */

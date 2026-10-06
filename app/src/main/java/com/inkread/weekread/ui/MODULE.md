@@ -12,6 +12,7 @@
 | `PeriodPickerView` | 周期步进选择器（上下周/月） |
 | `CardMenuView` | 卡片上的弹出菜单 |
 | `KeyPadView` | 🆕 v1.2（TASK-060）遥控台「**按键**」页自绘键盘 —— 十字方向键（↑↓←→ + 居中「确认」）+ 实测可达系统键（退格/空格/删除/跳格/行首/行尾，3×2 网格）。未连接 ⇒ 整体 40% 置灰。🔴 只往上抛**本类键 id**（`K_UP`…`K_END`），**不认识 HID usage**（映射在 `shell/ConsoleActivity`） |
+| `KeyboardPageView` | 🆕 v1.2（TASK-061）遥控台「**键盘**」页 —— 多行 `EditText` + 状态行 + 「实时同步输入」`CheckBox` + 「发送 / 清空」+ 五个常用键（回车/退格/空格/跳格/删除）。🔴 只抛**语义事件**（`onSendAll(String)` / `onCommonKey(int keyId)` / `onSyncDelta(删尾, 插段)` / `onRealtimeChanged(boolean)`），**不认识 HID usage / 不做 ASCII 过滤**（`HidKeymap` 在 `remote`、映射在 `shell`）。发送期间按钮由外部 `setSending(boolean)` 置灰；`rebuild()` 供切页重挂 IME |
 
 ## 对外接口（关键 public API）
 
@@ -21,6 +22,7 @@
 - `PeriodPickerView.setPeriod(String mode, long anchorStart)`
 - `CardMenuView.setItems(String[])`
 - `KeyPadView.setListener(Listener)` / `.setConnected(boolean)` / 回调 `onKey(int keyId)`
+- `KeyboardPageView.setListener(Listener)` / `.setConnected(boolean)` / `.getText()` / `.isRealtime()` / `.setRealtime(boolean)` / `.setStatus(String)` / `.setSending(boolean)` / `.rebuild()`；回调 `Listener{ onSendAll(String), onCommonKey(int), onSyncDelta(String,String), onRealtimeChanged(boolean) }`
 
 ## 依赖规则
 
@@ -28,6 +30,8 @@
 - ❌ **禁止**：`net` / `feature` / `shell` / `a11y` / `update`。
 - ✅ **实测（2026-09-25 · TASK-005）**：唯一出边 = `PeriodPickerView → core.PeriodRange`。
 - ✅ **实测（TASK-060）**：`KeyPadView` **无出边**（仅用同包 `InkTheme`）⇒ 依赖方向**不变**。
+- ✅ **实测（TASK-061）**：`KeyboardPageView` **零项目出边**（`import` 只有 `android.*` / `java.*`，
+  连 `core` 都不引）⇒ 依赖方向**不变**；`ui → remote` 亦**未发生**（清单过滤在 `remote.HidKeymap`，由 `shell` 调用）。
 - 被谁依赖：`feature` / `shell` / `a11y`（a11y 用 `CardMenuView` 弹菜单）。
 
 **相关**：`docs/02_架构.md` §1

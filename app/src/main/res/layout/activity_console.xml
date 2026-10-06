@@ -50,7 +50,7 @@
             android:background="?android:attr/selectableItemBackground" />
     </LinearLayout>
 
-    <!-- 内容区：翻页页（主）/ 连接页（TASK-040）—— 二者互斥显示 -->
+    <!-- 内容区：翻页页（主）/ 按键页（060）/ 键盘页（061）/ 连接页（040）—— 互斥显示 -->
     <FrameLayout
         android:id="@+id/console_content"
         android:layout_width="match_parent"
@@ -69,6 +69,13 @@
             android:layout_height="match_parent"
             android:visibility="gone" />
 
+        <!-- 🆕 TASK-061：键盘页（手机文本 → 墨水屏输入框；仅 ASCII） -->
+        <com.inkread.weekread.ui.KeyboardPageView
+            android:id="@+id/console_keyboard"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
         <ScrollView
             android:id="@+id/console_connect_scroll"
             android:layout_width="match_parent"
@@ -83,7 +90,7 @@
         </ScrollView>
     </FrameLayout>
 
-    <!-- 底部导航（docs/09 §5.5）：翻页 / 按键 / 连接 -->
+    <!-- 底部导航（docs/09 §5.5）：翻页 / 按键 / 键盘 / 连接 -->
     <LinearLayout
         android:id="@+id/console_nav"
         android:layout_width="match_parent"
@@ -109,6 +116,17 @@
             android:layout_weight="1"
             android:gravity="center"
             android:text="@string/console_nav_keypad"
+            android:textColor="@color/ink_text2"
+            android:textSize="15sp" />
+
+        <!-- 🆕 TASK-061：键盘页入口 -->
+        <TextView
+            android:id="@+id/console_nav_keyboard"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="@string/console_nav_keyboard"
             android:textColor="@color/ink_text2"
             android:textSize="15sp" />
 

@@ -92,6 +92,7 @@
             android:name=".shell.ConsoleActivity"
             android:exported="false"
             android:label="@string/app_name"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@android:style/Theme.Material.Light.NoActionBar" />
 
         <!-- 「怎么用」：把面向使用者的说明内置进来（v0.4.2），文案在 res/raw/help.txt -->

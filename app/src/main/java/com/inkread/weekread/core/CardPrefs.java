@@ -415,6 +415,32 @@ public final class CardPrefs {
         sp(c).edit().putInt("bt_flip_repeat_ms", v).commit();
     }
 
+    // ── 🆕 TASK-061：键盘页「打字间隔」（蓝牙 HID 逐字符发送时的字符间隔，ms）──
+    //
+    //  · 短 = 打得快、但可能丢键（对端处理不过来）；长 = 稳但慢。
+    //  · 默认取**保守档**（本机实测不丢键）；越界 / 缺失一律钳回 `[MIN, MAX]`（同一套安全读出纪律）。
+    //  · 只作用于「键盘」页的逐字符发送；翻页长按连翻用另一键（{@link #getBtFlipRepeatMs}）。
+
+    /** 打字间隔上限（ms）—— 再慢就像卡住。 */
+    public static final int BT_TYPE_INTERVAL_MAX = 80;
+    /** 打字间隔下限（ms）—— 过快会灌爆对端按键队列（丢键）。 */
+    public static final int BT_TYPE_INTERVAL_MIN = 10;
+    /** 打字间隔默认（ms）—— 保守值。 */
+    public static final int BT_TYPE_INTERVAL_DEFAULT = 30;
+
+    public static int getBtTypeIntervalMs(Context c) {
+        int v = sp(c).getInt("bt_type_interval_ms", BT_TYPE_INTERVAL_DEFAULT);
+        if (v < BT_TYPE_INTERVAL_MIN) return BT_TYPE_INTERVAL_MIN;
+        if (v > BT_TYPE_INTERVAL_MAX) return BT_TYPE_INTERVAL_MAX;
+        return v;
+    }
+
+    public static void setBtTypeIntervalMs(Context c, int v) {
+        if (v < BT_TYPE_INTERVAL_MIN) v = BT_TYPE_INTERVAL_MIN;
+        if (v > BT_TYPE_INTERVAL_MAX) v = BT_TYPE_INTERVAL_MAX;
+        sp(c).edit().putInt("bt_type_interval_ms", v).commit();
+    }
+
     // ── TASK-025：卡片池（哪几张卡进桌面循环/列表）+ 切换模式（V1.0.3-beta）──
     //
     // 🔴 作用范围**只有桌面卡片** —— 未勾选的卡不参与桌面循环/列表，

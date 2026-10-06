@@ -400,6 +400,18 @@
     <string name="console_nav_flip">翻页</string>
     <string name="console_nav_keypad">按键</string>
     <string name="console_nav_connect">连接</string>
+    <string name="console_nav_keyboard">键盘</string>
+    <!-- 🆕 TASK-061：键盘页（整段发送 / 实时同步 / 常用键）—— 🔴 中文不可行，如实提示、不静默丢 -->
+    <string name="console_kb_empty">输入框是空的：先输入要发送的文字</string>
+    <string name="console_kb_sent">已发送 %1$d 个字符</string>
+    <string name="console_kb_sent_skip">已发送 %1$d 个字符 · 跳过 %2$d 个非 ASCII</string>
+    <string name="console_kb_skipped">已跳过 %1$d 个非 ASCII 字符（中文 / emoji 蓝牙键盘发不了）</string>
+    <string name="console_kb_realtime_on">已开启实时同步：边打边发</string>
+    <string name="console_kb_realtime_off">已关闭实时同步：改用「发送」整段发</string>
+    <string name="console_opt_type">打字间隔（键盘页逐字符发送）</string>
+    <string name="console_type_fast">快（10ms，可能丢键）</string>
+    <string name="console_type_mid">中（30ms，默认）</string>
+    <string name="console_type_slow">慢（80ms，最稳）</string>
     <string name="console_conn_selfcheck">系统自检</string>
     <string name="console_conn_local">本机蓝牙</string>
     <string name="console_conn_bonded">已配对设备</string>

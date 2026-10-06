@@ -17,14 +17,20 @@ import com.inkread.weekread.R;
 import com.inkread.weekread.core.CardPrefs;
 import com.inkread.weekread.remote.HidConst;
 import com.inkread.weekread.remote.HidKeepAliveService;
+import com.inkread.weekread.remote.HidKeymap;
 import com.inkread.weekread.remote.HidLink;
 import com.inkread.weekread.remote.RemoteLinkManager;
 import com.inkread.weekread.remote.RemoteProtocol;
 import com.inkread.weekread.ui.ConnectPageView;
 import com.inkread.weekread.ui.FlipKeyView;
 import com.inkread.weekread.ui.InkTheme;
+import com.inkread.weekread.ui.KeyboardPageView;
 import com.inkread.weekread.ui.KeyPadView;
 import com.inkread.weekread.ui.StatusChipView;
+
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * V1.1.1-beta · 手机端「遥控台」（Phone Console）。
@@ -37,10 +43,14 @@ import com.inkread.weekread.ui.StatusChipView;
  *   实时日志 + 可被发现 / 电池白名单入口（{@link ConnectPageView}）。
  * <p>🆕 TASK-060 补「按键」页：底栏扩为**三页**（翻页 / 按键 / 连接）—— 按键页 = 十字键 + 确认 +
  *   系统键（{@link KeyPadView}），把 HID 键盘的**方向 / 确认 / 可达系统键**用起来。
+ * <p>🆕 TASK-061 补「键盘」页：底栏扩为**四页**（翻页 / 按键 / 键盘 / 连接）—— 键盘页把**手机文本**
+ *   逐字符"打"进墨水屏输入框（{@link KeyboardPageView} + {@link HidKeymap}），支持
+ *   **整段发送**与**实时同步**两种模式；🔴 HID 协议层**仅 ASCII 可发**，中文/emoji 跳过并**如实计数**。
  *
  * <p>🔴 **只服务手机端**（{@code install_role=phone}）；阅读器端不实例化本类、本布局，行为零差异。
- * <p>🔴 **发送两条路**：翻页仍走 {@link RemoteLinkManager#sendCommand(int)}（HID 优先分派，一行不改）；
- *   🆕 TASK-060 的按键页因要发**任意键盘 usage**（文本指令表达不了）而直接走 {@link HidLink#sendKey(int)}。
+ * <p>🔴 **发送三条路**：翻页仍走 {@link RemoteLinkManager#sendCommand(int)}（HID 优先分派，一行不改）；
+ *   TASK-060 的按键页因要发**任意键盘 usage**（文本指令表达不了）而直接走 {@link HidLink#sendKey(int)}；
+ *   🆕 TASK-061 的键盘页**批量**逐字符发（{@link HidLink#sendKeyBlocking}，串行 + 可调间隔）。
  * <p>🔴 **本类不新增任何能力**：状态是只读订阅（{@link HidKeepAliveService.StateListener}），不碰协议/权限。
  */
 public class ConsoleActivity extends Activity {
@@ -48,21 +58,28 @@ public class ConsoleActivity extends Activity {
     /** 🆕 TASK-040：ACTION_REQUEST_DISCOVERABLE 的请求码（与设置页 TASK-035 同款语义）。 */
     private static final int REQ_BT_DISCOVERABLE = 3601;
 
-    // ── 🆕 TASK-060：页索引（原先是 `showingConnect` 布尔 —— 两页扩三页后改枚举式）──
+    // ── 页索引（原先是 `showingConnect` 布尔 —— TASK-060 两页扩三页、TASK-061 再扩为四页 → 枚举式）──
     /** 翻页页（主）。 */
     private static final int PAGE_FLIP = 0;
     /** 按键页（十字键 + 确认 + 系统键）。 */
     private static final int PAGE_KEYPAD = 1;
+    /** 🆕 TASK-061：键盘页（手机文本 → 墨水屏输入框）。 */
+    private static final int PAGE_KEYBOARD = 2;
     /** 连接页（自检 / 日志）。 */
-    private static final int PAGE_CONNECT = 2;
+    private static final int PAGE_CONNECT = 3;
+
+    /** 🆕 TASK-061：逐字符发送时 down→up 的保持时长（ms，≥4；间隔另由偏好控制）。 */
+    private static final int TYPING_HOLD_MS = 8;
 
     private StatusChipView chip;
     private FlipKeyView flip;
     private KeyPadView keypad;
+    private KeyboardPageView keyboard;
     private TextView gear;
     private TextView darkBtn;
     private View flipPage;
     private View keypadPage;
+    private View keyboardPage;
     private View connectScroll;
     private View nav;
     private View topbar;
@@ -70,9 +87,20 @@ public class ConsoleActivity extends Activity {
     private ConnectPageView connectPage;
     private TextView navFlip;
     private TextView navKeypad;
+    private TextView navKeyboard;
     private TextView navConnect;
-    /** 当前页（三页互斥显示）。 */
+    /** 当前页（四页互斥显示）。 */
     private int page = PAGE_FLIP;
+
+    /**
+     * 🆕 TASK-061：打字任务的**串行**执行器 —— 整段发送与实时增量共用同一条线程，
+     * 保证 down/up 与字符顺序**严格有序**（并发发键会乱序 / 丢键）。
+     * ⚠️ 必须在 {@link #onDestroy()} 里 {@code shutdown()}。
+     */
+    private final ExecutorService typing = Executors.newSingleThreadExecutor();
+
+    /** 实时模式下"未连接"只提示一次，避免每敲一键都弹 Toast。 */
+    private boolean realtimeWarned = false;
 
     /**
      * HID 状态订阅（TASK-033 既有回调）。🔴 回调可能在 binder 线程 ⇒ 一律切主线程再改 View。
@@ -97,6 +125,7 @@ public class ConsoleActivity extends Activity {
         chip = (StatusChipView) findViewById(R.id.console_chip);
         flip = (FlipKeyView) findViewById(R.id.console_flip);
         keypad = (KeyPadView) findViewById(R.id.console_keypad);
+        keyboard = (KeyboardPageView) findViewById(R.id.console_keyboard);
         gear = (TextView) findViewById(R.id.console_gear);
         darkBtn = (TextView) findViewById(R.id.console_dark);
         root = findViewById(R.id.console_root);
@@ -104,10 +133,12 @@ public class ConsoleActivity extends Activity {
         nav = findViewById(R.id.console_nav);
         flipPage = findViewById(R.id.console_flip);
         keypadPage = findViewById(R.id.console_keypad);
+        keyboardPage = findViewById(R.id.console_keyboard);
         connectScroll = findViewById(R.id.console_connect_scroll);
         connectPage = (ConnectPageView) findViewById(R.id.console_connect);
         navFlip = (TextView) findViewById(R.id.console_nav_flip);
         navKeypad = (TextView) findViewById(R.id.console_nav_keypad);
+        navKeyboard = (TextView) findViewById(R.id.console_nav_keyboard);
         navConnect = (TextView) findViewById(R.id.console_nav_connect);
 
         // 🆕 TASK-040：连接页——「让本机可被发现」由本 Activity 发 startActivityForResult
@@ -136,6 +167,13 @@ public class ConsoleActivity extends Activity {
                 showPage(PAGE_CONNECT);
             }
         });
+        // 🆕 TASK-061：底栏「键盘」入口
+        navKeyboard.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showPage(PAGE_KEYBOARD);
+            }
+        });
 
         flip.setListener(new FlipKeyView.Listener() {
             @Override
@@ -149,6 +187,31 @@ public class ConsoleActivity extends Activity {
             @Override
             public void onKey(int keyId) {
                 sendKey(keyId);
+            }
+        });
+
+        // 🆕 TASK-061：键盘页 —— View 只抛**语义事件**（整段 / 常用键 / 增量），映射与发送全在本类
+        keyboard.setListener(new KeyboardPageView.Listener() {
+            @Override
+            public void onSendAll(String text) {
+                sendTextAll(text);
+            }
+
+            @Override
+            public void onCommonKey(int keyId) {
+                sendCommonKey(keyId);
+            }
+
+            @Override
+            public void onSyncDelta(String deletedTail, String inserted) {
+                syncTypingDelta(deletedTail, inserted);
+            }
+
+            @Override
+            public void onRealtimeChanged(boolean on) {
+                Toast.makeText(ConsoleActivity.this,
+                        on ? R.string.console_kb_realtime_on : R.string.console_kb_realtime_off,
+                        Toast.LENGTH_SHORT).show();
             }
         });
 
@@ -216,6 +279,13 @@ public class ConsoleActivity extends Activity {
         HidKeepAliveService.removeListener(mHidListener);
     }
 
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        // 🆕 TASK-061：停掉打字串行执行器（已在跑的任务让它跑完，之后不再接新任务）
+        typing.shutdown();
+    }
+
     /**
      * 按**服务真值**（不读偏好）刷新状态胶囊与翻页键可用性。
      *
@@ -276,8 +346,9 @@ public class ConsoleActivity extends Activity {
         }
         if (gear != null) gear.setTextColor(InkTheme.ink2(this));
 
-        // 连接页：子视图着色定死在 buildUi ⇒ 重建（未构建过则跳过）
+        // 连接页 / 键盘页：子视图着色定死在 buildUi ⇒ 重建（未构建过则跳过）
         if (connectPage != null) connectPage.rebuild();
+        if (keyboard != null) keyboard.rebuild();   // 🆕 TASK-061
 
         // 自绘 View 重画
         if (chip != null) chip.invalidate();
@@ -289,19 +360,21 @@ public class ConsoleActivity extends Activity {
 
     /** 底部导航选中态着色（供 {@link #showPage} 与 {@link #applyTheme} 共用）。 */
     private void applyNavColors() {
-        if (navFlip == null || navConnect == null || navKeypad == null) return;
+        if (navFlip == null || navConnect == null || navKeypad == null || navKeyboard == null) return;
         navFlip.setTextColor(page == PAGE_FLIP ? InkTheme.bamboo(this) : InkTheme.ink2(this));
         navKeypad.setTextColor(page == PAGE_KEYPAD ? InkTheme.bamboo(this) : InkTheme.ink2(this));
+        navKeyboard.setTextColor(page == PAGE_KEYBOARD ? InkTheme.bamboo(this) : InkTheme.ink2(this));
         navConnect.setTextColor(page == PAGE_CONNECT ? InkTheme.bamboo(this) : InkTheme.ink2(this));
     }
 
-    // ── 🆕 TASK-040：多页切换（翻页 / 按键 / 连接；TASK-060 由两页扩为三页）──
+    // ── 多页切换（翻页 / 按键 / 键盘 / 连接；TASK-040 两页 → TASK-060 三页 → TASK-061 四页）──
 
     /** 切到指定页，并同步底部导航选中态（docs/09 §5.5）。 */
     private void showPage(int p) {
         page = p;
         flipPage.setVisibility(p == PAGE_FLIP ? View.VISIBLE : View.GONE);
         keypadPage.setVisibility(p == PAGE_KEYPAD ? View.VISIBLE : View.GONE);
+        keyboardPage.setVisibility(p == PAGE_KEYBOARD ? View.VISIBLE : View.GONE);
         connectScroll.setVisibility(p == PAGE_CONNECT ? View.VISIBLE : View.GONE);
         applyNavColors();
         if (p == PAGE_CONNECT && connectPage != null) connectPage.refresh();
@@ -442,6 +515,32 @@ public class ConsoleActivity extends Activity {
         box.addView(cbVol);
         box.addView(noteLabel(R.string.console_volkey_note));
 
+        // ── 🆕 TASK-061：打字间隔（键盘页逐字符发送）──
+        box.addView(sectionLabel(R.string.console_opt_type));
+        final RadioGroup rgType = new RadioGroup(this);
+        final RadioButton rbTFast = radio(R.string.console_type_fast);
+        final RadioButton rbTMid = radio(R.string.console_type_mid);
+        final RadioButton rbTSlow = radio(R.string.console_type_slow);
+        rbTFast.setId(View.generateViewId());
+        rbTMid.setId(View.generateViewId());
+        rbTSlow.setId(View.generateViewId());
+        rgType.addView(rbTFast);
+        rgType.addView(rbTMid);
+        rgType.addView(rbTSlow);
+        int tms = CardPrefs.getBtTypeIntervalMs(this);
+        rgType.check(tms <= 15 ? rbTFast.getId()
+                : (tms >= 60 ? rbTSlow.getId() : rbTMid.getId()));
+        rgType.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(RadioGroup g, int id) {
+                int v = (id == rbTFast.getId()) ? CardPrefs.BT_TYPE_INTERVAL_MIN
+                        : (id == rbTSlow.getId() ? CardPrefs.BT_TYPE_INTERVAL_MAX
+                        : CardPrefs.BT_TYPE_INTERVAL_DEFAULT);
+                CardPrefs.setBtTypeIntervalMs(ConsoleActivity.this, v);
+            }
+        });
+        box.addView(rgType);
+
         new AlertDialog.Builder(this)
                 .setTitle(R.string.console_opt_title)
                 .setView(box)
@@ -507,8 +606,9 @@ public class ConsoleActivity extends Activity {
     /**
      * 键 id → HID 键盘 usage。
      *
-     * <p>🔴 映射表**只在这里** —— {@link KeyPadView} 属于 `ui` 包，按 `docs/02` §1 的依赖方向
-     * （`ui` 只出边到 `core`）**不认识** {@code HidConst}。
+     * <p>🔴 映射表**只在这里** —— 两个页面视图（{@link KeyPadView} / {@link KeyboardPageView}，均属 `ui` 包）
+     * **不认识** {@code HidConst} / {@code HidKeymap}，只往上抛**自己的键 id 或语义事件**，
+     * 由本类（`shell`）统一翻译成 usage 再发。
      */
     private static int usageOf(int keyId) {
         switch (keyId) {
@@ -523,7 +623,127 @@ public class ConsoleActivity extends Activity {
             case KeyPadView.K_DELETE:    return HidConst.KEY_DELETE;
             case KeyPadView.K_HOME:      return HidConst.KEY_HOME;
             case KeyPadView.K_END:       return HidConst.KEY_END;
+            // 🆕 TASK-061：键盘页「常用键」（KeyboardPageView 自己的 id 段 201+）
+            case KeyboardPageView.K_ENTER:     return HidConst.KEY_ENTER;
+            case KeyboardPageView.K_BACKSPACE: return HidConst.KEY_BACKSPACE;
+            case KeyboardPageView.K_SPACE:     return HidConst.KEY_SPACE;
+            case KeyboardPageView.K_TAB:       return HidConst.KEY_TAB;
+            case KeyboardPageView.K_DELETE:    return HidConst.KEY_DELETE;
             default:                     return -1;
+        }
+    }
+
+    // ── 🆕 TASK-061：键盘页发送（全部走同一条 `typing` 串行线程，保证字符顺序）──
+
+    /** 常用键：单次击发。 */
+    private void sendCommonKey(int keyId) {
+        final HidLink hid = HidKeepAliveService.link();
+        if (hid == null || !hid.isHostConnected()) {
+            Toast.makeText(this, R.string.console_not_connected, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final int usage = usageOf(keyId);
+        if (usage < 0) return;
+        typing.submit(new Runnable() {
+            @Override public void run() {
+                hid.sendKeyBlocking(usage, HidConst.MOD_NONE, TYPING_HOLD_MS);
+            }
+        });
+    }
+
+    /**
+     * 整段发送：把文本**逐字符**发出。
+     *
+     * <p>🔴 非 ASCII（中文 / emoji）**跳过并如实计数**（{@link HidKeymap#skippedCount}）——
+     * ⛔ 不静默丢字、不谎报成功。发送期间禁用按钮（{@link KeyboardPageView#setSending}）。
+     * 中途断链 ⇒ 立即停止，状态行只报**实际发出**的个数。
+     */
+    private void sendTextAll(String text) {
+        final HidLink hid = HidKeepAliveService.link();
+        if (hid == null || !hid.isHostConnected()) {
+            Toast.makeText(this, R.string.console_not_connected, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final List<HidKeymap.Stroke> strokes = HidKeymap.compile(text);
+        final int skipped = HidKeymap.skippedCount(text);
+        if (strokes.isEmpty()) {
+            Toast.makeText(this, skipped > 0
+                    ? getString(R.string.console_kb_skipped, skipped)
+                    : getString(R.string.console_kb_empty), Toast.LENGTH_LONG).show();
+            return;
+        }
+        final int interval = CardPrefs.getBtTypeIntervalMs(this);
+        keyboard.setSending(true);
+        typing.submit(new Runnable() {
+            @Override public void run() {
+                int done = 0;
+                for (HidKeymap.Stroke s : strokes) {
+                    if (!hid.isHostConnected()) break;       // 中途断链 ⇒ 立即停（不装作发完）
+                    hid.sendKeyBlocking(s.usage, s.modifier, TYPING_HOLD_MS);
+                    done++;
+                    sleepQuiet(interval);
+                }
+                final int n = done;
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        if (isFinishing()) return;
+                        keyboard.setSending(false);
+                        keyboard.setStatus(skipped > 0
+                                ? getString(R.string.console_kb_sent_skip, n, skipped)
+                                : getString(R.string.console_kb_sent, n));
+                        if (skipped > 0) {
+                            Toast.makeText(ConsoleActivity.this,
+                                    getString(R.string.console_kb_skipped, skipped),
+                                    Toast.LENGTH_LONG).show();
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    /**
+     * 实时同步的**增量**：先补 {@code deletedTail} 中可映射字符数的退格，再逐字符补 {@code inserted}。
+     *
+     * <p>算法见 {@link KeyboardPageView} 类注释（公共前缀差分）。未连接 ⇒ **只提示一次**（节流），
+     * 不静默丢；断链期间的增量**不补发**（用户可点「发送」整段重发对齐）。
+     */
+    private void syncTypingDelta(String deletedTail, String inserted) {
+        final HidLink hid = HidKeepAliveService.link();
+        if (hid == null || !hid.isHostConnected()) {
+            if (!realtimeWarned) {
+                realtimeWarned = true;
+                Toast.makeText(this, R.string.console_not_connected, Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
+        realtimeWarned = false;
+        final int del = HidKeymap.mappedCount(deletedTail);
+        final List<HidKeymap.Stroke> strokes = HidKeymap.compile(inserted);
+        if (del == 0 && strokes.isEmpty()) return;
+        final int interval = CardPrefs.getBtTypeIntervalMs(this);
+        typing.submit(new Runnable() {
+            @Override public void run() {
+                for (int i = 0; i < del; i++) {
+                    if (!hid.isHostConnected()) return;
+                    hid.sendKeyBlocking(HidConst.KEY_BACKSPACE, HidConst.MOD_NONE, TYPING_HOLD_MS);
+                    sleepQuiet(interval);
+                }
+                for (HidKeymap.Stroke s : strokes) {
+                    if (!hid.isHostConnected()) return;
+                    hid.sendKeyBlocking(s.usage, s.modifier, TYPING_HOLD_MS);
+                    sleepQuiet(interval);
+                }
+            }
+        });
+    }
+
+    /** 间隔休眠（吞中断并复位标志）。 */
+    private static void sleepQuiet(int ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
         }
     }
 }
