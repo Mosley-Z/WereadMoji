@@ -584,12 +584,9 @@ final class CardRenderer {
         // 1.6 → 1.30（R2）：与 ACHV_DAY_OFF 配套收紧，给回退后的柱底腾出净空。
         float lineY = h - padY * 0.85f - (achvOn ? ACHV_SHIFT_MUL * SZ_SUB * host.unit : 0f);
         drawBottomLine(c, (left + right) / 2f, lineY, left, right, sb.toString());
-        // 🆕 TASK-047（K2）：阅读摘要行 —— 画在统计行**上方**那 48px 既有留白里
-        //（实测：星期底 ≈630、统计行基线 ≈692）⇒ **柱状图/星期/统计行全零位移**。
-        // 基线取 1.45 倍副行距：字块顶 ≈647，离星期底 630 还有 17px，不打架。
-        // 🔴 上游 weekly 回包不含 readStat ⇒ 真机上周页该行为空（本卡 A1 已实测，见 验证记录/157）。
-        drawStatLine(c, (left + right) / 2f, lineY - SZ_SUB * host.unit * 1.45f,
-                left, right);
+        // 🔴 **TASK-058**：原 TASK-047（K2）的「阅读摘要行」已删除 —— 周页该行本就因上游
+        //     `mode=weekly` 回包不含 `readStat` 而**恒空**（TASK-047 的 A1 已定论）⇒
+        //     周页版面回到「柱图 / 星期 / 统计行」三件套，与加 K2 之前逐像素等价。
         if (achvOn) drawAchievementLine(c, (left + right) / 2f, h, padY, host.achievementText);
     }
 
@@ -725,7 +722,8 @@ final class CardRenderer {
 
         // 🆕 TASK-054（K9）：本函数从"边算边画"改成**「先算几何 → 再统一绘制」**，
         // 因为「整页可滚」要求**在落笔之前**就知道内容总高（才知道滚多远、要不要滚）。
-        // 🔴 所有几何公式与加本卡之前**逐字一致**（含让位规则），只在末尾多了 ③ 排名区。
+        // 🔴 几何公式与加 K9 之前逐字一致（TASK-058 之后连 K2 的让位/缩格分支也已移除），
+        //    只在末尾多了 ③ 排名区。
 
         // ── ① 信息块（上方）[几何]：主数字字号自适应仍在这里做，绘制段直接用结果 ──
         String big = CardLayout.fmtTotal(host.stats.totalSec);
@@ -790,59 +788,19 @@ final class CardRenderer {
         float gridLeft = left + (availW - gridW) / 2f;
         float gridTop = calTop + Math.max(0f, (availH - gridH) / 2f);
 
-        // 🆕 TASK-047（K2）：摘要行要占的那一行高。
-        // 🔴 **只有真要画时才让位** —— 数据没有（老缓存 / `mode=weekly`）时本段一个像素都不影响，
-        //    月页与加本卡之前逐像素一致（A3 直接复用既有基线对照）。
-        boolean statOn = hasStatLine();
-        float statSize = SZ_SUB_FULL * host.unit;
-        float statH = statOn ? statSize * 1.6f : 0f;
-
-        // 🆕 让位规则（**先不动日历，实在挤不下才缩格**）：
-        //   · 按上面这套**原式**算完，日历下方还剩 gapBelow。够一行 ⇒ **日历一格不动**（主路径）；
-        //   · 不够（只有 6 行月）⇒ 把格子压到「仍按原居中位摆放、但底边让出 statH」的最大边长
-        //     —— 即解 `gridH ≤ budget`。这正是本卡风险 R1 预设的缓解手段。
-        //
-        // 🔴🔴 可用下沿取 **卡片真实下沿 `h`，不是 `calBottom`**（这一条决定了 5 行月会不会被误缩）：
-        //   `calBottom = h − padY×0.85`，而 padY 就是卡片内边距（本页底边**什么都没画**），
-        //   ⇒ 那 `padY×0.85 ≈ 34px` 是白给的。若按 calBottom 判，2026-09 这种 5 行月会被
-        //   白白砍掉 12px 格边长（52→40，−23%）；算上内边距后 gapBelow = 73px > statH(≈40px)
-        //   ⇒ **5 行月完全不缩格**，只有 6 行月（网格本来就已顶到可用高）才轻微缩 1–2px。
-        //
-        //   推导：要 gridBottom ≤ h − statH，而 gridBottom = calTop + (availH + gridH)/2
-        //   ⇒ gridH ≤ availH + 2·((h − calBottom) − statH)。
-        float gapBelow = h - (gridTop + gridH);
-        if (statOn && gapBelow < statH) {
-            float budget = availH + 2f * ((h - calBottom) - statH);
-            float c2 = (budget - headH - gap - (rows - 1) * rowGap) / rows;
-            if (c2 > byW) c2 = byW;
-            if (c2 > MONTH_FULL_CELL) c2 = MONTH_FULL_CELL;
-            if (c2 < 20f) c2 = 20f;
-            if (c2 < cell) {                                    // 只缩不放，避免来回抖
-                cell = c2;
-                gridW = 7f * cell + 6f * gap;
-                gridH = headH + gap + rows * cell + (rows - 1) * rowGap;
-                gridLeft = left + (availW - gridW) / 2f;
-                gridTop = calTop + Math.max(0f, (availH - gridH) / 2f);
-                gapBelow = h - (gridTop + gridH);
-            }
-        }
-
-        // 摘要行基线（🆕 TASK-047 原式**一字未改**，只是把 statY 提前算出来供排名区定位）。
-        // 基线 = 格底 + max(0.95 字身高, min(1.5 行高, 剩余)÷2)：
-        //   · 前半是**净空下界** —— 5 行月（格已顶到 52 封顶）格底只剩 ~38px，按"剩余÷2"只有 19px，
-        //     字块顶会贴到格底（实测仅 3px）；加下限后净空 ≈6px、离卡底仍留 ~8px；
-        //   · 后半让**大留白**（2 行月，剩余 100px+）时最多再往下带 0.75 行，不至于飘到卡底。
-        float statY = statOn
-                ? gridTop + gridH + Math.max(statSize * 0.95f,
-                                             Math.min(statH * 1.5f, gapBelow) * 0.5f)
-                : gridTop + gridH;
+        // 🔴 **TASK-058**：原 TASK-047（K2）的「摘要行」与它的**让位/缩格分支**已一并删除。
+        //     实测口径：该分支在 2/5/6 行月**从未触发过**（可用下沿取卡片真实下沿 `h` 后，
+        //     日历下方那 `padY×0.85 ≈ 34px` 白给的内边距本就够放一行）⇒ 删掉后日历几何
+        //     与加 K2 之前**逐像素等价**。日历仍按「可用高反算 → 宽度兜底 → MONTH_FULL_CELL 封顶」
+        //     居中摆放；某个月真挤不下时由 ③ 排名区的**整页滚动**（K9）容纳，不再缩格。
 
         // ── ③ 🆕 TASK-054（K9）「本月各书籍阅读排名」（几何）──
-        // 位于日历 / 摘要行**下方**（Q3 原文「在本月页…超出时整个本月页面可滑动」）。
+        // 紧贴**日历下沿**（TASK-058 之后摘要行已不在，排名区整体上移一行）。
         java.util.List<PeriodStats.Longest> rankItems = monthRankItems();
         float rankRowH = RANK_ROW_H * host.unit;            // ≈32px
         float rankTitleH = RANK_SZ * host.unit * 1.9f;
-        float rankTop = statY + statSize * 0.60f;           // 紧贴摘要行下沿（留半个字高净空，与 A6 不重叠）
+        // 与日历格底留 **半个字高** 净空（沿用 TASK-047 摘要行「不贴格底」的观感口径）。
+        float rankTop = gridTop + gridH + rankTitleH * 0.5f;
         int rankRows = Math.max(1, rankItems.size());       // 无数据也占一行（那行画空态文案）
         float rankH = rankTitleH + rankRows * rankRowH;
         float contentH = rankTop + rankH + padY * 0.85f;    // 内容总高（含底部内边距）
@@ -889,10 +847,8 @@ final class CardRenderer {
             else                   drawCalCell(c, x, y, cell, host.stats.daySec[i] > 0);
         }
 
-        // ══ ②.5 [绘制] 摘要行（TASK-047 K2）══
-        if (statOn) drawStatLine(c, (left + right) / 2f, statY, left, right);
-
         // ══ ③ [绘制] 排名区（🆕 TASK-054 K9）══
+        //     （原 ②.5「摘要行」阶段随 TASK-058 删除 —— 本月页版面 = 信息块 + 日历 + 排名区）
         drawMonthRank(c, left, right, rankTop, rankTitleH, rankRowH, rankItems);
 
         c.restore();
@@ -1219,66 +1175,17 @@ final class CardRenderer {
         host.p.setTextAlign(Paint.Align.LEFT);
     }
 
-    /**
-     * 🆕 TASK-047（K2）：**阅读摘要行** —— `本周 读过 8本 · 读完 0本 · 阅读 21天 · 笔记 60条`。
-     *
-     * 数据 = {@link PeriodStats#readStat}（TASK-046 扩容的四段摘要）。🔴 `counts` **自带单位**
-     * （"8本"/"21天"/"60条"）⇒ 直接 `stat + " " + counts` 拼，**不解析数字**（后端文案变了也不错位）。
-     *
-     * 三处硬约束：
-     * · **只画 App 全屏页** —— 本函数自己用 `host.fullscreen` 守住（桌面卡片一行不动）；
-     * · **数据缺失就不画**（老缓存无 `readStat`、或该 mode 回包本就没有 ⇒ 不出空行）：
-     *   🔴 活体接口实测 `mode=weekly` 的 `readStat` 为 **null**（`mode=monthly` 才有）⇒
-     *   周页在真机上该行为空是**上游数据形状决定的预期**，不是缺陷（见 验证记录/157）；
-     * · 画在**既有留白**里（周页=底部统计行上方；月页=日历下方留白）⇒ **柱图/日历零位移**。
-     *
-     * 🔴 **范围词自己算**（{@link PeriodRange#statRangeWord}）而不是由调用方写死：全屏页能往回翻，
-     * 历史月必须显示「9月」而不是「本月」，否则与页头「2026年9月阅读」打架。
-     */
-    private void drawStatLine(Canvas c, float cx, float lineY, float left, float right) {
-        if (!host.fullscreen) return;                      // 桌面卡片不动（TASK-047 非目标）
-        if (!hasStatLine()) return;
-        long start = (host.stats.baseTime > 0)
-                ? host.stats.baseTime : PeriodRange.startOf(host.mode, 0);
-        StringBuilder sb = new StringBuilder(PeriodRange.statRangeWord(host.mode, start));
-        int n = 0;
-        for (PeriodStats.StatItem it : host.stats.readStat) {
-            if (it == null) continue;
-            sb.append(n == 0 ? "  " : " · ");
-            sb.append(it.stat == null ? "" : it.stat);
-            if (it.counts != null && it.counts.length() > 0) sb.append(' ').append(it.counts);
-            n++;
-        }
-        if (n == 0) return;
-        host.p.setStyle(Paint.Style.FILL);
-        host.p.setColor(GRAY);                     // 比加粗的统计行浅一档 ⇒ 主次分明
-        host.p.setTextAlign(Paint.Align.CENTER);
-        host.p.setFakeBoldText(false);
-        float sSize = SZ_SUB * host.unit;
-        host.p.setTextSize(sSize);
-        float availW = right - left;
-        while (host.p.measureText(sb.toString()) > availW && sSize > SZ_BOTTOM_MIN * host.unit) {
-            sSize -= 0.4f;
-            host.p.setTextSize(sSize);
-        }
-        c.drawText(sb.toString(), cx, lineY, host.p);
-        host.p.setTextAlign(Paint.Align.LEFT);
-    }
-
-    /**
-     * 🆕 TASK-047：**这一帧到底画不画摘要行**。
-     *
-     * 月页要拿它提前决定「要不要给摘要行留一行高」——**必须与 {@link #drawStatLine} 的判据完全一致**，
-     * 否则会出现「留了位却没画」（底部多一条空白）或「没留位却画了」（压到日历）两种错位。
-     * 所以两处共用这一个函数，不许各写一遍。
-     */
-    private boolean hasStatLine() {
-        if (host.stats == null || host.stats.readStat == null || host.stats.readStat.isEmpty()) return false;
-        for (PeriodStats.StatItem it : host.stats.readStat) {
-            if (it != null) return true;                  // 至少有一段有效 ⇒ 有内容可画
-        }
-        return false;
-    }
+    // 🔴 **TASK-058**：原 TASK-047（K2）的 `drawStatLine` / `hasStatLine` **已删除**。
+    //
+    // 删除理由（用户 2026-10-06 拍板「两处都删」）：① 周页该行恒空（上游 `mode=weekly`
+    // 无 `readStat`）；② 月页那行与洞察页「年度视图 / 累计视图」各自的 `readStat` 行**重复**，
+    // 而洞察页的分区①「阅读摘要」占位格也一并下架 ⇒ 全 App 不再有"单独成行的四段摘要"。
+    //
+    // ⚠️ **注意**：{@code host.stats.readStat}（TASK-046 的解析结果）**没有被删** ——
+    // 「年度视图 / 累计视图」两处仍在用（那两处走的是 `InsightRenderer.drawStatLine`，
+    // **不是**本类的同名函数）。本类删掉的只是"周/月全屏页底部那一行"。
+    //
+    // 连带删除：{@link PeriodRange#statRangeWord}（该方法唯一的调用点就在下面这段里）。
 
     /**
      * 成就行（v0.9，TASK-013）：接管原统计行的贴底位（h − padY×0.85）。

@@ -184,21 +184,11 @@ final class InsightRenderer {
         p.setTextAlign(Paint.Align.LEFT);
     }
 
-    // ── 占位分区工厂（本卡用；后序卡用真实 Section 顶替）──
-
-    /** 占位分区：正文高度 = `lines` 行（按正文字号 ×1.9 行距算）。 */
-    static Section placeholderLines(final String title, final String empty, final float lines) {
-        return new Section() {
-            public String title() { return title; }
-            public float height(float w, float vh, float unit) {
-                return secHeadH(unit) + SZ_BODY * unit * 1.9f * lines;
-            }
-            public void draw(Canvas c, float w, float vh, float top, float unit, Paint p) {
-                float bodyTop = drawSectionHead(c, w, top, unit, p, title);
-                drawCenteredIn(c, w, bodyTop, SZ_BODY * unit * 1.9f * lines, unit, p, empty);
-            }
-        };
-    }
+    // ── 占位分区工厂 —— 🔴 **TASK-058 起已全部下线** ──
+    // `placeholderLines` 随洞察页分区①「阅读摘要」一起删除（它再无调用点）；
+    // 更早的 `placeholderRatio` 已在 K8（TASK-053）落真实 RankSection 时删除。
+    // 洞察页现为 4 个**真实**分区：年度 / 累计 / 排行 / 画像 —— **无任何占位分区**。
+    // ⚠️ `drawCenteredIn` **保留**：它被四类真实分区的空态复用（见本类各 empty 分支）。
 
     // ══════════════════════ K4（TASK-049）：兴趣雷达 ══════════════════════
 

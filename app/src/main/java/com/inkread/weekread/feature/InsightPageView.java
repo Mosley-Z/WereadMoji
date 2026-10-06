@@ -164,27 +164,25 @@ public final class InsightPageView extends View {
     // ══════════════════════ 分区注册（后序卡的唯一改动点） ══════════════════════
 
     /**
-     * 注册洞察页的 5 个分区。
-     *
-     * 🔴 未落地的分区仍是**占位**（只画空态文案）。后序卡（K10）落码时：
-     * 把自己那个 `placeholderXxx(...)` 换成一个真实 `Section` 实现即可，
-     * **不要动本类的滚动/量高逻辑**。
+     * 注册洞察页的 4 个分区。
      *
      * 分区顺序（与卡面 ASCII 图一致，且 = 下拉里「洞察页」的阅读顺序）：
-     * 摘要 → 年度 → 累计 → 排行 → 画像。
+     * 年度 → 累计 → 排行 → 画像。
+     *
+     * 🔴 **TASK-058**：原分区①「阅读摘要」占位格**已删除** —— 它自 K3 建容器起一直只是
+     * 「标题 + 暂无阅读摘要」的空占位（周/月全屏页的 K2 摘要行也同期删除），
+     * 留着就是与本页其余四个真实分区格格不入的一条空行。分区计数 5 → 4。
      */
     private void rebuildSections() {
         renderer.clear();
-        // ① 摘要（TASK-047 已实现渲染，但那是"周/月全屏页"的底部行；洞察页这一格待后序卡接）
-        renderer.add(InsightRenderer.placeholderLines("阅读摘要", "暂无阅读摘要", 1f));
-        // ② 年度（🆕 TASK-051 K6：**已落地** —— 12 桶按月柱图 + 汇总行 + readStat）
+        // ① 年度（🆕 TASK-051 K6：**已落地** —— 12 桶按月柱图 + 汇总行 + readStat）
         renderer.add(InsightRenderer.annualSection(annualStats, "暂无年度数据"));
-        // ③ 累计（🆕 TASK-052 K7：**已落地** —— 汇总行 + 陪伴年数 + 勋章计数 + readStat）
+        // ② 累计（🆕 TASK-052 K7：**已落地** —— 汇总行 + 陪伴年数 + 勋章计数 + readStat）
         renderer.add(InsightRenderer.overallSection(overallStats, "暂无累计数据", overallNoteChars));
-        // ④ 排行（🆕 TASK-053 K8：**已落地** —— 有界高 42% + 内部独立滚动；料 = 年度 longest[]）
+        // ③ 排行（🆕 TASK-053 K8：**已落地** —— 有界高 42% + 内部独立滚动；料 = 年度 longest[]）
         rankSection.setItems(rankItems);
         renderer.add(rankSection);
-        // ⑤ 画像（🆕 TASK-049 K4 兴趣雷达 + TASK-050 K5 偏好作者/时段：**三件套已落地**；
+        // ④ 画像（🆕 TASK-049 K4 兴趣雷达 + TASK-050 K5 偏好作者/时段：**三件套已落地**；
         //         K10 画像判定继续往这一格加）
         //         🆕 TASK-055 K10：判定块（判定句 + 依据）恒在分区最上，免责声明恒在最下
         renderer.add(InsightRenderer.profileSection(
@@ -207,7 +205,7 @@ public final class InsightPageView extends View {
     /** 内容总高（像素）—— 给自动化断言 / 调试用。 */
     public float contentHeightPx() { return renderer.contentHeight(getWidth(), getHeight(), unit); }
 
-    /** 分区数（验收 A2 断言「= 5」）。 */
+    /** 分区数（TASK-048 时 = 5；🔴 **TASK-058 起 = 4** —— 分区①「阅读摘要」占位格已删）。 */
     public int sectionCount() { return renderer.count(); }
 
     /** 第 i 个分区的标题（验收 A2 断言标题文案）。 */
