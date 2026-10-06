@@ -18,8 +18,8 @@
 | `RemoteInjector` | 注入层：`dispatchGesture` **点击边界热区**（下一页=点右 `x=425`、上一页=点左 `x=55`，y=400；左右各 55px 边界**不受正文划线影响**，方案 D 真机标定 `验证记录/118`）；派发走**方案 S = 串行队列**（有手势在飞则入队，等 `onCompleted` 再派发下一条，不丢指令，见 `验证记录/110` §10、`验证记录/111`）。⚠️ 旧「滑动」几何 `380↔100` 因墨水屏把 `dispatchGesture` 判成 tap ⇒ 弹划线面板，已弃用（`验证记录/117`） |
 | `RemoteKeyService` | 独立无障碍服务（配置 `res/xml/a11y_remote_service.xml`）：phone 捕获音量键 / eink 收到指令注入 |
 | `ShakeDetector` | 🆕 TASK-029：phone 的**第二条捕获路径** —— 50Hz 加速度计 → 去重力 → 双峰反转 → 发翻页指令（**零新增权限**） |
-| `HidLink` | 🆕 TASK-032：**T1 蓝牙 HID 外设链路**（第 3 种模型，见 `ADR-012`）—— 手机注册 `BluetoothHidDevice` 直接给墨水屏 OS 发按键。🆕 TASK-033 起对外暴露 `isHostConnected()` / `pagePrev()` / `pageNext()`（供 `RemoteLinkManager` 通道分派）。🆕 TASK-034 加 `profileUnavailable()`（ROM 无 HID profile 显式上抛）/ `everConnected()`（区分「首次待连」与「连过又断」）。⚠️ `SDK_INT<28` 或不支持 ⇒ `supported()=false`，fail-closed |
-| `HidConst` | 🆕 TASK-033：**HID 常量唯一来源**（`PROFILE_HID_DEVICE=19` / `SUBCLASS1_COMBO=0xC0` / `REPORT_ID_KEYBOARD=1` / `KEY_PAGE_UP=0x4B` / `KEY_PAGE_DOWN=0x4E` / 消费者音量键 `0xE9`/`0xEA`）—— 避免 `HidLink` 与调用方各写一份魔数 |
+| `HidLink` | 🆕 TASK-032：**T1 蓝牙 HID 外设链路**（第 3 种模型，见 `ADR-012`）—— 手机注册 `BluetoothHidDevice` 直接给墨水屏 OS 发按键。🆕 TASK-033 起对外暴露 `isHostConnected()` / `pagePrev()` / `pageNext()`（供 `RemoteLinkManager` 通道分派）。🆕 TASK-034 加 `profileUnavailable()`（ROM 无 HID profile 显式上抛）/ `everConnected()`（区分「首次待连」与「连过又断」）。🆕 **TASK-060** 加通用发键 `sendKey(int usage)` / `sendKey(int usage, int modifier)`（down → 30ms → up，**异步线程**）与同步版 `sendKeyBlocking(usage, modifier, holdMs)`（供 TASK-061 整段发送）。⚠️ `RemoteLinkManager.sendCommand` **只认 `PAGE_NEXT/PREV`** ⇒ 发任意 keyboard usage 必须**直连 `HidLink`**（绕开 `sendCommand`）。⚠️ `SDK_INT<28` 或不支持 ⇒ `supported()=false`，fail-closed |
+| `HidConst` | 🆕 TASK-033：**HID 常量唯一来源**（`PROFILE_HID_DEVICE=19` / `SUBCLASS1_COMBO=0xC0` / `REPORT_ID_KEYBOARD=1` / `KEY_PAGE_UP=0x4B` / `KEY_PAGE_DOWN=0x4E` / 消费者音量键 `0xE9`/`0xEA`）—— 避免 `HidLink` 与调用方各写一份魔数。🆕 **TASK-060** 扩 keyboard usage 常量（`Enter`/`Esc`/`Tab`/`Space`/`Backspace`/`Delete`/`Home`/`End`/四方向/`App`）+ 修饰位图（`MOD_NONE`/`MOD_LSHIFT`/`MOD_RSHIFT`）。🔴 usage ≠ Android KeyCode（`KEY_HOME=0x4A` 落 **行首**、`KEY_APP=0x65` 落 **MENU**）；⚠️ `KEY_ESC=0x29` / `KEY_APP=0x65` 在 S4 上**无任何可见行为**（**已定论不可行**，常量保留备换 ROM） |
 | `HidKeepAliveService` | 🆕 TASK-032：**HID 注册保活前台服务**（`foregroundServiceType=connectedDevice` + `PARTIAL_WAKE_LOCK`）—— 官方明文 + 真机铁证：注册在退后台/息屏时被自动注销 ⇒ 必须前台服务保活。只在手机端启用「蓝牙控制」时启动（默认零差异）。🆕 TASK-033 加静态入口 `instance()`/`link()`/`isRunning()`/`start()`/`stop()` + `StateListener`（设置页订阅刷状态行）。🆕 TASK-034 通知正文随连态更新（等待连接 / 已连接 X / 已断开·请在墨水屏点「连接」） |
 
 ## 🆕 TASK-029：手机端晃动翻页（V1.0.4-beta）
@@ -109,6 +109,33 @@
   不重配连不上，见 `ADR-012` 背景 / TASK-035 卡面 R2）。
 - **涉及文件**：`shell/SettingsActivity.java`、`res/layout/settings_layout.xml`、`res/values/strings.xml`、
   `res/raw/help.txt`（改后须重构建）、本文件。
+
+## 🆕 TASK-060：遥控台「按键」页（HID 发键）
+
+**一句话**：遥控台底栏改「**翻页 / 按键 / 连接**」三页；「按键」页把 HID 键盘的
+**十字方向键 + 确认 + 实测可达的系统键**用起来，供用户在墨水屏上做**方向导航 / 翻菜单 / 确认**。
+
+- **发送路径**（`shell/ConsoleActivity.sendKey`）：`HidLink hid = HidKeepAliveService.link()` ⇒
+  `hid != null && hid.isHostConnected() && hid.sendKey(usage)`；未连 ⇒ Toast，**不静默丢**。
+  🔴 发任意 keyboard usage **绕开** `RemoteLinkManager.sendCommand`（它只认 `PAGE_NEXT/PREV`）。
+- **模块边界**：视图 `ui/KeyPadView` 属 `ui` 包（**只出边到 `core`**）⇒ **不认识 `HidConst`**，
+  只抛本类键 id；`ConsoleActivity.usageOf(int)` 是**唯一** key-id → usage 映射点。
+- **逐键真机定案（S4，2026-10-06，见 `验证记录/171`）**：
+
+  | 键 | usage | 落点 | 结论 |
+  |---|---|---|---|
+  | 上 / 下 / 左 / 右 | 0x52 / 0x51 / 0x50 / 0x4F | 移动焦点（列表）/ 移动光标（输入框），**不滚动页面** | ✅ 可达 |
+  | 确认 | 0x28 | 直接激活焦点项 | ✅ 可达 |
+  | 退格 / 删除 | 0x2A / 0x4C | 后向 / 前向删字 | ✅ 可达 |
+  | 空格 | 0x2C | 插入空格 | ✅ 可达 |
+  | 跳格 | 0x2B | 焦点在控件间跳 | ✅ 可达 |
+  | 行首 / 行尾 | 0x4A / 0x4D | 光标移到行首 / 行尾（输入框内） | ✅ 可达 |
+  | Esc | 0x29 | **无任何可见行为** | 🔴 已定论不可行（不上 UI） |
+  | 应用 / 菜单 | 0x65 | **无任何可见行为** | 🔴 已定论不可行（不上 UI） |
+
+- **UI 收窄**：系统键 **6 个 3×2 网格**（`SYS_PER_ROW=3`）；未连接 ⇒ 整页 **40% 置灰**
+  （`ALPHA_DISCONNECTED=102`，与 `FlipKeyView` 同语义）。
+- **零协议改动 / 零新增权限**：只扩 `HidConst` 常量 + 加 `HidLink.sendKey`；不动注册 / 保活。
 
 ## 关键约束（🔴 硬约束）
 

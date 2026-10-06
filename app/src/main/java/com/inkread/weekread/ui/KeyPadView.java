@@ -27,7 +27,7 @@ import android.view.View;
  * ⛔ 不留"看着能用其实没用"的键。
  *
  * <h3>几何</h3>
- * 竖排三段：顶部一行说明 → **十字键（3×3 网格，中心 OK）** → **系统键网格（每行 4 个）**。
+ * 竖排三段：顶部一行说明 → **十字键（3×3 网格，中心 OK）** → **系统键网格（每行 3 个，共 6 键）**。
  * 触控目标一律 ≥ 48dp（`docs/09` §七）。未连接 ⇒ 整体 40% 透明度（与 {@link FlipKeyView} 同款语义）。
  */
 public final class KeyPadView extends View {

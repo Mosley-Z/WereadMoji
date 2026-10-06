@@ -11,6 +11,7 @@
 | `TabBarView` | 主页页面选项卡（5 段）。⚠️ v1.2 起 `MainActivity` **不再使用**（改用 `SegTabView` + `NavDropView`），类保留待其它引用 |
 | `PeriodPickerView` | 周期步进选择器（上下周/月） |
 | `CardMenuView` | 卡片上的弹出菜单 |
+| `KeyPadView` | 🆕 v1.2（TASK-060）遥控台「**按键**」页自绘键盘 —— 十字方向键（↑↓←→ + 居中「确认」）+ 实测可达系统键（退格/空格/删除/跳格/行首/行尾，3×2 网格）。未连接 ⇒ 整体 40% 置灰。🔴 只往上抛**本类键 id**（`K_UP`…`K_END`），**不认识 HID usage**（映射在 `shell/ConsoleActivity`） |
 
 ## 对外接口（关键 public API）
 
@@ -19,12 +20,14 @@
 - `TabBarView.setSelected(int)`
 - `PeriodPickerView.setPeriod(String mode, long anchorStart)`
 - `CardMenuView.setItems(String[])`
+- `KeyPadView.setListener(Listener)` / `.setConnected(boolean)` / 回调 `onKey(int keyId)`
 
 ## 依赖规则
 
 - ✅ **允许**：`core`。
 - ❌ **禁止**：`net` / `feature` / `shell` / `a11y` / `update`。
 - ✅ **实测（2026-09-25 · TASK-005）**：唯一出边 = `PeriodPickerView → core.PeriodRange`。
+- ✅ **实测（TASK-060）**：`KeyPadView` **无出边**（仅用同包 `InkTheme`）⇒ 依赖方向**不变**。
 - 被谁依赖：`feature` / `shell` / `a11y`（a11y 用 `CardMenuView` 弹菜单）。
 
 **相关**：`docs/02_架构.md` §1
