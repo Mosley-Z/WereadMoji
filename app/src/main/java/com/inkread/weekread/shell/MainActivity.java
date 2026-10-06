@@ -1301,6 +1301,9 @@ public class MainActivity extends Activity {
         }
         if (!showNote(false)) noteSync(false);   // 选的书本地还没预热 ⇒ 起一次同步补齐
         card.invalidate();                       // 进度行（第 N / 共 M 条）跟着换池子
+        // 🆕 TASK-057 R1（2026-10-06）：桌面卡片也跟随「选书」⇒ 通知它按新池子立刻重绘。
+        // 此刻 App 在前台、桌面卡片被压成 GONE（ownUi）⇒ 这次 sync 只是把内容换好，回桌面即见。
+        CardA11yService.sync();
     }
 
     /**

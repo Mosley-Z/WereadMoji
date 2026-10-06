@@ -548,6 +548,10 @@ final class CardContentController {
      */
     void showNoteItem(NoteStats n) {
         if (cardView() == null) return;
+        // 🆕 TASK-057 R1（2026-10-06）：桌面卡片的进度行槽位**跟随「选书」** ——
+        // 卡面 A6 的"桌面恒默认档"已作废；选了书 ⇒ 走 SLOT_PICK（进度行「第 N / 共 M 条」
+        // 显示的是**这本书**的条数；未选 ⇒ 默认档）。与 `MainActivity.showNoteItem` 同款注入。
+        cardView().setNoteSlot(NoteStore.desktopSlot(ctx));
         if (n == null) {
             // 🔴 渲染函数**绝不发起同步**（v0.5.3，R02）。上一版这里 `syncNoteData(false)`
             // 而同步回调又会回到本函数 —— 空池时形成无界环（桌面侧与 App 侧同构，

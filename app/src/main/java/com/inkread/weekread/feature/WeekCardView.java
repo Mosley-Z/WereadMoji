@@ -270,8 +270,9 @@ public class WeekCardView extends View {
      * 与 {@link #noteIdeasSlot} 的分工：后者只管「筛选」格的**外观**（App 专属，桌面恒 false）；
      * 本字段是**数据口径**，渲染层的进度行（`NoteStore.progress(ctx, noteSlot)`）读它。
      *
-     * 🔴 **桌面卡片恒 0**（`CardContentController` 从不设它）⇒ 桌面的「第 N / 共 M 条」
-     * 永远按全库算，App 里选书改不动它（卡面 A6）。
+     * 🔴 **桌面卡片 R1 起也注入它**（`CardContentController.showNoteItem` 传
+     * {@code NoteStore.desktopSlot(ctx)}）⇒ 桌面的「第 N / 共 M 条」跟随选书（选了书 = 这本书的条数）；
+     * ⚠️ 旧 A6「桌面恒 0、App 选书改不动它」已作废（用户 2026-10-06 要求同步换池子）。
      * App 本记页由 `MainActivity.showNoteItem` 用 `NoteStore.slotFor(this)` 注入。
      */
     int noteSlot = 0;
@@ -539,7 +540,8 @@ public class WeekCardView extends View {
     /**
      * 进度行/池子用哪个槽位（v0.4.4 起是 boolean「只看想法」；🆕 TASK-057 扩成三槽位 int）。
      *
-     * App 在设内容前调（传 {@code NoteStore.slotFor(this)}）；**桌面卡片不调**（默认 0 = 全量池）。
+     * App 在设内容前调（传 {@code NoteStore.slotFor(this)}）；
+     * 🆕 TASK-057 R1 起**桌面卡片也调**（传 {@code NoteStore.desktopSlot(ctx)}，只可能是 0 / 2）。
      * 顺带把「筛选」格的外观标记 {@link #noteIdeasSlot} 对齐 —— 只有 App 会传 1。
      */
     public void setNoteSlot(int slot) {

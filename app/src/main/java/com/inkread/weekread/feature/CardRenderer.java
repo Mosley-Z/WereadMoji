@@ -1856,7 +1856,10 @@ final class CardRenderer {
         drawNoteButtons(c, h, left, right);
 
         // ── ⑧ 进度：第 N / 共 M 条（v0.4.2，池内序号 —— 与"换一条/上一条"同步增减）──
-        // 🆕 TASK-057：按**槽位**取数（桌面恒 0 = 全库；App 由 MainActivity 注入 1 想法 / 2 选书）
+        // 🆕 TASK-057：按**槽位**取数（App 由 MainActivity 注入 1 想法 / 2 选书）
+        // 🆕 TASK-057 R1（2026-10-06）：**桌面也走注入** —— CardContentController 传
+        //   NoteStore.desktopSlot()，只可能是 0 / 2（桌面**不**跟随"只看想法"维度）。
+        //   ⚠️ 原注释"桌面恒 0 = 全库"已被本修订作废。
         int[] pr = NoteStore.progress(host.getContext(), host.noteSlot);
         if (pr != null) {
             String ps = "第 " + pr[0] + " / 共 " + pr[1] + " 条";

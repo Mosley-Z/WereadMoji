@@ -62,11 +62,11 @@ public final class NoteStore {
     /**
      * 🆕 TASK-057：**选书档**的批次文件 —— 独立第三槽，与默认档/只看想法档互不干扰。
      *
-     * 🔴 为什么必须独立（A6 桌面隔离的硬要求，真机实测踩到）：
-     * 桌面卡片走 `pick(ctx, manual)` ⇒ `ideasSlot = false` ⇒ **用的就是默认档那一套**
-     * （同一个 `nt_batch.json` + 同一组 `batch_pos / taken / day / cur_book / cur_key / hist`）。
-     * 若选书档复用默认档，App 里选一本书就会把桌面「今日一签」连人带序号一起换掉
-     * （实测：桌面显示成 App 选的那本 + 「共 20 条」）⇒ 卡面 A6「改前改后逐像素一致」直接不成立。
+     * 🔴 为什么独立（真机实测踩到）：App 本记页「全部（未选书）」与「选了某本书」是两套
+     * **浏览空间**（批次 / 序号 / 当前条 / 历史各不相同）—— 若选书档复用默认档，选书会把
+     * 「全部」档的进度与历史连人带号一起换掉，切回「全部」时"看到哪儿"就丢了。
+     * <p>⚠️ **TASK-057 R1（2026-10-06）起，桌面卡片会跟随选书档**（{@link #desktopSlot}）——
+     * 桌面与 App 在「选书」维度上**共用**本档；旧 A6「桌面逐像素不变」的隔离判据已作废。
      */
     private static final String F_BATCH_P = "nt_batch_p.json";
     private static final String PREFS = "notes";
@@ -97,7 +97,7 @@ public final class NoteStore {
      */
     private static final int RECENT_HEAD = 6;
 
-    /** 「只看想法」开关（App 本记页的切换；桌面卡片不受影响） */
+    /** 「只看想法」开关（App 本记页的切换；🔴 桌面卡片**不跟随**，见 {@link #desktopSlot}） */
     private static final String K_IDEAS_ONLY = "ideas_only";
     private static final String K_DAY = "day";            // 每日一签的日期键 yyyy-MM-dd
     /** 已抽到第几条（进度显示；「换一条」+1，「上一条」-1） */
@@ -115,8 +115,8 @@ public final class NoteStore {
     /**
      * 🆕 TASK-057（K11）**选书档**：用户在 App 本记页选中的书（`""` = 未选 ⇒ 走原随机池）。
      *
-     * 🔴 **只属于 App 本记页的「全部」档**：
-     * · 桌面卡片**不读**这个键（它恒走默认档的随机池）⇒ 桌面本记形态零影响（卡面 A6）；
+     * 🔴 **TASK-057 R1（2026-10-06）：桌面卡片也读本键**（经 {@link #desktopSlot}）——
+     * 用户明确要求「App 选书后桌面同步换池子」；⚠️ 旧 A6「桌面不读该键」已作废。
      * · 与「只看想法」**互斥**（卡面 Q6 = 乙）⇒ 见 {@link #setPickedBook} / {@link #setIdeasOnly}。
      */
     private static final String K_PICK_BOOK = "pick_book";
@@ -124,13 +124,12 @@ public final class NoteStore {
     /**
      * 🆕 TASK-057：**抽取槽位**（0/1/2）—— 取代原先的布尔 `ideasSlot`。
      *
-     * · {@link #SLOT_DEFAULT}（0）= 默认档：**桌面卡片** + App 本记页「全部」且**没选书**时；
+     * · {@link #SLOT_DEFAULT}（0）= 默认档：**未选书时的桌面卡片** + App 本记页「全部」且没选书时；
      * · {@link #SLOT_IDEA}（1）= 只看想法档：App 本记页专属（键后缀 `_i`，同旧 `ideasSlot=true`）；
-     * · {@link #SLOT_PICK}（2）= **选书档**：App 本记页专属（键后缀 `_p` + `nt_batch_p.json`）。
+     * · {@link #SLOT_PICK}（2）= **选书档**：App 本记页 + **R1 起的桌面卡片**（键后缀 `_p` + `nt_batch_p.json`）。
      *
-     * 🔴 为什么要第三槽：选书档若复用默认档，选取一本书就会连桌面「今日一签」的
-     * 批次/序号/当前条一起改掉 ⇒ 卡面 A6 桌面逐像素一致的判据不成立（真机已复现）。
-     * 分槽后桌面**只碰 SLOT_DEFAULT**，与 App 的选书动作彻底解耦。
+     * 🔴 为什么要第三槽：App 的「全部」与「选了某本书」是两套浏览空间，混用会互相覆盖进度/历史。
+     * <p>⚠️ TASK-057 R1（2026-10-06）：桌面卡片**跟随选书**（选了书就走本槽）——旧 A6 隔离判据作废。
      */
     private static final int SLOT_DEFAULT = 0;
     private static final int SLOT_IDEA = 1;
@@ -1358,8 +1357,12 @@ public final class NoteStore {
     /**
      * 取一条内容。
      *
-     * <p>**桌面卡片专用入口** —— 恒走 {@link #SLOT_DEFAULT}：
-     * 不读 {@code K_PICK_BOOK}、不碰选书档，与 App 里的浏览/选书彻底解耦（卡面 A6）。
+     * <p>**桌面卡片专用入口** —— 槽位由 {@link #desktopSlot(Context)} 决定：
+     * 选了书 ⇒ 与 App 共用 {@link #SLOT_PICK}（桌面显示这本书）；未选 ⇒ {@link #SLOT_DEFAULT}。
+     *
+     * <p>🔴 **2026-10-06 修订（TASK-057 R1）**：TASK-057 原设计是「桌面恒 {@code SLOT_DEFAULT}、
+     * 与 App 彻底解耦」（旧卡面 A6「桌面逐像素不变」）；用户明确要求「App 选书后桌面也同步换池子」
+     * ⇒ 改为**跟随选书档**。桌面与 App 共用同一套 {@code SLOT_PICK} 状态（真同步：翻一条两边一起变）。
      *
      * <p>App 本记页请用 {@link #pick(Context, boolean, boolean)}（会按「只看想法 / 选书」落槽）。
      *
@@ -1367,9 +1370,8 @@ public final class NoteStore {
      *               false = 常规展示（同一天内返回当天那条，跨天才自动前进）
      */
     public static synchronized NoteStats pick(Context c, boolean manual) {
-        // 🔴 桌面卡片入口（{@code CardContentController} 唯一调用点）⇒ **恒 SLOT_DEFAULT**。
-        // 桌面**不读** K_PICK_BOOK、也不碰选书档 —— 这是卡面 A6「桌面逐像素不变」的隔离点。
-        return pick(c, manual, SLOT_DEFAULT);
+        // 🔴 桌面卡片入口（{@code CardContentController} 唯一调用点）⇒ 跟随选书（TASK-057 R1）。
+        return pick(c, manual, desktopSlot(c));
     }
 
     /** 同 {@link #pick(Context, boolean)}；{@code ideasSlot} 见 {@link #k} */
@@ -1443,8 +1445,8 @@ public final class NoteStore {
      * 历史空时（第一次打开就点上一条）退到这一把里的前一条，环形 —— 用户不会撞墙。
      */
     public static synchronized NoteStats pickPrev(Context c) {
-        // 🔴 桌面卡片入口 ⇒ 恒 SLOT_DEFAULT（与 {@link #pick(Context, boolean)} 同一隔离点）
-        return pickPrev(c, SLOT_DEFAULT);
+        // 🔴 桌面卡片入口 ⇒ 跟随选书（TASK-057 R1）；与 {@link #pick(Context, boolean)} 同一口径
+        return pickPrev(c, desktopSlot(c));
     }
 
     /** 同 {@link #pickPrev(Context)}；App 本记页入口（按「只看想法 / 选书」落槽） */
@@ -1514,15 +1516,15 @@ public final class NoteStore {
      * 序号是"累计已看条数"（「换一条」+1、「上一条」-1），跨把累加，看完全库一圈回到 1。
      */
     public static int[] progress(Context c) {
-        // 🔴 桌面卡片入口 ⇒ 恒 SLOT_DEFAULT（进度行「第 N / 共 M 条」不能被 App 的选书改掉）
-        return progress(c, SLOT_DEFAULT);
+        // 🔴 桌面卡片入口 ⇒ 跟随选书（TASK-057 R1）：选了书则进度行显示「这本书」的条数
+        return progress(c, desktopSlot(c));
     }
 
     /**
      * 🆕 TASK-057：**按槽位**取进度（0 默认 / 1 只看想法 / 2 选书）。
      *
      * 🔴 渲染层（{@code CardRenderer}）必须走这个 int 版：桌面卡片与 App 都会调它，
-     * 传 {@code host.noteSlot}（桌面恒 0、App 由 {@code MainActivity} 注入）。
+     * 传 {@code host.noteSlot}（桌面 = {@code NoteStore.desktopSlot(c)}、App 由 {@code MainActivity} 注入 {@code slotFor}）。
      */
     public static int[] progress(Context c, int slot) {
         int m = poolSizeFor(c, slot);            // 🆕 TASK-057：选书档 ⇒ 这本书的条目数
@@ -1537,9 +1539,9 @@ public final class NoteStore {
         return new int[]{n, m};
     }
 
-    /** 当前展示的那条（不做任何前进），用于刷新后重绘。桌面卡片入口 ⇒ 恒 SLOT_DEFAULT */
+    /** 当前展示的那条（不做任何前进），用于刷新后重绘。桌面卡片入口 ⇒ 跟随选书（TASK-057 R1） */
     public static synchronized NoteStats current(Context c) {
-        return current(c, SLOT_DEFAULT);
+        return current(c, desktopSlot(c));
     }
 
     /** 按槽位取当前条（0 默认 / 1 只看想法 / 2 选书）；App 侧请传 {@code NoteStore.slotFor(c)} */
@@ -1587,7 +1589,7 @@ public final class NoteStore {
         return out.toString();
     }
 
-    /** 是否「只看想法」（App 本记页的切换，v0.4.4）。桌面卡片不受影响 */
+    /** 是否「只看想法」（App 本记页的切换，v0.4.4）。🔴 桌面卡片**不跟随**（见 {@link #desktopSlot}） */
     public static boolean ideasOnly(Context c) {
         return sp(c).getBoolean(K_IDEAS_ONLY, false);
     }
@@ -1603,7 +1605,7 @@ public final class NoteStore {
 
     // ══════════════════ 🆕 TASK-057（K11）：选书档 ══════════════════
 
-    /** 当前选中的书（`""` = 未选 ⇒ 走原随机池）。桌面卡片不读该键。 */
+    /** 当前选中的书（`""` = 未选 ⇒ 走原随机池）。🔴 桌面卡片 R1 起**也读**该键（经 {@link #desktopSlot}）。 */
     public static String pickedBook(Context c) {
         String v = sp(c).getString(K_PICK_BOOK, "");
         return v == null ? "" : v;
@@ -1617,8 +1619,9 @@ public final class NoteStore {
      *   ② **作废选书档这一把**（内存 + `nt_batch_p.json`）—— 否则沿用旧批次，选书不生效；
      *   ③ **选书档的抽签状态归零**（`day` / `batch_pos` / `taken` / 当前条 / 历史）——
      *      `day` 不清的话 {@link #pick} 会走"每日一签"短路，把旧的条原样返回；
-     *   ④ 🔴 **一个字节都不碰默认档**（`SLOT_DEFAULT`）—— 桌面卡片用的就是默认档，
-     *      碰了它就会把桌面「今日一签」连人带序号一起换掉（真机复现过，见 {@link #F_BATCH_P}）。
+     *   ④ 🔴 **一个字节都不碰默认档**（`SLOT_DEFAULT`）—— 那是"未选书"时的池子。
+     *      但 **TASK-057 R1 起桌面会跟随选书档**（{@link #desktopSlot}）⇒ 选书会**同时**
+     *      改变桌面「今日一签」（这是用户 2026-10-06 明确要求的"同步换池子"，非回归）。
      */
     public static synchronized void setPickedBook(Context c, String bookId) {
         String v = (bookId == null) ? "" : bookId;
@@ -1640,7 +1643,7 @@ public final class NoteStore {
                 .putString(k(K_HIST, SLOT_PICK), "")
                 .apply();
         CardDebug.note(c, "pickedBook = " + (v.length() == 0 ? "(全部书籍)" : v)
-                + " （只动 slot=2，桌面默认档未触碰）");
+                + " （只动 slot=2；R1 起桌面跟随选书档）");
     }
 
     /** 可选书籍条目（书名 / 条数 / 本地是否已就绪）。 */
@@ -1721,8 +1724,8 @@ public final class NoteStore {
      * 当前该用哪个槽位（**App 本记页专用**）：
      * 只看想法 ⇒ {@link #SLOT_IDEA}；否则选了书 ⇒ {@link #SLOT_PICK}；否则 {@link #SLOT_DEFAULT}。
      *
-     * 🔴 桌面卡片**不走这里** —— 它的两个入口（`pick(c,manual)` / `pickPrev(c)`）硬编码
-     * {@link #SLOT_DEFAULT}，从根上不读 `K_PICK_BOOK`（卡面 A6）。
+     * 🔴 桌面卡片走 {@link #desktopSlot(Context)}（只跟随「选书」、**不看**「只看想法」）——
+     * TASK-057 R1 起桌面与 App 在「选书」维度上**共用** {@code SLOT_PICK}。
      */
     private static int slotOf(Context c, boolean ideasSlot) {
         if (ideasSlot) return SLOT_IDEA;
@@ -1737,6 +1740,20 @@ public final class NoteStore {
      */
     public static int slotFor(Context c) {
         return slotOf(c, ideasOnly(c));
+    }
+
+    /**
+     * 🆕 TASK-057 R1（2026-10-06）：**桌面卡片**该用的槽位 = 跟随「选书」。
+     *
+     * 选了书 ⇒ {@link #SLOT_PICK}（桌面与 App **共用同一套抽取状态** ⇒ 桌面显示这本书的划线，
+     * 且 App 翻一条两边一起变）；未选 ⇒ {@link #SLOT_DEFAULT}（原随机池）。
+     *
+     * 🔴 **不含**「只看想法」维度 —— 那是 App 本记页的浏览开关，桌面不跟随。
+     * 桌面四个入口（{@code pick / pickPrev / progress / current} 的单参重载）都走这里；
+     * ⚠️ 旧 TASK-057 A6「桌面与 App 解耦、桌面逐像素不变」已被本修订**推翻**。
+     */
+    public static int desktopSlot(Context c) {
+        return pickedBook(c).length() > 0 ? SLOT_PICK : SLOT_DEFAULT;
     }
 
     private static SharedPreferences sp(Context c) {
