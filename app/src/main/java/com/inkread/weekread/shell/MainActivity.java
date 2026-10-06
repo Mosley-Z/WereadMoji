@@ -7,6 +7,7 @@ import com.inkread.weekread.core.BookStore;
 import com.inkread.weekread.core.CardDebug;
 import com.inkread.weekread.core.CardPrefs;
 import com.inkread.weekread.core.CoverStore;
+import com.inkread.weekread.core.FeatureGate;
 import com.inkread.weekread.core.NoteStats;
 import com.inkread.weekread.core.NoteStore;
 import com.inkread.weekread.core.PeriodRange;
@@ -120,9 +121,17 @@ public class MainActivity extends Activity {
     /** 🆕 TASK-044：当前大标签下标（阅读/设置/实验室/待办）。 */
     private int mainPage = MP_READER;
     /**
-     * 🆕 TASK-044-R1：大标签① 当前文案（「本周▽」之类）—— 只在变化时重设，免无谓 invalidate。
+     * 🆕 TASK-064：大标签**可见表**（UI 下标 → 逻辑页 {@code MP_*}）。
+     *
+     * <p>完整形态 = {@code {0,1,2,3}}（阅读/设置/实验室/待办）；正式版（实验室不可见）= {@code {0,1,3}}。
+     * 由 {@link #rebuildMainTabKeep()} 填；{@code null} 时按完整形态兜底（防御）。
      */
-    private String lastReaderTabLabel;
+    private int[] mMainTabKeep;
+    /**
+     * 🆕 TASK-044-R1：大标签整行**文案签名**（各段文案用 {@code |} 连接）——
+     * 只在签名变化时重设，免无谓 invalidate。🆕 TASK-064：由"仅第 0 段文案"扩为整行（段数会变）。
+     */
+    private String lastMainTabSig;
 
     /**
      * 当前选项卡对应的形态：weekly（第 0 屏）/ monthly（第 1 屏）/ book（第 2 屏）。
@@ -172,7 +181,8 @@ public class MainActivity extends Activity {
         //    UpdateChecker.autoCheck（它与 CardPrefs 共用 "cfg" prefs，写盘在后台线程 + 联网成功后）。
         //    先跑它再读 `isFreshInstall()` 会有竞态误判（改了 prefs ⇒ 被判成"非首装"）。
         final boolean firstRun =
-                !CardPrefs.isInstallRoleChosen(this) && CardPrefs.isFreshInstall(this);
+                FeatureGate.rolePickVisible(this)
+                        && !CardPrefs.isInstallRoleChosen(this) && CardPrefs.isFreshInstall(this);
 
         // v0.5.0：清掉上次没下完的更新残包；并静默查一次更新。
         // 静默检查每天至多一次，结果落盘 —— 用户进设置页自然看到「有新版本」，全程不弹窗。
@@ -239,7 +249,10 @@ public class MainActivity extends Activity {
      * </ul>
      */
     private void enterApp() {
-        if (CardPrefs.getInstallRole(this) == CardPrefs.INSTALL_ROLE_PHONE) {
+        // 🆕 TASK-064：正式版（能力门关）**永不进手机端形态** —— 先把门加在这里（入口分流处），
+        //   再加上 CardPrefs.getInstallRole 的读取门（存量 phone 值也拦），双保险。
+        if (FeatureGate.remoteVisible(this)
+                && CardPrefs.getInstallRole(this) == CardPrefs.INSTALL_ROLE_PHONE) {
             installPhone = true;
             Intent it = new Intent(this, ConsoleActivity.class);
             startActivity(it);
@@ -273,7 +286,7 @@ public class MainActivity extends Activity {
         // 手机上这个 App 只当遥控器用，统计卡片没有使用场景（ADR-010 决定 4：
         // 「phone = 隐藏卡片相关 UI、不启用卡片悬浮服务」）。
         // 只保留「设置」入口（用户要在那里把角色改回来），其余卡片 UI 整块隐藏。
-        if (RemoteRole.from(this) == RemoteRole.PHONE) {
+        if (FeatureGate.remoteVisible(this) && RemoteRole.from(this) == RemoteRole.PHONE) {
             remotePhone = true;
             applyPhoneMode();
             // 🆕 TASK-045：大标签栏与 ②③④ 内容**仍需装配** —— 原靠底部「设置」按钮回到设置页
@@ -446,11 +459,13 @@ public class MainActivity extends Activity {
      * 其余三段仍是普通页面切换。
      */
     private void wireMainTabs() {
+        rebuildMainTabKeep();       // 🆕 TASK-064：先按能力门定「可见表」（正式版 4 格 → 3 格）
         refreshMainTabLabels();
         segMain.setListener(new SegTabView.Listener() {
             @Override
             public void onSegSelected(int index) {
-                if (index == MP_READER) {
+                final int page = mainTabPageOf(index);   // 🆕 TASK-064：UI 下标 → 逻辑页
+                if (page == MP_READER) {
                     // 🔴 TASK-044-R1：本段是下拉扳机，不是普通页签。
                     //    （SegTabView 对"再点已选中段"也会回调 —— 这里靠 mainPage 自己判断分流。）
                     if (mainPage == MP_READER && !remotePhone) {
@@ -461,28 +476,75 @@ public class MainActivity extends Activity {
                     showMainPage(MP_READER);
                     return;
                 }
-                showMainPage(index);
+                showMainPage(page);
             }
         });
     }
 
     /**
-     * 🆕 TASK-044-R1：刷新大标签栏文案 —— 第 0 段 = 「当前形态名 + ▽」（下拉扳机），
-     * 其余三段仍是页面名。**形态切换后必须重调**，否则标签上还写着上一形态。
+     * 🆕 TASK-064：按 {@link FeatureGate#labVisible} 重建大标签**可见表**（UI 下标 → 逻辑页）。
      *
-     * <p>只在文案真变时 {@code setLabels}（后者内部会 invalidate）。
+     * <p>完整形态（Beta）= {@code {阅读, 设置, 实验室, 待办}}（4 格，与改造前逐项一致）；
+     * 正式版（实验室不可见）= {@code {阅读, 设置, 待办}}（3 格）。
+     * 结果写回 {@link #mMainTabKeep}，供 {@link #mainTabPageOf(int)} / {@link #mainTabIndexOf(int)} 互查。
+     */
+    private void rebuildMainTabKeep() {
+        final int[] all = {MP_READER, MP_SETTINGS, MP_LAB, MP_TODO};
+        final boolean[] show = {true, true, FeatureGate.labVisible(this), true};
+        final int[] keep = new int[all.length];
+        int n = 0;
+        for (int i = 0; i < all.length; i++) if (show[i]) keep[n++] = all[i];
+        final int[] trimmed = new int[n];
+        System.arraycopy(keep, 0, trimmed, 0, n);
+        mMainTabKeep = trimmed;
+    }
+
+    /** 🆕 TASK-064：大标签 UI 下标 → 逻辑页（越界 / 未建表一律退回阅读页）。 */
+    private int mainTabPageOf(int index) {
+        final int[] keep = mMainTabKeep;
+        if (keep == null || index < 0 || index >= keep.length) return MP_READER;
+        return keep[index];
+    }
+
+    /** 🆕 TASK-064：逻辑页 → 大标签 UI 下标（找不到退回 0）。 */
+    private int mainTabIndexOf(int page) {
+        final int[] keep = mMainTabKeep;
+        if (keep != null) {
+            for (int i = 0; i < keep.length; i++) if (keep[i] == page) return i;
+        }
+        return 0;
+    }
+
+    /**
+     * 🆕 TASK-044-R1：刷新大标签栏文案 —— 第 0 段 = 「当前形态名 + ▽」（下拉扳机），
+     * 其余段仍是页面名。**形态切换后必须重调**，否则标签上还写着上一形态。
+     *
+     * <p>🆕 TASK-064：段数与内容改按**可见表**（{@link #mMainTabKeep}）生成 —— 正式版
+     * 无「实验室」段（4 格 → 3 格），且段数变化时也要重设。
+     *
+     * <p>只在整行文案签名真变时 {@code setLabels}（后者内部会 invalidate）。
      */
     private void refreshMainTabLabels() {
         if (segMain == null) return;
-        String cur = getString(navLabelResOf(indexOf(tabMode)));
-        String readerLabel = cur + "▽";
-        if (readerLabel.equals(lastReaderTabLabel)) return;
-        lastReaderTabLabel = readerLabel;
-        segMain.setLabels(new String[]{
-                readerLabel,
-                getString(R.string.main_tab_settings),
-                getString(R.string.main_tab_lab),
-                getString(R.string.main_tab_todo)});
+        final int[] keep = (mMainTabKeep != null)
+                ? mMainTabKeep : new int[]{MP_READER, MP_SETTINGS, MP_LAB, MP_TODO};
+        final String readerLabel = getString(navLabelResOf(indexOf(tabMode))) + "▽";
+        final String[] labels = new String[keep.length];
+        final StringBuilder sig = new StringBuilder(readerLabel);
+        for (int i = 0; i < keep.length; i++) {
+            final int page = keep[i];
+            final String s;
+            if (page == MP_READER) s = readerLabel;
+            else if (page == MP_SETTINGS) s = getString(R.string.main_tab_settings);
+            else if (page == MP_LAB) s = getString(R.string.main_tab_lab);
+            else s = getString(R.string.main_tab_todo);
+            labels[i] = s;
+            sig.append('|').append(s);
+        }
+        final String signature = sig.toString();
+        if (signature.equals(lastMainTabSig)) return;
+        lastMainTabSig = signature;
+        segMain.setLabels(labels);
     }
 
     /** 下拉下标 → 字符串资源（大标签① 上显示的那个形态名）。与 {@link #modeOf(int)} 一一对应。 */
@@ -540,9 +602,13 @@ public class MainActivity extends Activity {
         });
 
         // ③ 实验室（page_lab + seg_lab + 4 子容器）
-        labCtrl = new LabPageController(this);
-        labCtrl.bind();
-        labCtrl.bindLabTabs();
+        // 🆕 TASK-064：**仅完整形态装配** —— 正式版（labVisible=false）不 new 控制器、不 bind、
+        //   不注册任何 HID / 蓝牙 / 会话监听（`labCtrl` 保持 null，生命周期回调已全部 null 安全）。
+        if (FeatureGate.labVisible(this)) {
+            labCtrl = new LabPageController(this);
+            labCtrl.bind();
+            labCtrl.bindLabTabs();
+        }
 
         // ④ 待办（seg_todo + 列表 + 底部按钮）
         todoCtrl = new TodoPageController(this);
@@ -645,8 +711,10 @@ public class MainActivity extends Activity {
      */
     private void showMainPage(int index) {
         if (index < 0 || index > MP_TODO) index = MP_READER;
+        // 🆕 TASK-064：正式版无「实验室」标签 ⇒ 该页不可达（越界请求一律回落阅读页）。
+        if (index == MP_LAB && !FeatureGate.labVisible(this)) index = MP_READER;
         mainPage = index;
-        segMain.setSelected(index);
+        segMain.setSelected(mainTabIndexOf(index));   // 🆕 TASK-064：逻辑页 → UI 下标（走可见表）
         pageReader.setVisibility(index == MP_READER ? View.VISIBLE : View.GONE);
         pageSettings.setVisibility(index == MP_SETTINGS ? View.VISIBLE : View.GONE);
         pageLab.setVisibility(index == MP_LAB ? View.VISIBLE : View.GONE);

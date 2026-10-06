@@ -195,6 +195,11 @@ public final class CardPrefs {
     public static final int REMOTE_IDLE_MAX = 3600;
 
     public static int getRemoteRole(Context c) {
+        // 🆕 TASK-064：正式版（能力门关）恒返回 OFF —— 「遥控」整条链路（热点通道 + HID 蓝牙通道 +
+        //   音量键捕获 + 手机端遥控台）在正式版不可用。**这一处是遥控链路的唯一总闸**：
+        //   RemoteRole.from / 遥控服务启动 / 实验室角色开关 全部经此读取 ⇒ 已隐藏入口之外，
+        //   还要挡住「升级用户存量 remote_role=phone/eink」把正式版拖进遥控链路。
+        if (!FeatureGate.remoteVisible(c)) return REMOTE_ROLE_OFF;
         int v = sp(c).getInt("remote_role", DEFAULT_REMOTE_ROLE);
         if (v < REMOTE_ROLE_OFF || v > REMOTE_ROLE_PHONE) return DEFAULT_REMOTE_ROLE;
         return v;
@@ -235,6 +240,8 @@ public final class CardPrefs {
     public static final boolean DEFAULT_SHAKE_UD_REV = false;
 
     public static boolean isShakeEnabled(Context c) {
+        // 🆕 TASK-064：正式版（能力门关）恒 false —— 「晃动翻页」不可见（不注册加速度计）。
+        if (!FeatureGate.remoteVisible(c)) return false;
         return sp(c).getBoolean("remote_shake_enabled", DEFAULT_SHAKE_ENABLED);
     }
 
@@ -344,6 +351,9 @@ public final class CardPrefs {
     public static final boolean DEFAULT_BT_CONTROL = false;
 
     public static boolean isBtControlEnabled(Context c) {
+        // 🆕 TASK-064：正式版（能力门关）恒 false —— 「HID 蓝牙遥控」不可见
+        //   （不注册 HID、不启前台服务、无通知）。
+        if (!FeatureGate.remoteVisible(c)) return false;
         return sp(c).getBoolean("bt_control_enabled", DEFAULT_BT_CONTROL);
     }
 
@@ -361,6 +371,8 @@ public final class CardPrefs {
     public static final boolean DEFAULT_BT_VOLKEY = true;
 
     public static boolean isBtVolkeyEnabled(Context c) {
+        // 🆕 TASK-064：正式版（能力门关）恒 false —— 「音量键翻页」不可见（音量键交还系统）。
+        if (!FeatureGate.remoteVisible(c)) return false;
         return sp(c).getBoolean("bt_volkey_enabled", DEFAULT_BT_VOLKEY);
     }
 
@@ -524,6 +536,11 @@ public final class CardPrefs {
     private static final String K_INSTALL_ROLE = "install_role";
 
     public static int getInstallRole(Context c) {
+        // 🆕 TASK-064：正式版（能力门关）恒返回 READER —— 「安装角色选择」不可见；
+        //   即便升级用户存量 install_role=phone，正式版也不会进手机端形态（遥控台不可达）。
+        //   🔴 这也是「手机端深色模式」的间接总闸：InkTheme.isDark = install_role==phone && phone_dark_mode
+        //   ⇒ 正式版恒为阅读器端 ⇒ 深色分支永不启用（零差异）。
+        if (!FeatureGate.rolePickVisible(c)) return INSTALL_ROLE_READER;
         int v = sp(c).getInt(K_INSTALL_ROLE, DEFAULT_INSTALL_ROLE);
         if (v < INSTALL_ROLE_READER || v > INSTALL_ROLE_PHONE) return DEFAULT_INSTALL_ROLE;
         return v;

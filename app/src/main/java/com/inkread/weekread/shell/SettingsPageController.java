@@ -4,6 +4,7 @@ import com.inkread.weekread.R;
 import com.inkread.weekread.a11y.CardA11yService;
 import com.inkread.weekread.core.AchievementPrefs;
 import com.inkread.weekread.core.CardPrefs;
+import com.inkread.weekread.core.FeatureGate;
 import com.inkread.weekread.core.PeriodRange;
 import com.inkread.weekread.core.StatsStore;
 import com.inkread.weekread.feature.NoteExport;
@@ -133,6 +134,8 @@ public class SettingsPageController {
     private View sectionCardInit;        // 初始化页 ③ 桌面卡片
     private View sectionCardCustom;      // 自定义页「桌面卡片」
     private View sectionApiKeyInit;      // 🆕 TASK-043：初始化页 ① API Key 组（phone 隐藏）
+    /** 🆕 TASK-064：初始化页 ⓪「本机角色」整块（正式版按能力门隐藏）。 */
+    private View sectionInstallRoleInit;
 
     /** 初始化页 ⓪「本机角色」单选组（阅读器端 / 手机端）。 */
     private RadioGroup rgInstallRole;
@@ -212,6 +215,7 @@ public class SettingsPageController {
         sectionCardInit = host.findViewById(R.id.section_card_init);
         sectionCardCustom = host.findViewById(R.id.section_card_custom);
         sectionApiKeyInit = host.findViewById(R.id.section_api_key_init);   // 🆕 TASK-043
+        sectionInstallRoleInit = host.findViewById(R.id.section_install_role_init);   // 🆕 TASK-064
 
         cbCard.setChecked(CardPrefs.isEnabled(host));
         String cp = StatsStore.getCardPeriod(host);
@@ -652,6 +656,8 @@ public class SettingsPageController {
         rgInstallRole.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(RadioGroup g, int checkedId) {
+                // 🆕 TASK-064：正式版不可切 App 形态（UI 已整块隐藏，这里是防脏调用的第二道门）。
+                if (!FeatureGate.rolePickVisible(host)) return;
                 int role = (checkedId == R.id.rb_inst_phone)
                         ? CardPrefs.INSTALL_ROLE_PHONE : CardPrefs.INSTALL_ROLE_READER;
                 if (role == CardPrefs.getInstallRole(host)) return;   // 无变化不处理
@@ -672,6 +678,7 @@ public class SettingsPageController {
      * <p>① phone 角色整块隐藏两处「桌面卡片」分区（A7）；
      * ② 🆕 TASK-043：手机端（install_role=phone）隐藏「初始化 · API Key」整块（手机不取数）；
      * ③ 🆕 TASK-043-R1：手机端「本机角色」恒留在「初始化」页顶部（两端一致，不再随角色搬运）。
+     * <p>④ 🆕 TASK-064：正式版（{@link FeatureGate#rolePickVisible} = false）隐藏「本机角色」整块。
      */
     public void refreshRoleVisibility() {
         RemoteRole role = RemoteRole.from(host);
@@ -685,6 +692,12 @@ public class SettingsPageController {
             sectionApiKeyInit.setVisibility(
                     CardPrefs.getInstallRole(host) == CardPrefs.INSTALL_ROLE_PHONE
                             ? View.GONE : View.VISIBLE);
+        }
+        // 🆕 TASK-064：正式版（能力门关）隐藏「本机角色」整块 —— 两端布局（phone 的
+        //   settings_layout.xml 与 reader 的 page_settings.xml）各持一份，本方法对两者一致生效。
+        if (sectionInstallRoleInit != null) {
+            sectionInstallRoleInit.setVisibility(
+                    FeatureGate.rolePickVisible(host) ? View.VISIBLE : View.GONE);
         }
         relocateInstallRoleBlock();
     }

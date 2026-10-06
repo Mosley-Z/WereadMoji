@@ -56,7 +56,11 @@
                     android:id="@+id/section_install_role_init"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical">
+                    android:orientation="vertical"
+                    android:visibility="gone">
+                    <!-- 🆕 TASK-064：初值 gone —— 由 SettingsPageController.refreshRoleVisibility()
+                         按能力门（FeatureGate.rolePickVisible）点亮：完整形态 VISIBLE / 正式版 GONE。
+                         初值 gone 保证「未跑到代码前」也不会闪一下。 -->
 
                 <TextView
                     android:layout_width="match_parent"

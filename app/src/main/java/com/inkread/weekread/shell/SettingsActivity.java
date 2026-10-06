@@ -3,6 +3,7 @@ package com.inkread.weekread.shell;
 import com.inkread.weekread.R;
 import com.inkread.weekread.a11y.CardA11yService;
 import com.inkread.weekread.core.CardPrefs;
+import com.inkread.weekread.core.FeatureGate;
 import com.inkread.weekread.ui.InkTheme;
 import com.inkread.weekread.ui.SegTabView;
 
@@ -97,8 +98,11 @@ public class SettingsActivity extends Activity {
         // 🆕 TASK-043-R1：手机端顶部为「初始化 + 实验室」两页 ⇒ 实验室可见表下标 = 1（reader 端仍是 2）。
         if (getIntent() != null && getIntent().getBooleanExtra(EXTRA_OPEN_LAB, false)) {
             int labIdx = labTabIndex();
-            seg.setSelected(labIdx);
-            showTopPage(labIdx);
+            // 🆕 TASK-064：正式版无「实验室」段（labIdx = -1）⇒ 不定位，停在默认页（初始化）。
+            if (labIdx >= 0) {
+                seg.setSelected(labIdx);
+                showTopPage(labIdx);
+            }
         }
     }
 
@@ -159,7 +163,8 @@ public class SettingsActivity extends Activity {
         final int[] labelRes = {R.string.tab_init, R.string.tab_custom, R.string.tab_lab};
         // 🔴 TASK-043-R1：手机端保留「初始化」（本机角色 + 检查更新）与「实验室」（蓝牙控制等）；
         //   「自定义」整页对手机端无意义 ⇒ 仍隐藏。
-        final boolean[] show = {true, !phone, true};
+        // 🆕 TASK-064：段③「实验室」再按能力门过滤 —— 正式版（labVisible=false）不装该段。
+        final boolean[] show = {true, !phone, FeatureGate.labVisible(this)};
         final int[] keep = new int[labelRes.length];
         int n = 0;
         for (int i = 0; i < labelRes.length; i++) {
@@ -177,7 +182,7 @@ public class SettingsActivity extends Activity {
         showTopPage(0);
     }
 
-    /** 🆕 TASK-043：「实验室」在**当前可见表**里的下标（reader=2 / phone=1）。找不到退回 2。 */
+    /** 🆕 TASK-043：「实验室」在**当前可见表**里的下标（reader=2 / phone=1）。🆕 TASK-064：不可见时返回 -1。 */
     private int labTabIndex() {
         final int[] keep = mTopPageKeep;
         if (keep != null) {
@@ -185,7 +190,7 @@ public class SettingsActivity extends Activity {
                 if (keep[i] == 2) return i;
             }
         }
-        return 2;
+        return -1;   // 🆕 TASK-064：正式版无「实验室」段 ⇒ 无下标（调用方据此早退）
     }
 
     /**
