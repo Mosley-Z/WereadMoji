@@ -1095,6 +1095,41 @@
                     android:text="@string/label_show_date"
                     android:textColor="#FF000000"
                     android:textSize="14sp" />
+
+                <!-- ── 🆕 TASK-059：书籍排名统计范围（本月页 K9 + 洞察页 K8 共用一处开关）── -->
+                <!-- 放在「自定义页」末尾、且不在 section_card_custom 内 ⇒ phone 角色不额外处理（整页本就隐藏） -->
+                <LinearLayout
+                    android:id="@+id/section_rank_scope"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/label_rank_scope"
+                        android:textColor="#FF000000"
+                        android:textSize="17sp" />
+
+                    <CheckBox
+                        android:id="@+id/cb_rank_shelf_only"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/label_rank_shelf_only"
+                        android:textColor="#FF000000"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/label_rank_shelf_only_tip"
+                        android:textColor="#FF3C3C3C"
+                        android:textSize="13sp" />
+                </LinearLayout>
             </LinearLayout>
 
         </LinearLayout>

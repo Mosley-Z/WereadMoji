@@ -276,6 +276,19 @@ public class SettingsPageController {
             }
         });
 
+        // ── 🆕 TASK-059：书籍排名「只统计书架上的书」 ──
+        // 只写偏好（App 内两处排名读它）：切回「阅读」页时 showReaderPage() 会重放一帧加载它；
+        // 若本地还没有全量书架清单，MainActivity 会顺手补拉一次 /shelf/sync。
+        // 🔴 不调 CardA11yService.sync() —— 本项**不影响桌面卡片**（排名只在 App 全屏页 / 洞察页）。
+        final CheckBox cbRankShelfOnly = (CheckBox) host.findViewById(R.id.cb_rank_shelf_only);
+        cbRankShelfOnly.setChecked(CardPrefs.isRankShelfOnly(host));
+        cbRankShelfOnly.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                CardPrefs.setRankShelfOnly(host, checked);
+            }
+        });
+
         cbCard.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton b, boolean checked) {

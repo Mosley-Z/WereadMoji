@@ -52,6 +52,11 @@ public class WereadApi {
         void onResult(BookStats stats, String error);
     }
 
+    /** 🆕 TASK-059：只报成败的轻量回调（全量书架 id 补拉用） */
+    public interface DoneCallback {
+        void onDone(boolean ok);
+    }
+
     /** 一次网关调用的原始结果 */
     public static final class Resp {
         public JSONObject json;
@@ -122,6 +127,42 @@ public class WereadApi {
 
     public static void fetchShelf(final String apiKey, final JsonCallback cb) {
         post(apiKey, "/shelf/sync", null, cb);
+    }
+
+    /**
+     * 🆕 TASK-059：只拉「**全量书架 id**」并落盘（供「只统计书架上的书」过滤用）。
+     *
+     * <p>与 {@link #fetchBook} 的区别：不取进度、不挑书 —— 只为 {@link BookStore#saveShelfIds}
+     * 攒一份全量 bookId 清单（实测 1175 个 ≈ 15KB）。**请求 + 落盘都在后台线程**，
+     * 回主线程只报成败（主线程绝不碰文件 IO，同 {@link #fetchBook} 的纪律）。
+     *
+     * @param cb 成败回调（可 null）；true = 拉到且已落盘
+     */
+    public static void fetchShelfIds(final Context c, final String apiKey, final DoneCallback cb) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                boolean ok = false;
+                try {
+                    Resp r = raw(apiKey, buildBody("/shelf/sync", null));
+                    if (r.error == null && r.json != null) {
+                        JSONArray src = r.json.optJSONArray("books");
+                        if (src != null && src.length() > 0) {
+                            BookStore.saveShelfIds(c, src);
+                            ok = true;
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+                final boolean fOk = ok;
+                new Handler(Looper.getMainLooper()).post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (cb != null) cb.onDone(fOk);
+                    }
+                });
+            }
+        }).start();
     }
 
     public static void fetchProgress(final String apiKey, final String bookId, final JsonCallback cb) {
@@ -225,6 +266,9 @@ public class WereadApi {
                 if (src != null && src.length() > 0) {
                     books = BookStore.compactShelf(src);
                     BookStore.saveShelf(c, books);
+                    // 🆕 TASK-059：顺手落一份**全量** id 清单（同一个回包，零额外请求）——
+                    // 这样开关打开后不必再多拉一次 462KB。
+                    BookStore.saveShelfIds(c, src);
                 }
             } else if (books == null) {
                 return null;                       // 没缓存又拉不到 → 直接失败

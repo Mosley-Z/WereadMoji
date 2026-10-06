@@ -463,6 +463,24 @@ public final class CardPrefs {
         sp(c).edit().putInt("switch_mode", (v == SWITCH_LIST) ? SWITCH_LIST : SWITCH_LOOP).commit();
     }
 
+    // ── 🆕 TASK-059：书籍排名「只统计书架上的书」（V1.2.0-beta）──
+    //
+    // 🔴 只影响 **App 内两处排名**（本月页 K9 + 洞察页 K8），**不碰桌面卡片**：
+    //    · true  ⇒ 排名只列 `bookId ∈ 书架` 的书（书架来自 `/shelf/sync` 全量 id 快照，见 BookStore）；
+    //    · false（默认）⇒ **与改造前逐像素零差异**（RankFilter 直接原样返回原列表）。
+    // 🔴 越界/缺失一律回落 false（与 note_card_size 同一套安全读出纪律）。
+
+    /** 书籍排名是否只统计书架上的书（默认关）。 */
+    public static final boolean DEFAULT_RANK_SHELF_ONLY = false;
+
+    public static boolean isRankShelfOnly(Context c) {
+        return sp(c).getBoolean("rank_shelf_only", DEFAULT_RANK_SHELF_ONLY);
+    }
+
+    public static void setRankShelfOnly(Context c, boolean v) {
+        sp(c).edit().putBoolean("rank_shelf_only", v).commit();
+    }
+
     // ── TASK-031：本机角色（安装形态）—— 「这台设备用来读 / 用来当遥控面板」──
     //
     // 🔴 这是 **App 形态**（V1.1.0-beta，ADR-012），与遥控线的 `remote_role`（TCP 传输角色）**正交**、**不得混用**：

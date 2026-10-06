@@ -115,6 +115,8 @@ public class MainActivity extends Activity {
     private boolean annualLoading;
     /** 🆕 TASK-052（K7）：累计首拉在途标记 —— 与 {@link #annualLoading} 同法（卡面 A5）。 */
     private boolean overallLoading;
+    /** 🆕 TASK-059：全量书架 id 补拉在途标记 —— 防止反复进出排名页时重复发 `/shelf/sync`。 */
+    private boolean shelfIdsLoading;
     /** 🆕 TASK-044：当前大标签下标（阅读/设置/实验室/待办）。 */
     private int mainPage = MP_READER;
     /**
@@ -701,6 +703,7 @@ public class MainActivity extends Activity {
             bindInsightProfile();            // 🆕 TASK-049 K4 / TASK-050 K5：把「画像」三件套的料喂进去
             ensureAnnualLoaded();            // 🆕 TASK-051 K6：年度缓存缺 ⇒ 触发一次拉取
             ensureOverallLoaded();           // 🆕 TASK-052 K7：累计缓存缺 ⇒ 触发一次拉取
+            ensureShelfIdsLoaded();          // 🆕 TASK-059：排行过滤要的全量书架缺 ⇒ 触发一次补拉
             insightPage.resetScroll();       // 每次进入都从顶部看起
             // 🆕 postreview（F-2）：洞察页无数据可取 ⇒ 刷新键是「可见但无反应」的死键，一并隐藏。
             findViewById(R.id.btn_refresh).setVisibility(View.GONE);
@@ -739,6 +742,8 @@ public class MainActivity extends Activity {
         PeriodStats st = StatsStore.load(this, tabMode, a);
         card.setStats(st, emptyNote(tabMode, a, st));
         picker.setPeriod(tabMode, a);
+        // 🆕 TASK-059：本月页有排名区 ⇒ 开关开着且缺全量书架时补拉一次（周页无排名，不发）
+        if (PeriodRange.MONTHLY.equals(tabMode)) ensureShelfIdsLoaded();
     }
 
     // ══════════════ 🆕 TASK-049（K4）+ TASK-050（K5）：洞察页「画像」三件套的取数 ══════════════
@@ -921,6 +926,40 @@ public class MainActivity extends Activity {
                                 + stats.totalSec);
                     }
                 });
+    }
+
+    // ══════════════ 🆕 TASK-059：书籍排名「只统计书架上的书」的全量书架补拉 ══════════════
+
+    /**
+     * 开关打开、但本地还没有**全量书架清单**时，补拉一次 `/shelf/sync`（用户拍板：**需要时自动补拉**）。
+     *
+     * <p>为什么必须补拉而不是就地过滤：{@link BookStore#shelf}（"最近 200 本"）**不能**用作全时段过滤
+     * （会把老书误删）；过滤所需的全量 id 只在 {@link BookStore#saveShelfIds} 落过盘之后才有。
+     * 之前如果没进过「本书」页，这份清单就还不存在 ⇒ 这里补一次（≈462KB，一次性）。
+     *
+     * <p>四道门（任一命中即**零请求**返回，与 {@code ensureAnnualLoaded} 同法）：
+     * ① 开关关；② 清单已存在；③ 在途；④ 无 Key。
+     * 成功后**重放当前阅读页一帧**，让过滤立即生效。
+     */
+    private void ensureShelfIdsLoaded() {
+        if (!CardPrefs.isRankShelfOnly(this)) return;      // ① 开关关 ⇒ 零请求
+        if (BookStore.hasShelfIds(this)) return;           // ② 已有全量清单 ⇒ 零请求
+        if (shelfIdsLoading) return;                       // ③ 在途 ⇒ 不重复发
+        final String key = StatsStore.getKey(this);
+        if (key.length() == 0) return;                     // ④ 无 Key ⇒ 无从拉（等设置页存 Key）
+        shelfIdsLoading = true;
+        final String modeAt = tabMode;                     // 只在还停在同一形态时重绘
+        final long gen = StatsStore.keyGen();              // R05：换 Key ⇒ 丢弃迟到结果
+        CardDebug.note(this, "rank shelf: 发起 /shelf/sync 补拉（全量书架 id 缺失）mode=" + modeAt);
+        WereadApi.fetchShelfIds(this, key, new WereadApi.DoneCallback() {
+            @Override
+            public void onDone(boolean ok) {
+                shelfIdsLoading = false;
+                if (gen != StatsStore.keyGen()) return;     // 换过 Key ⇒ 丢弃
+                CardDebug.note(MainActivity.this, "rank shelf: 补拉完成 ok=" + ok);
+                if (ok && modeAt.equals(tabMode)) showReaderPage();   // 过滤生效（重放一帧）
+            }
+        });
     }
 
     /**

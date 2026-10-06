@@ -7,6 +7,7 @@ import android.view.MotionEvent;
 import android.view.View;
 
 import com.inkread.weekread.core.PeriodStats;
+import com.inkread.weekread.core.RankFilter;
 
 import java.util.List;
 
@@ -41,7 +42,8 @@ public final class InsightPageView extends View {
      */
     private final InsightRenderer.RankSection rankSection = new InsightRenderer.RankSection();
 
-    /** K8：排行区的料（= 年度 `longest[]`；🔴 与分区②年度**同源**，零新增请求）。 */
+    /** K8：排行区的料（= 年度 `longest[]`；🔴 与分区②年度**同源**，零新增请求）。
+     *  🆕 TASK-059：在 {@link #rebuildSections()} 里按「只统计书架上的书」开关过滤后缓存于此。 */
     private List<PeriodStats.Longest> rankItems;
 
     /** K8：本次手势是否**落在排行区内**（手势分区 —— 决定这次滑动谁吃）。 */
@@ -144,7 +146,9 @@ public final class InsightPageView extends View {
      */
     public void setAnnual(PeriodStats st) {
         annualStats = st;
-        rankItems = (st == null) ? null : st.longest;   // ⚠️ 只借引用，不排序、不过滤
+        // 🆕 TASK-059：排行区（④）的料改在 {@link #rebuildSections()} 里按开关过滤后取
+        //   （见下方 ③）。这样**切换开关后只要重放一次本页**（`setAnnual` 会被重新调用）
+        //   过滤就会随之生效，不必另外记住"上次有没有滤过"。
         rebuildSections();
         invalidate();
     }
@@ -180,6 +184,8 @@ public final class InsightPageView extends View {
         // ② 累计（🆕 TASK-052 K7：**已落地** —— 汇总行 + 陪伴年数 + 勋章计数 + readStat）
         renderer.add(InsightRenderer.overallSection(overallStats, "暂无累计数据", overallNoteChars));
         // ③ 排行（🆕 TASK-053 K8：**已落地** —— 有界高 42% + 内部独立滚动；料 = 年度 longest[]）
+        //     🆕 TASK-059：此处按「只统计书架上的书」开关过滤（关 / 无全量书架 ⇒ 原样）
+        rankItems = (annualStats == null) ? null : RankFilter.apply(getContext(), annualStats.longest);
         rankSection.setItems(rankItems);
         renderer.add(rankSection);
         // ④ 画像（🆕 TASK-049 K4 兴趣雷达 + TASK-050 K5 偏好作者/时段：**三件套已落地**；

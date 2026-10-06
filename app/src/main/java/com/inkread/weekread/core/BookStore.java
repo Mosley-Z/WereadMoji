@@ -9,6 +9,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.util.Set;
 
 /**
  * 「本书」数据的本地缓存 —— 走**文件**，不走 SharedPreferences。
@@ -17,12 +18,14 @@ import java.io.FileOutputStream;
  * SP 是把整个 XML 一次性读进内存、且 `commit/apply` 会重写整个文件，
  * 把几百 KB 塞进去既慢又占内存。所以这里用 filesDir 下的普通文件。
  *
- * 缓存三样东西：
+ * 缓存四样东西：
  *   ① `shelf.json` —— 书架**精简快照**：只留 bookId / title / author / readUpdateTime /
- *      deepLink 四个字段，按 readUpdateTime 降序，最多 200 本。
+ *      deepLink 五个字段，按 readUpdateTime 降序，最多 200 本。
  *      462KB 的原包压缩到 ~30KB，磁盘上也只是个小文件。
  *   ② `ch_<bookId>.json` —— 章节目录原文。章节几乎不变，**一本书只拉一次**。
  *   ③ `book.json` —— 上一次成功拿到的 {@link BookStats}，供离线/启动瞬间直接显示。
+ *   ④ 🆕 `shelf_ids.json`（TASK-059）—— 书架的**全量 bookId 清单**（只存 id，实测 1175 个 ≈ 15KB），
+ *      供「书籍排名只统计书架上的书」过滤用。🔴 别与 ① 混：① 砍到 200 本，做全时段过滤会误删老书。
  */
 public final class BookStore {
 
@@ -172,6 +175,87 @@ public final class BookStore {
         return out;
     }
 
+    // ── 🆕 TASK-059：全量书架 id 快照（「只统计书架上的书」用）──
+    //
+    // 🔴 与 F_SHELF（最近 200 本精简快照）**不是一回事**，切勿混用：
+    //    `shelf()` 只留最近读过的 200 本 ⇒ 拿它做"全时段排名过滤"会把老书整批误删；
+    //    本文件存的是 `/shelf/sync` 的**全量** bookId（实测 1175 个 ≈ 15KB），只存 id、不存其它字段。
+
+    private static final String F_SHELF_IDS = "shelf_ids.json";
+
+    /** 全量 id 集合的内存缓存（避免每帧渲染都去读 15KB 文件 + 解析 1000+ 字符串）。 */
+    private static volatile Set<String> sShelfIdCache;
+    /** 上面这份缓存对应的 `savedAt`（用于判断磁盘文件是否已更新）。 */
+    private static volatile long sShelfIdCacheAt = -1L;
+
+    /**
+     * 把 `/shelf/sync` 回包的 `books[]` 压成**只含 bookId 的全量清单**并落盘（TASK-059）。
+     *
+     * <p>去重（实测 `books[]` 无重复，仍按防御处理）；不做任何排序 / 截断 —— 这就是"全量"的意义。
+     */
+    public static void saveShelfIds(Context c, JSONArray books) {
+        JSONArray ids = new JSONArray();
+        java.util.HashSet<String> set = new java.util.HashSet<String>();
+        if (books != null) {
+            for (int i = 0; i < books.length(); i++) {
+                JSONObject b = books.optJSONObject(i);
+                if (b == null) continue;
+                String id = b.optString("bookId", "");
+                if (id.length() == 0) continue;
+                if (set.add(id)) ids.put(id);
+            }
+        }
+        long now = System.currentTimeMillis();
+        JSONObject o = new JSONObject();
+        try {
+            o.put("savedAt", now);
+            o.put("ids", ids);
+        } catch (Exception ignored) {
+        }
+        write(c, F_SHELF_IDS, o.toString());
+        synchronized (BookStore.class) {
+            sShelfIdCache = set;
+            sShelfIdCacheAt = now;
+        }
+    }
+
+    /**
+     * 全量书架 id 集合（TASK-059）。
+     *
+     * @return 集合（可能为空集）；🔴 **文件不存在 / 读失败 ⇒ 返回 `null`** ——
+     *         `null` 表示"未知"，调用方（{@link RankFilter}）据此**回退"不过滤"**并触发补拉。
+     *         空集 ≠ null：前者是"真的没有书"，后者是"还不知道"。
+     */
+    public static Set<String> shelfIds(Context c) {
+        String s = read(c, F_SHELF_IDS);
+        if (s == null) return null;
+        try {
+            JSONObject o = new JSONObject(s);
+            long at = o.optLong("savedAt", 0L);
+            Set<String> hit = sShelfIdCache;
+            if (hit != null && at == sShelfIdCacheAt) return hit;   // 命中内存缓存（渲染热路径）
+            JSONArray ids = o.optJSONArray("ids");
+            java.util.HashSet<String> set = new java.util.HashSet<String>();
+            if (ids != null) {
+                for (int i = 0; i < ids.length(); i++) {
+                    String v = ids.optString(i, "");
+                    if (v.length() > 0) set.add(v);
+                }
+            }
+            sShelfIdCache = set;
+            sShelfIdCacheAt = at;
+            return set;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** 全量书架 id 快照**是否存在**（TASK-059：`MainActivity` 据此判断要不要补拉一次）。 */
+    public static boolean hasShelfIds(Context c) {
+        File dir = c.getFilesDir();
+        return dir != null && new File(dir, F_SHELF_IDS).exists();
+    }
+
     // ── 章节目录 ──
 
     public static String chapters(Context c, String bookId) {
@@ -187,9 +271,9 @@ public final class BookStore {
     // ── 清缓存（v0.5.3，R05）──
 
     /**
-     * 清掉「本书」的全部本地缓存：书架快照 + 书籍进度 + 章节目录。
+     * 清掉「本书」的全部本地缓存：书架快照 + **🆕 全量书架 id** + 书籍进度 + 章节目录。
      *
-     * 这三样**全是账号数据**（别人的书架、别人的进度），换 API Key 时必须一起失效 ——
+     * 这几样**全是账号数据**（别人的书架、别人的进度），换 API Key 时必须一起失效 ——
      * v0.5.2 之前本类**连 clear 方法都没有**（REVIEW 的 R05 缺口之一）。
      * 调用方：{@link StatsStore#setKey}。
      */
@@ -202,8 +286,13 @@ public final class BookStore {
                 // 连 `*.tmp`（原子写的半成品）一起清掉
                 if (n.equals(F_BOOK) || n.startsWith(F_BOOK + ".")
                         || n.equals(F_SHELF) || n.startsWith(F_SHELF + ".")
+                        || n.equals(F_SHELF_IDS) || n.startsWith(F_SHELF_IDS + ".")   // 🆕 TASK-059
                         || n.startsWith(P_CHAPTER)) f.delete();
             }
+        }
+        synchronized (BookStore.class) {          // 🆕 TASK-059：内存缓存同步失效
+            sShelfIdCache = null;
+            sShelfIdCacheAt = -1L;
         }
     }
 

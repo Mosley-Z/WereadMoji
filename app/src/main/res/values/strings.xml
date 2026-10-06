@@ -93,6 +93,11 @@
     <string name="label_show_sign">导出图显示署名（书名 · 作者）</string>
     <string name="label_show_date">导出图显示章节与划线日期</string>
 
+    <!-- 🆕 TASK-059：书籍排名统计范围（自定义页第三分区）-->
+    <string name="label_rank_scope">书籍排名</string>
+    <string name="label_rank_shelf_only">只统计书架上的书</string>
+    <string name="label_rank_shelf_only_tip">打开后，「本月」页与「洞察 · 读书排行」只列出你书架上的书；已从书架移除的书不再出现。首次打开会自动联网同步一次书架清单。</string>
+
     <!-- 🔴 A6：本串 = 系统无障碍设置里显示的「权限说明」，必须与 res/raw/help.txt【首次配置·4 开无障碍】
          及 AndroidManifest.xml / res/xml/a11y_card_service.xml 的口径一致（同一事实，一处改齐）。
          事实：canRetrieveWindowContent=true，但**仅在翻页分不清页面时、或服务重连时各读取一次**

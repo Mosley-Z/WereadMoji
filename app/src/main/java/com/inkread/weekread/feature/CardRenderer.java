@@ -4,6 +4,7 @@ import com.inkread.weekread.core.CardSpec;
 import com.inkread.weekread.core.NoteStore;
 import com.inkread.weekread.core.PeriodRange;
 import com.inkread.weekread.core.PeriodStats;
+import com.inkread.weekread.core.RankFilter;
 import com.inkread.weekread.core.StatsStore;
 
 import android.graphics.Canvas;
@@ -863,9 +864,9 @@ final class CardRenderer {
      *
      * 版面（一行一本书）：`名次 | 书名（缩字 → 省略号） | 时长`，行高 = {@link #RANK_ROW_H}（≈32px）。
      *
-     * 🔴 **零排序、零过滤** —— 直接按 {@code stats.longest} **原序**逐条画：服务端已经按
-     * `readTime` 降序、并且已经滤掉 ≤5 分钟的项（卡面 E4）⇒ App 侧再动一下，A4/A5 两条断言
-     * 就都不成立（这也是"红利"所在，不写一行排序代码）。
+     * 🔴 **零排序** —— 收到的列表已是服务端 `readTime` 降序、且已滤掉 ≤5 分钟的项（卡面 E4）⇒
+     * App 侧不写一行排序代码。（🆕 TASK-059 的**书架过滤**发生在**取料处** {@link #monthRankItems()}，
+     * 只做"剔除"、不改顺序 ⇒ 名次始终是服务端口径。）
      *
      * 缺书名（回包只有 `albumInfo`、没有 `book`）的条目**不丢行** —— 画「（未知书名）」占位，
      * 否则名次会整体上移、与回包原序对不上（与 TASK-053 K8 同款处理）。
@@ -929,14 +930,19 @@ final class CardRenderer {
     }
 
     /**
-     * 🆕 TASK-054（K9）：本月排名的料 —— 直接取 {@code stats.longest}（**零过滤、零排序**）。
-     * null 安全：老缓存 / 非 monthly 回包 ⇒ 空集合 ⇒ 排名区画空态。
+     * 🆕 TASK-054（K9）：本月排名的料 —— 取 {@code stats.longest}（**零排序**）。
+     *
+     * <p>🆕 **TASK-059**：在"原序"之上加一道**可选**的书架过滤（「只统计书架上的书」开关）——
+     * 开关关 / 无全量书架清单时 {@link RankFilter#apply} 原样返回 ⇒ 与改造前**零差异**。
+     * 过滤只**剔除**、**不重排**（名次仍是服务端给的原始降序）。
+     *
+     * <p>null 安全：老缓存 / 非 monthly 回包 ⇒ 空集合 ⇒ 排名区画空态。
      */
     private java.util.List<PeriodStats.Longest> monthRankItems() {
         if (host.stats == null || host.stats.longest == null) {
             return java.util.Collections.emptyList();
         }
-        return host.stats.longest;
+        return RankFilter.apply(host.getContext(), host.stats.longest);
     }
 
     /** 2×2 Bayer 序，索引 = `(row % 2) * 2 + (col % 2)`。正交 2px 点阵的 rank 依据。 */
