@@ -5,6 +5,7 @@ import android.graphics.Paint;
 
 import com.inkread.weekread.core.PeriodRange;
 import com.inkread.weekread.core.PeriodStats;
+import com.inkread.weekread.ui.InkTheme;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -152,6 +153,15 @@ final class InsightRenderer {
     static float secHeadH(float unit) { return SZ_SEC * unit * 2.2f; }
 
     /**
+     * 🆕 TASK-066 · A2：分区标题是否用**衬线**（墨水屏端 = true，手机端 = false）。
+     *
+     * <p>由 {@link InsightPageView#onDraw} 每帧按 {@code InkTheme.isPhone()} 刷新 ——
+     * 静态口（{@link #drawSectionHead} 是 static，且洞察页全局只有一份）所以用静态字段；
+     * 🔴 默认 false ⇒ 不设置时与改造前**逐像素一致**（验收 A5）。
+     */
+    static boolean serifTitle = false;
+
+    /**
      * 画分区标题（左对齐加粗 INK），返回正文起始 y。
      * 所有 Section 都从它起手 ⇒ 标题的字号/基线在 5 个分区之间天然一致。
      */
@@ -161,7 +171,10 @@ final class InsightRenderer {
         p.setFakeBoldText(true);
         p.setTextAlign(Paint.Align.LEFT);
         p.setTextSize(SZ_SEC * unit);
+        // 🆕 TASK-066：墨水屏端标题改衬线（书香气主来源）；手机端 null = 原样。
+        p.setTypeface(serifTitle ? InkTheme.serif() : null);
         c.drawText(title, w * PAD_X_RATIO, top + SZ_SEC * unit * 1.5f, p);
+        p.setTypeface(null);
         p.setFakeBoldText(false);
         return top + secHeadH(unit);
     }

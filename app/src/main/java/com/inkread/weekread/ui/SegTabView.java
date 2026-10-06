@@ -17,6 +17,14 @@ import android.view.View;
  * （同为本类实例）是同一套视觉语言（纯黑白、选中加粗 + 底部黑条）。
  *
  * 标签由调用方经 {@link #setLabels} 给定：设置页 2~3 段，主页大标签 3~4 段。
+ *
+ * <p>🆕 <b>TASK-066 · 按角色取色取字</b>：本组件**两端都在用**（手机端设置页 / 墨水屏端主页大标签），
+ * 所以色与字都走 {@link InkTheme#isPhone(Context)} 二选一 ——
+ * <ul>
+ *   <li><b>phone</b> ⇒ 原字面量一字不改（逐像素零差异，验收 A5）；</li>
+ *   <li><b>墨水屏</b> ⇒ 取 {@link InkTheme} 单色 token（墨 / 提示 / 界线，**值与原本相同**），
+ *       且标题改**衬线** ⇒ 与手机端「书香气」共用同一套设计语言（验收 A2）。</li>
+ * </ul>
  */
 public class SegTabView extends View {
 
@@ -88,14 +96,29 @@ public class SegTabView extends View {
         if (w <= 0 || h <= 0) return;
         float slot = w / labels.length;
 
+        // 🆕 TASK-066：按角色取色取字。🔴 在 onDraw 里判（不在构造里）——
+        //    首次启动时 role 还没选完，构造期判会把手机端错判成墨水屏。
+        final boolean mono = !InkTheme.isPhone(getContext());
+        final int colInk;
+        final int colGray;
+        final int colSep;
+        final int colBottom;
+        if (dark) {
+            colInk = D_INK; colGray = D_GRAY; colSep = D_SEP; colBottom = D_BOTTOM;
+        } else if (mono) {
+            colInk = InkTheme.MONO_INK;  colGray = InkTheme.MONO_INK3;
+            colSep = InkTheme.MONO_LINE; colBottom = InkTheme.MONO_LINE;
+        } else {
+            colInk = INK; colGray = GRAY; colSep = 0xFFE0E0E0; colBottom = 0xFFD8D8D8;
+        }
+
+        // 衬线（书香气来源）：仅墨水屏端；手机端保持原样（default 字体）。
+        p.setTypeface(mono ? InkTheme.serif() : null);
         float size = 18f * unit;
         p.setTextSize(size);
         p.setTextAlign(Paint.Align.CENTER);
         Paint.FontMetrics fm = p.getFontMetrics();
         float baseline = (h - (fm.descent - fm.ascent)) / 2f - fm.ascent;
-
-        final int colInk = dark ? D_INK : INK;
-        final int colGray = dark ? D_GRAY : GRAY;
 
         for (int i = 0; i < labels.length; i++) {
             float cx = slot * i + slot / 2f;
@@ -114,16 +137,17 @@ public class SegTabView extends View {
         }
         p.setFakeBoldText(false);
         p.setTextAlign(Paint.Align.LEFT);
+        p.setTypeface(null);
 
         // 页签之间的分隔竖线（弱化，暗示并列关系）
-        p.setColor(dark ? D_SEP : 0xFFE0E0E0);
+        p.setColor(colSep);
         p.setStyle(Paint.Style.STROKE);
         for (int i = 1; i < labels.length; i++) {
             c.drawLine(slot * i, h * 0.28f, slot * i, h * 0.72f, p);
         }
 
         // 整条下边框
-        p.setColor(dark ? D_BOTTOM : 0xFFD8D8D8);
+        p.setColor(colBottom);
         p.setStyle(Paint.Style.FILL);
         c.drawRect(0f, h - 1f, w, h, p);
     }

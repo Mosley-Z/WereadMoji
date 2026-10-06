@@ -8,6 +8,7 @@ import android.view.View;
 
 import com.inkread.weekread.core.PeriodStats;
 import com.inkread.weekread.core.RankFilter;
+import com.inkread.weekread.ui.InkTheme;
 
 import java.util.List;
 
@@ -263,6 +264,8 @@ public final class InsightPageView extends View {
     protected void onDraw(Canvas c) {
         int w = getWidth(), h = getHeight();
         if (w <= 0 || h <= 0) return;
+        // 🆕 TASK-066 · A2：按角色刷新「分区标题是否衬线」（每帧刷新 ⇒ 不受首启选角色的时序影响）。
+        InsightRenderer.serifTitle = !InkTheme.isPhone(getContext());
         remeasure(w, h);                                 // 每帧自纠：分区高可能随字号/文案变化
         renderer.draw(c, w, h, unit, scrollY);
     }

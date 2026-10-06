@@ -11,6 +11,7 @@ import com.inkread.weekread.remote.RemoteLinkManager;
 import com.inkread.weekread.remote.RemoteRole;
 import com.inkread.weekread.remote.ShakeDetector;
 import com.inkread.weekread.ui.FoldHintView;
+import com.inkread.weekread.ui.InkTheme;
 import com.inkread.weekread.ui.SegTabView;
 
 import android.Manifest;
@@ -171,6 +172,12 @@ public class LabPageController {
         tvBtStatus = (TextView) host.findViewById(R.id.tv_bt_status);
         tvBtReconnectGuide = (TextView) host.findViewById(R.id.tv_bt_reconnect_guide);
         tvBtPairGuide = (TextView) host.findViewById(R.id.tv_bt_pair_guide);
+        // 🆕 TASK-066 · A3：墨水屏端**零彩色** —— 两句引导文案的「警示红」改为按角色取色。
+        //    · phone 端 ⇒ 原值 #B00020，**逐像素不变**（验收 A5）；
+        //    · 墨水屏端 ⇒ InkTheme.ink2(host) = 单色深灰 #3C3C3C（靠加粗/文案承担警示）。
+        //    布局里的 #FFB00020 只是「未绑定前的默认值」，bind() 一定会覆盖。
+        applyGuideColor(tvBtReconnectGuide);
+        applyGuideColor(tvBtPairGuide);
         llBtDiscover = host.findViewById(R.id.ll_bt_discover);
         btnBtDiscoverable = (Button) host.findViewById(R.id.btn_bt_discoverable);
         llBtTest = host.findViewById(R.id.ll_bt_test);
@@ -187,6 +194,7 @@ public class LabPageController {
         foldRoleMore = host.findViewById(R.id.fold_role_more);
         tvRoleMore = host.findViewById(R.id.tv_role_more);
         bindFold(R.id.fold_role_more, R.id.tv_role_more, R.string.fold_role_more);
+
 
         // ── 🆕 TASK-022 锁屏密码子页（应用级软锁）──
         // 落盘在 LockPrefs（盐 + SHA-256，非明文）；开关默认关 ⇒ 老用户升级后零差异。
@@ -497,6 +505,20 @@ public class LabPageController {
             }
         });
     }
+
+    /**
+     * 🆕 TASK-066 · A3：蓝牙「引导文案」的取色 —— 墨水屏端**零彩色**。
+     *
+     * <p>布局里写的是 `#FFB00020`（Material 警示红）。手机端**原样保留**（逐像素不变，验收 A5）；
+     * 墨水屏端换成 {@link InkTheme#ink2} 的单色深灰 —— 无彩色的机器上，警示靠**加粗 + 文案**承担。
+     */
+    private void applyGuideColor(TextView tv) {
+        if (tv == null) return;
+        tv.setTextColor(InkTheme.isPhone(host) ? WARN_RED : InkTheme.ink2(host));
+    }
+
+    /** 手机端蓝牙引导文案的警示红（= 布局里的 `#FFB00020`，原值）。 */
+    private static final int WARN_RED = 0xFFB00020;
 
     /**
      * 🆕 TASK-031：按 {@code install_role} **动态装配**实验室子标签（bind 时与角色切换时调用）。

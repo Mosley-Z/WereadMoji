@@ -87,7 +87,45 @@ public final class InkTheme {
     /** 深色 · 翻页键按下态：墨-2 压深一档。 */
     public static final int DARK_KEY_PRESSED = 0xFF1B2632;
 
-    // ── 语义取色（亮/深二选一）──
+    // ── 单色语义层（墨水屏端 · 🆕 TASK-066）──
+    //
+    // 墨水屏端**无彩色**（`docs/03_墨水屏UI规范.md` 硬规则）⇒ 把手机端那套语义名
+    // **一一对应地黑白化**，两端「同一套语义、不同色板」；将来调整墨水屏灰阶只改这一处。
+    //
+    // 🔴 只在 `install_role != phone` 时生效（下面的语义 getter 会按角色二选一返回）。
+    //    phone 端**走原来的双色板分支、逐像素不变**（TASK-066 验收 A5）。
+    // ⚠️ 值刻意沿用墨水屏端**既有**的灰阶（`CardRenderer` / `SegTabView` 里散落的字面量），
+    //    本次只做「收敛成 token」，**不改观感**。
+
+    /** 单色 · 纸：纯白底（墨水屏不需要暖白 —— 暖白反而降对比）。 */
+    public static final int MONO_PAPER = 0xFFFFFFFF;
+    /** 单色 · 次级面 / 凹陷底（= 布局里既有的 `#F2F2F2`）。 */
+    public static final int MONO_SURFACE = 0xFFF2F2F2;
+    /** 单色 · 墨：主文字 / 强调（= 手机端「墨」；墨水屏端即纯黑）。 */
+    public static final int MONO_INK = 0xFF000000;
+    /** 单色 · 淡墨：次要文字 / 结构线（= 手机端「淡墨」；墨水屏端深灰）。 */
+    public static final int MONO_INK2 = 0xFF3C3C3C;
+    /** 单色 · 提示：占位 / 禁用 / 未选中（= 手机端「提示」；墨水屏端浅灰）。 */
+    public static final int MONO_INK3 = 0xFF9A9A9A;
+    /** 单色 · 界线：分隔线 / 描边（= 手机端「界线」）。 */
+    public static final int MONO_LINE = 0xFFD8D8D8;
+
+    // ── 语义取色（按角色 + 亮/深二选一）──
+
+    /**
+     * 本机是否「手机端」角色（🆕 TASK-066）。
+     *
+     * <p>= `CardPrefs.getInstallRole(c) == INSTALL_ROLE_PHONE`。异常兜底 **false** ——
+     * 读偏好失败时按**墨水屏端**处理（无彩色最安全，绝不因读偏好失败而放出彩色）。
+     */
+    public static boolean isPhone(Context c) {
+        if (c == null) return false;
+        try {
+            return CardPrefs.getInstallRole(c) == CardPrefs.INSTALL_ROLE_PHONE;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
 
     /**
      * 当前是否深色：**仅当** `install_role=phone` 且 `phone_dark_mode=true`。
@@ -105,58 +143,78 @@ public final class InkTheme {
         }
     }
 
+    // 🔴 下面每个 getter 的第一行都是「非手机 ⇒ 单色 token」。phone 分支 = 改造前的原表达式，
+    //    一个字都没动 ⇒ 手机端逐像素零差异。
+
     public static int paper(Context c) {
+        if (!isPhone(c)) return MONO_PAPER;
         return isDark(c) ? DARK_PAPER : PAPER;
     }
 
     public static int paper2(Context c) {
+        if (!isPhone(c)) return MONO_SURFACE;
         return isDark(c) ? DARK_PAPER2 : PAPER2;
     }
 
     /** 次级面 / 凹陷底：亮色下与 {@link #paper2} 同值（亮色无此层）。 */
     public static int surfaceDim(Context c) {
+        if (!isPhone(c)) return MONO_SURFACE;
         return isDark(c) ? DARK_SURFACE_DIM : PAPER2;
     }
 
     public static int ink(Context c) {
+        if (!isPhone(c)) return MONO_INK;
         return isDark(c) ? DARK_INK : INK;
     }
 
     public static int ink2(Context c) {
+        if (!isPhone(c)) return MONO_INK2;
         return isDark(c) ? DARK_INK2 : INK2;
     }
 
     public static int ink3(Context c) {
+        if (!isPhone(c)) return MONO_INK3;
         return isDark(c) ? DARK_INK3 : INK3;
     }
 
     public static int line(Context c) {
+        if (!isPhone(c)) return MONO_LINE;
         return isDark(c) ? DARK_LINE : LINE;
     }
 
+    /** 强调：墨水屏端无彩色 ⇒ 降级为「墨」（靠反白 / 加粗 / 描边承担强调）。 */
     public static int bamboo(Context c) {
+        if (!isPhone(c)) return MONO_INK;
         return isDark(c) ? DARK_BAMBOO : BAMBOO;
     }
 
+    /** 强调浅底：墨水屏端无彩色 ⇒ 降级为「次级面」。 */
     public static int bambooWeak(Context c) {
+        if (!isPhone(c)) return MONO_SURFACE;
         return isDark(c) ? DARK_BAMBOO_WEAK : BAMBOO_WEAK;
     }
 
+    /** 警示：墨水屏端无彩色 ⇒ 降级为「淡墨」（靠文案 / 加粗承担警示）。 */
     public static int clay(Context c) {
+        if (!isPhone(c)) return MONO_INK2;
         return isDark(c) ? DARK_CLAY : CLAY;
     }
 
+    /** 警示浅底：墨水屏端无彩色 ⇒ 降级为「次级面」。 */
     public static int clayWeak(Context c) {
+        if (!isPhone(c)) return MONO_SURFACE;
         return isDark(c) ? DARK_CLAY_WEAK : CLAY_WEAK;
     }
 
-    /** 鎏金：亮色下复用竹青（亮色无鎏金层）—— 用于版本号 / 分组标记。 */
+    /** 鎏金：亮色下复用竹青（亮色无鎏金层）—— 用于版本号 / 分组标记。墨水屏端 ⇒ 淡墨。 */
     public static int gold(Context c) {
+        if (!isPhone(c)) return MONO_INK2;
         return isDark(c) ? DARK_GOLD : BAMBOO;
     }
 
-    /** 翻页键按下态底色。 */
+    /** 翻页键按下态底色。墨水屏端 ⇒ 次级面（无彩色下的「压深一档」）。 */
     public static int keyPressed(Context c) {
+        if (!isPhone(c)) return MONO_SURFACE;
         return isDark(c) ? DARK_KEY_PRESSED : KEY_PRESSED;
     }
 
