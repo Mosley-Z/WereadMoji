@@ -115,8 +115,6 @@ public class MainActivity extends Activity {
     private NotePickView notePick;
     /** 🆕 TASK-069：「本书」选书弹层（与 {@link #notePick} 同款模态半屏，但料不同） */
     private BookPickView bookPick;
-    /** 🆕 TASK-069：刷新行右侧的「选书」按钮（仅「本书」形态可见） */
-    private Button btnBookPick;
     /** 🆕 TASK-051（K6）：年度首拉在途标记 —— 防止反复进洞察页时重复发请求（卡面 A4）。 */
     private boolean annualLoading;
     /** 🆕 TASK-052（K7）：累计首拉在途标记 —— 与 {@link #annualLoading} 同法（卡面 A5）。 */
@@ -283,7 +281,6 @@ public class MainActivity extends Activity {
         insightPage = (InsightPageView) findViewById(R.id.insight);
         notePick = (NotePickView) findViewById(R.id.note_pick);
         bookPick = (BookPickView) findViewById(R.id.book_pick);        // 🆕 TASK-069
-        btnBookPick = (Button) findViewById(R.id.btn_book_pick);       // 🆕 TASK-069
         pageReader = findViewById(R.id.mp_reader);
         pageSettings = findViewById(R.id.mp_settings);
         pageLab = findViewById(R.id.mp_lab);
@@ -329,6 +326,13 @@ public class MainActivity extends Activity {
                             Uri.parse("weread://reading?bId=" + b.bookId)));
                 } catch (Throwable ignored) {
                 }
+            }
+
+            @Override
+            public void onPickBook() {
+                // 🆕 TASK-071：卡片**左下角**那个「选书」框 ⇒ 弹半屏候选列表
+                //（TASK-069 的 {@link BookPickView} 弹层原样复用，只是换了触发点）。
+                showBookPick();
             }
         });
 
@@ -383,14 +387,10 @@ public class MainActivity extends Activity {
         // ── 🆕 TASK-069：「本书」手动选书（半屏弹层）──
         // 选中 ⇒ 写 CardPrefs#setBookPick 后**重新取一次本书**（force=true：立刻用新偏好走一遍
         // 书架→进度链）；选「自动」⇒ 写空串，行为与改造前一致。
-        if (btnBookPick != null) {
-            btnBookPick.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    showBookPick();
-                }
-            });
-        }
+        //
+        // 🔴 TASK-071：触发改到**卡片左下角那个「选书」框**（WeekCardView 画、CardInteraction 判），
+        //   见下面 openListener 的 onPickBook()。原来刷新行里的 `btn_book_pick` 已删除
+        //   ⇒「刷新」恢复独占整行（= TASK-069 之前的版面）。
         if (bookPick != null) {
             bookPick.setListener(new BookPickView.Listener() {
                 @Override
@@ -789,11 +789,6 @@ public class MainActivity extends Activity {
         // 它是模态，留着会盖在别的形态上。放在这里 = 所有导航的公共入口，不会漏路径。
         hideNotePick();
         hideBookPick();             // 🆕 TASK-069：同理收起「本书」选书弹层
-        // 🆕 TASK-069：「选书」按钮**只在「本书」形态露出**（其它形态整行只剩「刷新」，
-        //    与改造前逐像素一致）。放在所有分支之前 ⇒ 洞察页（下面早退）也不会漏。
-        if (btnBookPick != null) {
-            btnBookPick.setVisibility(PeriodRange.BOOK.equals(tabMode) ? View.VISIBLE : View.GONE);
-        }
 
         navDrop.setSelected(indexOf(tabMode));
         refreshMainTabLabels();     // 🆕 TASK-044-R1：大标签① 文案跟随形态（「本周▽」→「本月▽」…）
@@ -1103,7 +1098,6 @@ public class MainActivity extends Activity {
         findViewById(R.id.insight).setVisibility(View.GONE);
         findViewById(R.id.sep_card).setVisibility(View.GONE);
         findViewById(R.id.btn_refresh).setVisibility(View.GONE);
-        findViewById(R.id.btn_book_pick).setVisibility(View.GONE);   // 🆕 TASK-069
         findViewById(R.id.tv_remote_notice).setVisibility(View.VISIBLE);
         // 🆕 TASK-057：手机端形态下卡片相关的 UI 全隐 ⇒ 选书弹层一并收起（不留可见残影）
         findViewById(R.id.note_pick).setVisibility(View.GONE);

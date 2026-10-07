@@ -6,7 +6,7 @@ import android.view.MotionEvent;
 /**
  * 卡片的触摸与滚动（TASK-007 从 {@link WeekCardView} 整段平移而来）：
  *
- * · 只有「本书」/「本记」形态需要接收触摸 —— 本书 = 右下角「打开」；
+ * · 只有「本书」/「本记」形态需要接收触摸 —— 本书 = 左下「选书」（🆕 TASK-071）+ 右下「打开」；
  *   本记 = 左下「上一条」+ 右下「换一条」（App 全屏档另有「导出」「筛选」与
  *   🆕 TASK-057 的「选书」格），且 v0.4.4 起本记态还要区分**滑动**（滚正文）与**点击**（按按钮）。
  * · v0.4.1 修的正是这里：原来开头一句 `if (!isBook()) return false;` 把本记态的
@@ -36,7 +36,11 @@ final class CardInteraction {
         if (host.isNote()) return noteTouch(e);          // v0.4.4：本记态有滚动，手势要先分流
         if (e.getAction() == MotionEvent.ACTION_UP) {
             float x = e.getX(), y = e.getY();
-            if (host.book != null && hit(host.openBox, x, y)) {
+            // 🆕 TASK-071：左下「选书」—— 只有本书形态画这一格（见 CardRenderer#drawBookBody ⑥）。
+            // 与右下「打开」左右分开、矩形不重叠，先后判都不抢；按"从左到右"的读序先判左边。
+            if (host.book != null && hit(host.pickBox, x, y)) {
+                if (host.openListener != null) host.openListener.onPickBook();
+            } else if (host.book != null && hit(host.openBox, x, y)) {
                 if (host.openListener != null) host.openListener.onOpen();
             }
             return true;

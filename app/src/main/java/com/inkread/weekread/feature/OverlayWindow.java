@@ -122,11 +122,18 @@ public final class OverlayWindow {
     }
 
     /**
-     * 左下角「上一条」按钮的触摸区（只在**本记**形态出现，v0.4.2）。
+     * **左下角按钮位**的触摸区 —— 一个窗，两个形态复用：
+     * · 「本记」形态 = 「上一条」（v0.4.2）；
+     * · 🆕「本书」形态 = 「选书」（TASK-071，入口唯一化到左下角）。
      *
      * 与 {@link #paramsOpenTouch} 完全对称：同一水平线、同一尺寸，只是贴左边。
-     * 位置由 {@link CardSpec#prevBoxLeft()} / {@link CardSpec#prevBoxTop()} 给，
-     * 与 {@link WeekCardView} 画出来的框**严格对齐**（两边共用同一组常量）。
+     * 位置由 {@link CardSpec#prevBoxLeft()} / {@link CardSpec#prevBoxTop()} 给 ——
+     * 那是这一格的**唯一权威定义**，与 {@link WeekCardView} 画出来的框严格对齐
+     * （绘制侧同样取 {@code CardSpec.PREV_BOX_MARGIN_L}，两边不许各留一份坐标）。
+     *
+     * ⚠️ 方法名沿用 v0.4.2 的 `prev*`（与 {@code OverlayController#prevView} 同规：
+     * 按主要角色命名）。窗口标题也保持「微读墨记·上一条」不变 —— 它是 dumpsys 排查用的
+     * 稳定标识，不为这次多角色改名。
      */
     public static WindowManager.LayoutParams paramsPrevTouch(int type) {
         return paramsPrevTouch(type, CardSpec.cardHeight());

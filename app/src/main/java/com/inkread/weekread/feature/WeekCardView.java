@@ -288,6 +288,16 @@ public class WeekCardView extends View {
     public interface OpenListener {
         /** 点了「打开」—— 跳微信读书 */
         void onOpen();
+
+        /**
+         * 🆕 TASK-071：点了左下角「选书」—— 宿主弹候选列表 / 候选菜单。
+         *
+         * <p>**只有 App 全屏档会由这里触发**：桌面卡片主体是 {@code FLAG_NOT_TOUCHABLE}
+         * （手势要穿透给桌面），卡片上那两个按钮的点击全靠 {@code OverlayController}
+         * 另开的透明小窗；本回调是给"卡片本体可触摸"的宿主（App / 预览）兜底的，
+         * 与 {@link NoteListener#onPickNote()} 的分工完全一样。
+         */
+        void onPickBook();
     }
 
     /**

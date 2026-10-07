@@ -42,7 +42,15 @@ final class OverlayController {
     private View titleView;
     /** 右下角「打开」按钮的透明触摸区（只在本书形态出现） */
     private View openView;
-    /** 左下角「上一条」按钮的透明触摸区（只在本记形态出现） */
+    /**
+     * 左下角按钮位的透明触摸区 —— **两个形态复用同一个窗**：
+     * · 「本记」形态 = 「上一条」（v0.4.2）；
+     * · 🆕「本书」形态 = 「选书」（TASK-071，入口唯一化到左下角）。
+     *
+     * 两形态互斥 ⇒ 物理上是同一个按钮位（坐标取 {@code CardSpec} 左下按钮位的唯一权威定义
+     * `prevBoxLeft/prevBoxTop`，与画出来的框共用一组常量）。
+     * 复用而非再开一窗，与右下角 {@link #openView} 的做法完全对称（那边也是本书=打开 / 本记=换一条）。
+     */
     private View prevView;
     /** 本记**行末**「展开▽ / 收起△」的透明触摸区（TASK-017，位置随绘制结果走） */
     private View expandView;
@@ -73,7 +81,10 @@ final class OverlayController {
     private final java.util.List<String> periodMenuModes = new java.util.ArrayList<String>();
 
     /**
-     * 🆕 TASK-069：「本书」候选菜单（长按菜单里选「选书…」后弹出）。
+     * 🆕 TASK-069：「本书」候选菜单（点卡片左下角「选书」按钮后弹出）。
+     *
+     * 🔴 TASK-071：入口从「长按菜单第 0 行」改到**卡片左下角那个按钮**（用户拍板入口唯一化）；
+     * 菜单本身的构建与点选逻辑一字未动。
      *
      * 与 {@link #menuView} / {@link #periodMenuView} 同款的一层透明窗（同一位置），
      * 三者**互斥显示** —— 开一个先关另外两个。
@@ -81,8 +92,6 @@ final class OverlayController {
     private CardMenuView bookPickMenuView;
     /** 候选菜单当前这一屏每行对应的 bookId（索引 0 = 自动档 `""`），与行一一对应。 */
     private final java.util.List<String> bookPickIds = new java.util.ArrayList<String>();
-    /** 长按菜单里**是否含**「选书…」那一项（= 当前卡片是「本书」形态）。 */
-    private boolean menuHasBookPick = false;
     /** 「本书」候选菜单是否开着。 */
     private boolean bookPickOpen = false;
 
@@ -167,8 +176,6 @@ final class OverlayController {
      * 正式版会把它去掉或挪到最后 —— 排序上把它放第一项，测试时点起来最快。
      */
     private static final long[] HIDE_MS = {15_000L, 60_000L, 300_000L, 0L};
-    /** 🆕 TASK-069：「本书」形态下长按菜单**最前面**多出来的那一项。 */
-    private static final String MENU_LABEL_PICK_BOOK = "选书…";
     /** 🆕 TASK-069：候选列表第一行（= 恢复"最近在读"自动档）。 */
     private static final String BOOK_PICK_AUTO_LABEL = "自动（最近在读）";
 
@@ -260,6 +267,15 @@ final class OverlayController {
                         content.openBook();
                     }
                 }
+
+                @Override
+                public void onPickBook() {
+                    // 🆕 TASK-071：左下角「选书」框（画在卡上）。
+                    // 🔴 桌面档**走不到这里** —— 卡片主体带 FLAG_NOT_TOUCHABLE（手势要穿透给桌面），
+                    //   卡上按钮的点击一律由透明小窗承接（本形态 = prevView ⇒ showBookPickMenu）。
+                    //   这一支是给"卡片本体可触摸"的宿主（App / 预览）兜底的，与那个小窗同归。
+                    showBookPickMenu();
+                }
             });
             wm.addView(view, OverlayWindow.params(OverlayWindow.typeAccessibility()));
 
@@ -308,13 +324,20 @@ final class OverlayController {
             });
             wm.addView(openView, OverlayWindow.paramsOpenTouch(OverlayWindow.typeAccessibility()));
 
-            // 左下角「上一条」（v0.4.2）：与右下角对称，只在本记形态出现。
-            // 单独开窗而不是把整张卡变成可触摸 —— 理由同「打开」按钮。
+            // 左下角按钮位 —— **一个窗，两个形态复用**（与右下角「打开/换一条」同款做法）：
+            //   · 「本书」形态 = 「选书」（🆕 TASK-071，用户拍板入口唯一化到左下角）；
+            //   · 「本记」形态 = 「上一条」（v0.4.2）。
+            // 两形态互斥 ⇒ 物理上是同一个按钮位；单独开窗而不是把整张卡变成可触摸
+            // —— 理由同「打开」按钮。
             prevView = new View(ctx);
             prevView.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    content.prevNote();
+                    if (PeriodRange.BOOK.equals(StatsStore.getCardPeriod(ctx))) {
+                        showBookPickMenu();
+                    } else {
+                        content.prevNote();
+                    }
                 }
             });
             wm.addView(prevView, OverlayWindow.paramsPrevTouch(OverlayWindow.typeAccessibility()));
@@ -335,19 +358,14 @@ final class OverlayController {
 
             // 长按菜单：铺满卡片的透明窗口，平时 GONE —— 见 CardMenuView 的说明
             menuView = new CardMenuView(ctx);
-            menuView.setItems(HIDE_LABELS);        // 实际清单每次 showMenu 时按形态重建（TASK-069）
+            menuView.setItems(HIDE_LABELS);        // 隐藏时长，全形态一致的 4 项（TASK-071 起不再按形态插项）
             menuView.setListener(new CardMenuView.Listener() {
                 @Override
                 public void onSelect(int index) {
-                    // 🆕 TASK-069：「本书」形态下菜单**第 0 行**是「选书…」⇒ 转入候选菜单
-                    if (menuHasBookPick && index == 0) {
-                        dismissMenu();
-                        showBookPickMenu();
-                        return;
-                    }
-                    // 其余行 = 隐藏时长（索引要减掉前面多出的那一项）
-                    int k = index - (menuHasBookPick ? 1 : 0);
-                    long ms = (k >= 0 && k < HIDE_MS.length) ? HIDE_MS[k] : 0L;
+                    // 🔴 TASK-071：本菜单**只**管隐藏时长。原先「本书」形态在第 0 行插的
+                    //   「选书…」已删除 —— 选书入口唯一化到卡片左下角那个按钮
+                    //   （桌面 = 左下透明小窗 / App = 画布命中），见 showBookPickMenu 的注释。
+                    long ms = (index >= 0 && index < HIDE_MS.length) ? HIDE_MS[index] : 0L;
                     dismissMenu();
                     if (ms > 0L) startHide(ms);
                 }
@@ -572,17 +590,11 @@ final class OverlayController {
         if (menuView == null) return;
         dismissPeriodMenu();                 // 三张菜单互斥：开这张前先把另两张收掉
         dismissBookPickMenu();
-        // 🆕 TASK-069：**只有「本书」形态**才在菜单最前面多一项「选书…」。
-        //   其余形态（周/月/本记/待办）逐像素不变 —— 清单长度都没变。
-        menuHasBookPick = PeriodRange.BOOK.equals(StatsStore.getCardPeriod(ctx));
-        if (menuHasBookPick) {
-            String[] items = new String[HIDE_LABELS.length + 1];
-            items[0] = MENU_LABEL_PICK_BOOK;
-            System.arraycopy(HIDE_LABELS, 0, items, 1, HIDE_LABELS.length);
-            menuView.setItems(items);
-        } else {
-            menuView.setItems(HIDE_LABELS);
-        }
+        // 🔴 TASK-071：长按菜单恢复为**全形态一致的 4 项**（隐藏时长）。
+        //   原先 TASK-069 在「本书」形态第 0 行插的「选书…」已删除 —— 选书入口唯一化到
+        //   卡片左下角那个按钮。连带撤销：`menuHasBookPick` 字段、`MENU_LABEL_PICK_BOOK` 常量、
+        //   以及 onSelect 里"索引减一"的那段偏移逻辑。
+        menuView.setItems(HIDE_LABELS);
         menuView.setBoxWidth(0f);            // 复位默认框宽（候选菜单可能把它改宽了）
         menuView.setMarkedIndex(-1);         // 长按菜单没有"当前档"标记
         menuView.setLastIsCancel(true);      // 末行「取消」照旧画灰
@@ -591,7 +603,7 @@ final class OverlayController {
             ui.removeCallbacks(menuTimeout);
             ui.postDelayed(menuTimeout, MENU_AUTO_MS);
         }
-        CardDebug.note(ctx, "longPress → menu" + (menuHasBookPick ? " (+选书)" : ""));
+        CardDebug.note(ctx, "longPress → menu");
         applyVisibility();
     }
 
@@ -634,7 +646,11 @@ final class OverlayController {
     }
 
     /**
-     * 🆕 TASK-069：打开「本书」候选菜单（桌面长按菜单 → 「选书…」）。
+     * 🆕 TASK-069：打开「本书」候选菜单。
+     *
+     * 🔴 TASK-071：入口 = **卡片左下角那个「选书」按钮**（桌面档由 {@code prevView} 透明小窗接住；
+     * App 档走画布命中 → {@code OpenListener#onPickBook()}）。原先的"长按菜单 → 「选书…」"
+     * 已按用户拍板删除 —— 入口唯一化。**本方法的构建与点选逻辑一字未动。**
      *
      * <p>行 = **第 0 行恒为「自动（最近在读）」**（{@code bookId=""}）+ 候选书（{@link BookStore#bookCandidates}）。
      * 料全部来自本地书架快照 ⇒ 这一屏**零网络请求**。
@@ -748,9 +764,10 @@ final class OverlayController {
         if (openView != null) {
             openView.setVisibility((show && (bookMode || noteMode)) ? View.VISIBLE : View.GONE);
         }
-        // 「上一条」只在本记形态存在 —— 其它形态下它必须完全让开，否则会吃掉左下角的桌面手势（v0.4.2）
+        // 左下角按钮位：本书=「选书」/ 本记=「上一条」⇒ 这两种形态可见。
+        // 其它形态（周/月/待办）必须完全让开，否则会吃掉左下角的桌面手势（v0.4.2 的纪律不变）。
         if (prevView != null) {
-            prevView.setVisibility((show && noteMode) ? View.VISIBLE : View.GONE);
+            prevView.setVisibility((show && (bookMode || noteMode)) ? View.VISIBLE : View.GONE);
         }
         // 「展开▽ / 收起△」在本记 + 待办两种形态出现、卡片可见、且这一帧真画出了按钮时才接管触摸。
         // 其它形态 / 卡片藏起来时一律 GONE —— 它就在正文区里，藏不掉就会吃掉桌面的长按与滑动。

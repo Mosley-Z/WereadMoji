@@ -99,7 +99,10 @@
                     android:visibility="gone" />
 
                 <!-- 刷新按钮行。🆕 TASK-045：原并排的「设置」按钮已删除
-                     （大标签② 即设置入口）；🔴 `t11` 回归实测与本按钮无关（验证记录/150 §4）。 -->
+                     （大标签② 即设置入口）；🔴 `t11` 回归实测与本按钮无关（验证记录/150 §4）。
+                     🆕 TASK-071：TASK-069 曾在此并排加入的「选书」按钮已删除 ——
+                     「本书」的选书入口移至**卡片左下角**那个直入按钮（画在卡上，与右下角
+                     「打开」同一行）。于是「刷新」恢复**独占整行**（= TASK-069 之前的版面）。 -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -121,23 +124,6 @@
                         android:text="@string/btn_refresh"
                         android:textColor="@color/btn_ink_text"
                         android:textSize="17sp" />
-
-                    <!-- 🆕 TASK-069：只在「本书」形态可见（showReaderPage 控制）。
-                         收起（GONE）时「刷新」独占整行 ⇒ 其它形态版面与改造前一致。 -->
-                    <Button
-                        android:id="@+id/btn_book_pick"
-                        android:layout_width="0dp"
-                        android:layout_height="40dp"
-                        android:layout_marginLeft="10dp"
-                        android:layout_weight="1"
-                        android:background="@drawable/btn_ink"
-                        android:minWidth="0dp"
-                        android:minHeight="0dp"
-                        android:stateListAnimator="@null"
-                        android:text="@string/btn_pick_book"
-                        android:textColor="@color/btn_ink_text"
-                        android:textSize="17sp"
-                        android:visibility="gone" />
                 </LinearLayout>
             </LinearLayout>
 
