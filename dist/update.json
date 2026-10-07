@@ -1,13 +1,13 @@
 {
-  "versionCode": 43,
-  "versionName": "1.0.1",
-  "tag": "v1.0.1",
-  "notes": "① 「本书」支持手动选书：桌面卡片左下角与 App 本书页新增「选书」入口，可切换最近在读的几本；未手动选择时自动跟随最近在读。② 设置页文案精简，初始化与自定义分区更清爽。③ App 内「怎么用」说明重修。④ 优化部分显示效果。",
-  "apk": "dist/weread-stats-1.0.1.apk",
+  "versionCode": 44,
+  "versionName": "1.2.1-beta",
+  "tag": "v1.2.1-beta",
+  "notes": "① 「本书」支持手动选书：桌面卡片左下角与 App 本书页新增「选书」入口，可切换最近在读的几本；未手动选择时自动跟随最近在读。② 设置页文案精简，初始化与自定义分区更清爽。③ App 内「怎么用」说明重修。④ 手机端「实验室-蓝牙控制」界面优化。⑤ 优化部分显示效果。",
+  "apk": "dist/weread-stats-1.2.1-beta.apk",
   "size": 449198,
-  "sha256": "940d1fdfcb17c442017aecb9045e5a8990e4bf6e7174bad675e0d676a7913092",
+  "sha256": "8c7dc12f143bf4dd4876144012bfb76c520457e1ccd185ca7654fbb038594543",
   "urls": [
-    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v1.0.1/dist/weread-stats-1.0.1.apk",
-    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v1.0.1/dist/weread-stats-1.0.1.apk"
+    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v1.2.1-beta/dist/weread-stats-1.2.1-beta.apk",
+    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v1.2.1-beta/dist/weread-stats-1.2.1-beta.apk"
   ]
 }
