@@ -1,13 +1,13 @@
 {
-  "versionCode": 44,
-  "versionName": "1.2.1-beta",
-  "tag": "v1.2.1-beta",
-  "notes": "① 「本书」支持手动选书：桌面卡片左下角与 App 本书页新增「选书」入口，可切换最近在读的几本；未手动选择时自动跟随最近在读。② 设置页文案精简，初始化与自定义分区更清爽。③ App 内「怎么用」说明重修。④ 手机端「实验室-蓝牙控制」界面优化。⑤ 优化部分显示效果。",
-  "apk": "dist/weread-stats-1.2.1-beta.apk",
-  "size": 449198,
-  "sha256": "8c7dc12f143bf4dd4876144012bfb76c520457e1ccd185ca7654fbb038594543",
+  "versionCode": 45,
+  "versionName": "1.2.2-beta",
+  "tag": "v1.2.2-beta",
+  "notes": "① 实验室「翻页」页改为「连接方式」三选一（关闭 / 热点 / 蓝牙），蓝牙配置收进「蓝牙」分支。② 新增「本机晃动翻页」：晃手机即可翻手机上的微信读书。③ 新增「一起翻页」：本机晃动开关打开时，手机与墨水屏同向翻页。④ 「本机晃动」左/右/上/下四个方向可分别设为「上一页」或「下一页」。⑤ 「本机晃动」说明整理为可折叠卡片。",
+  "apk": "dist/weread-stats-1.2.2-beta.apk",
+  "size": 457390,
+  "sha256": "c6c6656f57ee469c3180a61c4840aa2f10bf3a8bac354e750acd95cfcbb62a42",
   "urls": [
-    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v1.2.1-beta/dist/weread-stats-1.2.1-beta.apk",
-    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v1.2.1-beta/dist/weread-stats-1.2.1-beta.apk"
+    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v1.2.2-beta/dist/weread-stats-1.2.2-beta.apk",
+    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v1.2.2-beta/dist/weread-stats-1.2.2-beta.apk"
   ]
 }

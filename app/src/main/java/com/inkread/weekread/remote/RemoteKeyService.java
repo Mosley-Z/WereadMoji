@@ -51,6 +51,16 @@ public class RemoteKeyService extends AccessibilityService {
         return sInstance != null;
     }
 
+    /**
+     * 🆕 TASK-073：运行中实例（未运行 = null）。
+     *
+     * <p>「本机晃动翻页」需要 {@code canPerformGestures} 的服务句柄来做**本机**手势注入
+     * （{@link RemoteInjector#injectLocal}）—— 本 App 只有本服务声明了该能力。
+     */
+    public static RemoteKeyService instance() {
+        return sInstance;
+    }
+
     @Override
     public void onServiceConnected() {
         sInstance = this;

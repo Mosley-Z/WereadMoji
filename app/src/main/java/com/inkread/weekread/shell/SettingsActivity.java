@@ -82,7 +82,7 @@ public class SettingsActivity extends Activity {
             }
         });
 
-        // ── 实验室子标签（遥控翻页 | 蓝牙控制 | 锁屏密码 | 续航优化）──
+        // ── 实验室子标签（🆕 TASK-072 起 3 段：翻页 | 锁屏密码 | 续航优化）──
         // 改为「按 install_role 动态装配」（手机端形态只装手机端关联子标签），详见 bindLabTabs()。
         labCtrl.bindLabTabs();
 

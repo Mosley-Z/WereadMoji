@@ -599,7 +599,8 @@ public class MainActivity extends Activity {
      * <ul>
      *   <li>设置页内的「初始化 | 自定义」段（{@code seg}）由**本类**装配 —— 因为
      *       实验室已是**独立大标签**，不再参与这条子页签（reader 端 2 段，而非 3 段）；</li>
-     *   <li>实验室内的 4 段（{@code seg_lab}）由 {@link LabPageController#bindLabTabs()} 装配；</li>
+     *   <li>实验室内的 3 段（{@code seg_lab}，🆕 TASK-072 起「翻页 | 锁屏密码 | 续航优化」）
+     *       由 {@link LabPageController#bindLabTabs()} 装配；</li>
      *   <li>待办内的 2 段（{@code seg_todo}）由 {@link TodoPageController#bind()} 装配。</li>
      * </ul>
      */

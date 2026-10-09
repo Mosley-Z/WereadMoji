@@ -19,6 +19,19 @@ import com.inkread.weekread.core.CardPrefs;
  * ⇒ 墨水屏端 {@code RemoteInjector} 翻页。<b>S4 端无需为晃动新增代码（复用既有注入路径）、零新增权限</b>
  * （同卡另顺带修 S4 侧 2 处既有缺陷：R10 几何 / R11 注入串行化，见验证记录 108/111/113）。
  *
+ * <h3>🆕 双模式（TASK-073）——本机 / 对端，两个独立实例</h3>
+ * 本类自 TASK-073 起同时承载**两种互不相干的用法**，各自一个实例、各自一套门控（见 {@link #sync}）：
+ * <ul>
+ *   <li><b>对端模式</b>（{@link #sPeer}）—— 晃本机 ⇒ 翻**墨水屏**上的书。需 {@code role=PHONE}
+ *       + 总开关 + 有可发通道；投递走 {@link RemoteLinkManager#sendCommand}。</li>
+ *   <li><b>本机模式</b>（{@link #sLocal}）—— 晃本机 ⇒ 翻**本机**上的微信读书。只需独立开关
+ *       {@code CardPrefs.shake_local_enabled}，**不依赖**角色 / 连接方式；投递走
+ *       {@link RemoteInjector#injectLocal}（无障碍手势）；方向由**四动作自选**决定
+ *       （{@link CardPrefs#isShakeLocalActNext}，见 {@link #fire}）。</li>
+ * </ul>
+ * 两开关同时打开时两实例并行采样 ⇒ 两条路径**同时**触发（= TASK-074「一起翻页」口径）；
+ * 🆕 此时**对端也切到「手机侧」方向口径** ⇒ 一次晃动两端**同向**翻（见 {@link #fire}）。
+ *
  * <h3>算法</h3>
  * <ol>
  *   <li>加速度计 50Hz（{@link #RATE_US}）—— 实测 49.90Hz、抖动 ±0.2ms、零丢包。</li>
@@ -152,18 +165,27 @@ public final class ShakeDetector implements SensorEventListener {
     private static final long[]   SENS_PEAK_GAP_MS = {70L,   60L,   50L};
 
     // ── 单例（由 sync() 按门控启停）──
+    //
+    // 🆕 TASK-073：由"单实例"改为**两个独立实例** —— 对端模式（晃本机 ⇒ 翻墨水屏上的书）
+    //   与本机模式（晃本机 ⇒ 翻本机上的微信读书）**解耦**（用户 2026-10-09 Q2 拍板）：
+    //   两个开关各自独立生效，同时打开时两条路径**同时**触发（= TASK-074「一起翻页」口径）。
 
-    private static ShakeDetector sInstance;
+    /** 对端模式实例（G1 role=phone + G2 总开关 + G3 有可发通道）。 */
+    private static ShakeDetector sPeer;
+    /** 本机模式实例（只认 {@code CardPrefs.shake_local_enabled}，不依赖角色/通道）。 */
+    private static ShakeDetector sLocal;
 
     /**
-     * 🔴 唯一的启停入口：按三道门控重新评估「该不该采样」，该开则开、该停则停。
+     * 🔴 唯一的启停入口：按各道门控重新评估「该不该采样」，该开则开、该停则停。
      *
      * <pre>
-     * G1 role == PHONE          —— 晃动是手机端的捕获方式（墨水屏/关闭角色下不注册）
-     * G2 remote_shake_enabled   —— 总开关（默认关 ⇒ 装后与现状零差异）
-     * G3 有可发通道就绪          —— 仅"能发指令"时采样（加速度计是常驻 50Hz 源，不白耗电）
-     *                              🆕 TASK-033：判据 = {@code RemoteLinkManager.canSend()}
-     *                              （HID 已连接 或 TCP 已连接），兼容「蓝牙控制」通道。
+     * 对端模式（peer）：
+     *   G1 role == PHONE          —— 晃动是手机端的捕获方式（墨水屏/关闭角色下不注册）
+     *   G2 remote_shake_enabled   —— 总开关（默认关 ⇒ 装后与现状零差异）
+     *   G3 有可发通道就绪          —— 仅"能发指令"时采样（加速度计是常驻 50Hz 源，不白耗电）
+     *                               🆕 TASK-033：判据 = {@code RemoteLinkManager.canSend()}
+     * 本机模式（local，🆕 TASK-073）：
+     *   G2' {@code shake_local_enabled} —— 独立开关，**不依赖** G1 角色 / G3 通道 / 连接方式。
      * </pre>
      *
      * 调用点：① 遥控服务连接/销毁；② 会话状态变化（经 {@code addStateListener}）；
@@ -173,30 +195,62 @@ public final class ShakeDetector implements SensorEventListener {
         if (c == null) {
             return;
         }
-        boolean want;
+        boolean peerWant;
+        boolean localWant;
         try {
-            want = RemoteRole.from(c) == RemoteRole.PHONE
+            peerWant = RemoteRole.from(c) == RemoteRole.PHONE
                     && CardPrefs.isShakeEnabled(c)
                     && RemoteLinkManager.get().canSend();
+            localWant = CardPrefs.isShakeLocalEnabled(c);
         } catch (Throwable t) {
             Log.w(TAG, "sync: gate check failed(swallowed): " + t);
             return;
         }
+        ensureMode(c, true, peerWant);
+        ensureMode(c, false, localWant);
+    }
+
+    /** 按目标态启停某一个模式实例（幂等；同一模式已运行则不重建）。 */
+    private static void ensureMode(Context c, boolean peer, boolean want) {
+        ShakeDetector cur = peer ? sPeer : sLocal;
         if (want) {
-            if (sInstance == null) {
-                new ShakeDetector(c.getApplicationContext(), CardPrefs.getShakeSens(c)).start();
+            if (cur == null) {
+                // 🔴🔴 注意语义换算：本方法入参 `peer` = **是否对端模式**，
+                //   而构造器第 3 参要的是 **是否本机模式** ⇒ 必须取反。
+                //   （TASK-073 上机实测踩过：直接传 `peer` ⇒ 两个实例的 mLocal 整体反了 ——
+                //    开「本机晃动」建出来的实例 mLocal=false，会走去对端的 sendCommand 分支。）
+                final boolean isLocal = !peer;
+                ShakeDetector d = new ShakeDetector(
+                        c.getApplicationContext(), CardPrefs.getShakeSens(c), isLocal);
+                if (d.start()) {
+                    if (peer) {
+                        sPeer = d;
+                    } else {
+                        sLocal = d;
+                    }
+                }
             }
-        } else {
-            shutdown();
+        } else if (cur != null) {
+            cur.stop();
+            if (peer) {
+                sPeer = null;
+            } else {
+                sLocal = null;
+            }
         }
     }
 
     /** 强制停采样（服务被回收 / 会话结束 / 总开关关闭都走这里）。可重复调用。 */
     public static synchronized void shutdown() {
-        ShakeDetector d = sInstance;
-        sInstance = null;
-        if (d != null) {
-            d.stop();
+        ShakeDetector p = sPeer;
+        ShakeDetector l = sLocal;
+        sPeer = null;
+        sLocal = null;
+        if (p != null) {
+            p.stop();
+        }
+        if (l != null) {
+            l.stop();
         }
     }
 
@@ -206,21 +260,28 @@ public final class ShakeDetector implements SensorEventListener {
      * <p>重建会清掉「上次命中时间 / 冷却态」⇒ 改档后紧接着甩一下会立即触发（不受旧冷却限制），可接受。
      */
     public static synchronized void reload(Context c) {
-        if (sInstance != null) {
+        if (sPeer != null || sLocal != null) {
             shutdown();
             sync(c);
         }
     }
 
-    /** 探针/调试用：采样是否在跑。 */
+    /** 探针/调试用：采样是否在跑（任一模式）。 */
     public static boolean isRunning() {
-        return sInstance != null;
+        return sPeer != null || sLocal != null;
+    }
+
+    /** 🆕 TASK-073：本机模式是否在采样（设置页状态提示用）。 */
+    public static boolean isLocalRunning() {
+        return sLocal != null;
     }
 
     // ── 实例 ──
 
     private final Context mApp;
     private final SensorManager mSm;
+    /** 🆕 TASK-073：true = 本机模式（晃本机翻本机）；false = 对端模式（晃本机翻墨水屏）。 */
+    private final boolean mLocal;
 
     // ── 档位参数（构造时从 CardPrefs 载入；🔴 非 static，以支持三档切换）──
     private final int mSens;
@@ -252,8 +313,9 @@ public final class ShakeDetector implements SensorEventListener {
     private int mBufHead;      // 下一个写入位
     private int mBufCount;     // 已填充帧数（≤ PROBE_N）
 
-    private ShakeDetector(Context app, int sens) {
+    private ShakeDetector(Context app, int sens, boolean local) {
         mApp = app;
+        mLocal = local;
         mSm = (SensorManager) app.getSystemService(Context.SENSOR_SERVICE);
         if (sens < 0 || sens >= SENS_NAME.length) {
             sens = CardPrefs.SHAKE_SENS_MID;          // 越界兜底 = 中档
@@ -265,12 +327,12 @@ public final class ShakeDetector implements SensorEventListener {
         mMinPeakGapMs = SENS_PEAK_GAP_MS[sens];
     }
 
-    /** 实际上线：起采样线程并注册加速度计。失败则整体放弃（不假装成功）。 */
-    private void start() {
+    /** 实际上线：起采样线程并注册加速度计。失败则整体放弃（不假装成功）。@return 是否真的注册上 */
+    private boolean start() {
         Sensor acc = (mSm == null) ? null : mSm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         if (acc == null) {
-            Log.w(TAG, "start: 本机没有加速度计 —— 不注册");
-            return;
+            Log.w(TAG, "start: 本机没有加速度计 —— 不注册（mode=" + (mLocal ? "local" : "peer") + "）");
+            return false;
         }
         HandlerThread thread = new HandlerThread("shake-detector");
         thread.start();
@@ -288,14 +350,14 @@ public final class ShakeDetector implements SensorEventListener {
         if (!ok) {
             Log.w(TAG, "start: 注册失败 —— 不启动");
             thread.quit();
-            return;
+            return false;
         }
         mThread = thread;
         mHandler = h;
-        sInstance = this;
-        Log.i(TAG, "START shake detector: 50Hz, sens=" + SENS_NAME[mSens]
-                + " th=" + mThreshold + " win=" + mWindowMs + "ms cd=" + mCooldownMs
-                + "ms gap=" + mMinPeakGapMs + "ms（role=phone, session=CONNECTED）");
+        Log.i(TAG, "START shake detector(" + (mLocal ? "local" : "peer") + "): 50Hz, sens="
+                + SENS_NAME[mSens] + " th=" + mThreshold + " win=" + mWindowMs + "ms cd="
+                + mCooldownMs + "ms gap=" + mMinPeakGapMs + "ms");
+        return true;
     }
 
     private void stop() {
@@ -315,7 +377,8 @@ public final class ShakeDetector implements SensorEventListener {
         }
         mThread = null;
         mHandler = null;
-        Log.i(TAG, "STOP shake detector（传感器已注销，无残留采样）");
+        Log.i(TAG, "STOP shake detector(" + (mLocal ? "local" : "peer")
+                + ")（传感器已注销，无残留采样）");
     }
 
     // ── 传感器回调（跑在私有后台线程）──
@@ -654,16 +717,31 @@ public final class ShakeDetector implements SensorEventListener {
     // ── 命中 → 指令 ──
 
     /**
-     * 一次甩动**判决通过** ⇒ 按 {@link #judge} 给出的方向符号 + 对应反转开关决定指令，直接发给对端。
+     * 一次甩动**判决通过** ⇒ 决定指令，再按<b>本机 / 对端</b>分流投递。
      *
-     * <p>映射（默认 = 两个反转开关均关；按**用户实际握持（背面朝自己）**标定：左 = x 主峰 −
-     * ／右 = x 主峰 + ／上 = z 主峰 − ／下 = z 主峰 +）：
-     * {@code cmd = (rev ? −sign : sign) < 0 ? PAGE_PREV : PAGE_NEXT} —— x 通道走 {@code lr_rev}，
-     * y/z 通道走 {@code ud_rev}，两组完全独立。
-     * <br>默认结果：<b>左晃→上一页 / 右晃→下一页 / 上晃→上一页 / 下晃→下一页</b>。
-     * <br>⚠️ 2026-10-04 二修：2026-10-03 曾据"文档默认（屏幕朝自己标定）"把公式改成
-     * {@code rev ? sign : −sign}，但真机（背面朝自己）实测四方向**全部相反**（验证记录/117）
-     * ⇒ 改回 {@code rev ? −sign : sign}，对齐用户实际握持语义。
+     * <h4>① 方向基准（🆕 TASK-074：条件式，两模式不再"整体相反"）</h4>
+     * <p>同一套 {@link #judge} 输出（主导轴 {@code idx} + 主峰符号 {@code sign}）先由
+     * {@link #actionOf} 归一为**四个动作**之一（左/右/上/下晃，口径 = 手机"屏幕正对自己"），
+     * 再按下列条件取指令：
+     * <ul>
+     *   <li><b>「手机侧」口径</b>（本机实例 {@link #mLocal} = true，**或**对端实例但本机开关
+     *       {@code shake_local_enabled} 已打开）—— 四个动作各查 {@link CardPrefs#isShakeLocalActNext}
+     *       的**自选方向**（默认 左/上→上一页、右/下→下一页）。
+     *       <p>🔴 对端实例在「本机开关打开」时**也切到手机侧**：这就是 TASK-074「一起翻页」
+     *       —— 手机与墨水屏并排都正对使用者，一次晃动两端**必须同向翻**（TASK-073 的双实例
+     *       各自按不同握持标定 ⇒ 曾出现"一前一后"，见验证记录 183）。</li>
+     *   <li><b>「对端口径」</b>（仅对端实例、且本机开关**关闭**时）—— 沿用 TASK-029 标定
+     *       （背面朝自己）：{@code eff = rev ? −sign : sign}；{@code rev} 取
+     *       {@code remote_shake_lr_rev} / {@code remote_shake_ud_rev}。**本机开关关着时行为与
+     *       TASK-073 之前逐位一致**（用户 2026-10-09：「未打开时按之前确定的翻页逻辑来」）。</li>
+     * </ul>
+     *
+     * <h4>② 投递路径</h4>
+     * <ul>
+     *   <li>对端 ⇒ {@link RemoteLinkManager#sendCommand}（TCP 45678 / HID 蓝牙，发指令给墨水屏）。</li>
+     *   <li>本机 ⇒ {@link RemoteInjector#injectLocal}（在本机微信读书上用无障碍手势合成翻页，
+     *       与 {@link RemoteInjector#inject} 共享同一条 FIFO 串行队列）。</li>
+     * </ul>
      *
      * @param idx  **主导轴**下标（来自 {@link #judge}），不再是"触发轴"
      * @param sign 主峰符号（+1/−1）
@@ -673,22 +751,75 @@ public final class ShakeDetector implements SensorEventListener {
      */
     private void fire(int idx, int sign) {
         final boolean lr = (idx == IDX_X);
-        boolean rev = false;
+        final int act = actionOf(idx, sign);
+        int cmd;
+        boolean phoneSide;
         try {
-            rev = lr ? CardPrefs.isShakeLrRev(mApp) : CardPrefs.isShakeUdRev(mApp);
+            // 🔴 TASK-074：方向基准是**条件式**的 ——
+            //   ① 本机实例（mLocal）永远按「手机侧」口径；
+            //   ② 对端实例：**本机晃动开关打开**时也按「手机侧」口径（= 一起翻页，
+            //      手机正对使用者 ⇒ 两端必须同向）；开关关闭时才回落 TASK-029 的原始口径。
+            phoneSide = mLocal || CardPrefs.isShakeLocalEnabled(mApp);
+            if (phoneSide) {
+                cmd = CardPrefs.isShakeLocalActNext(mApp, act)
+                        ? RemoteProtocol.CMD_PAGE_NEXT : RemoteProtocol.CMD_PAGE_PREV;
+            } else {
+                final boolean rev = lr ? CardPrefs.isShakeLrRev(mApp) : CardPrefs.isShakeUdRev(mApp);
+                final int eff = rev ? -sign : sign;   // 对端：默认 左/上→上一页、右/下→下一页
+                cmd = (eff < 0) ? RemoteProtocol.CMD_PAGE_PREV : RemoteProtocol.CMD_PAGE_NEXT;
+            }
         } catch (Throwable t) {
             Log.w(TAG, "fire: read prefs failed(swallowed): " + t);
+            phoneSide = false;
+            cmd = (sign < 0) ? RemoteProtocol.CMD_PAGE_PREV : RemoteProtocol.CMD_PAGE_NEXT;
         }
-        final int eff = rev ? -sign : sign;   // 🔴 2026-10-04 二修：默认 左/上→上一页、右/下→下一页（勾选 rev = 反向）
-        final int cmd = (eff < 0)
-                ? RemoteProtocol.CMD_PAGE_PREV : RemoteProtocol.CMD_PAGE_NEXT;
         boolean sent = false;
-        try {
-            sent = RemoteLinkManager.get().sendCommand(cmd);
-        } catch (Throwable t) {
-            Log.w(TAG, "fire: sendCommand failed(swallowed): " + t);
+        if (mLocal) {
+            // 本机模式：不走遥控链路（不需要 role=PHONE / 通道就绪），直接在本机合成翻页手势。
+            try {
+                sent = RemoteInjector.injectLocal(RemoteKeyService.instance(), cmd);
+            } catch (Throwable t) {
+                Log.w(TAG, "fire: injectLocal failed(swallowed): " + t);
+            }
+        } else {
+            try {
+                sent = RemoteLinkManager.get().sendCommand(cmd);
+            } catch (Throwable t) {
+                Log.w(TAG, "fire: sendCommand failed(swallowed): " + t);
+            }
         }
-        Log.i(TAG, "SHAKE axis=" + (lr ? "LR" : "UD") + "(" + idx + ") sign=" + sign
-                + " rev=" + rev + " → " + RemoteProtocol.name(cmd) + " sent=" + sent);
+        Log.i(TAG, "SHAKE(mode=" + (mLocal ? "local" : "peer") + ") axis=" + (lr ? "LR" : "UD")
+                + "(" + idx + ") sign=" + sign + " act=" + actName(act)
+                + " src=" + (phoneSide ? "phone" : "peer") + " → "
+                + RemoteProtocol.name(cmd) + " sent=" + sent);
+    }
+
+    /**
+     * 🆕 TASK-074：(主导轴, 主峰符号) → 本机四动作之一。
+     *
+     * <p>口径 = **手机「屏幕正对自己」** 的握持（与 TASK-073 的 A5 标定一致）：
+     * <ul>
+     *   <li>x 轴（左右）：{@code sign>0} = 左晃 / {@code sign<0} = 右晃；</li>
+     *   <li>y·z 轴（上下）：{@code sign>0} = 上晃 / {@code sign<0} = 下晃。</li>
+     * </ul>
+     * 🔴 该映射**只负责"是哪个动作"**，与"翻上一页还是下一页"解耦 ——
+     * 后者由 {@link CardPrefs#isShakeLocalActNext} 的四动作单选决定。
+     */
+    private static int actionOf(int idx, int sign) {
+        if (idx == IDX_X) {
+            return (sign > 0) ? CardPrefs.SHAKE_ACT_LEFT : CardPrefs.SHAKE_ACT_RIGHT;
+        }
+        return (sign > 0) ? CardPrefs.SHAKE_ACT_UP : CardPrefs.SHAKE_ACT_DOWN;
+    }
+
+    /** 动作名（日志用）。 */
+    private static String actName(int act) {
+        switch (act) {
+            case CardPrefs.SHAKE_ACT_LEFT:  return "LEFT";
+            case CardPrefs.SHAKE_ACT_RIGHT: return "RIGHT";
+            case CardPrefs.SHAKE_ACT_UP:    return "UP";
+            case CardPrefs.SHAKE_ACT_DOWN:  return "DOWN";
+            default:                        return "?";
+        }
     }
 }

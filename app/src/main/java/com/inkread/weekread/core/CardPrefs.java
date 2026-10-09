@@ -308,6 +308,83 @@ public final class CardPrefs {
         sp(c).edit().putBoolean("shake_axis_ud_enabled", v).commit();
     }
 
+    // ── 🆕 TASK-073：本机晃动翻页（V1.2.2-beta）──
+    //
+    // 🔴 与上面「晃动翻页（控制对端）」**解耦**：本项管的是"晃本机 ⇒ 翻本机上的微信读书"
+    //    （屏幕正对使用者握持），**不依赖** remote_role / install_role / 任一通道是否连通
+    //    （用户 2026-10-09 Q2 拍板）—— 它靠无障碍手势注入打到**本机**屏幕，与对端无关。
+    //    true  ⇒ ShakeDetector 增开一条「本机」采样实例；翻页走 RemoteInjector.injectLocal。
+    //    false（默认）⇒ **与改造前零差异**（不注册加速度计、不注入）。
+    // 🔴 方向与「背面朝自己」模式**相反** ⇒ 由 ShakeDetector 的本机分支对 sign 取反（A5）。
+    // 🔴 无加速度计的设备（S4）⇒ ShakeDetector 采样注册失败、静默不启用（UI 侧另行置灰提示）。
+    // 🔴 仍受「正式版能力门」约束（与 remote_shake_enabled / bt_control_enabled 同一口径，
+    //    正式版恒 false ⇒ 不注册加速度计、不注入）。
+    public static final boolean DEFAULT_SHAKE_LOCAL_ENABLED = false;
+
+    public static boolean isShakeLocalEnabled(Context c) {
+        if (!FeatureGate.remoteVisible(c)) return false;
+        return sp(c).getBoolean("shake_local_enabled", DEFAULT_SHAKE_LOCAL_ENABLED);
+    }
+
+    public static void setShakeLocalEnabled(Context c, boolean v) {
+        sp(c).edit().putBoolean("shake_local_enabled", v).commit();
+    }
+
+    // ── 🆕 TASK-073（二改）· 本机晃动的**翻页方式**（用户单项选择）────────────────────
+    //   两个都经真机验证可用，让用户按手感自选：
+    //     TAP（默认）  = 点**贴边窄条**（左/右边缘 50px）—— 与墨水屏端**同语义**、手势最短。
+    //     SWIPE        = 水平**横扫**（右→左=下一页 / 左→右=上一页）—— 与分辨率无关、不吃热区宽度。
+    //   🔴 两者**都只对竖屏、左右横向翻页有效**（UI 说明行已注明）；横屏不在支持范围。
+    //   🔴 纯参数项：**不做** FeatureGate 门控（主开关 isShakeLocalEnabled 已门控，本项读了也无效）。
+    public static final int SHAKE_LOCAL_MODE_TAP = 0;
+    public static final int SHAKE_LOCAL_MODE_SWIPE = 1;
+    public static final int DEFAULT_SHAKE_LOCAL_MODE = SHAKE_LOCAL_MODE_TAP;
+
+    public static int getShakeLocalMode(Context c) {
+        int v = sp(c).getInt("shake_local_mode", DEFAULT_SHAKE_LOCAL_MODE);
+        // 防御：只认 0/1，脏值一律回落默认（避免 UI 单选无选中态）
+        return (v == SHAKE_LOCAL_MODE_SWIPE) ? SHAKE_LOCAL_MODE_SWIPE : SHAKE_LOCAL_MODE_TAP;
+    }
+
+    public static void setShakeLocalMode(Context c, int v) {
+        sp(c).edit().putInt("shake_local_mode", v).commit();
+    }
+
+    // ── 🆕 TASK-074 · 本机晃动「四动作方向」自选（用户 2026-10-09）────────────────────
+    //   用户需求（原文）：「我希望本机晃动翻页的四个动作都能自选方向，每个动作一个单选：
+    //   左晃：上一页/下一页，右晃：上一页/下一页，上晃：上一页/下一页，下晃：上一页/下一页，
+    //   每个动作之间不冲突，默认选项是当前的对应关系」。
+    //   🔴 默认值 = **当时的实际对应关系**（TASK-073 口径，逐位复现旧行为）：
+    //       左晃→上一页 / 右晃→下一页 / 上晃→上一页 / 下晃→下一页。
+    //   🔴 「不冲突」= 四个动作**各存各的**、互不牵连（不同于旧的"左右/上下各一个反转"）。
+    //   🔴 纯参数项：**不做** FeatureGate 门控（主开关 isShakeLocalEnabled 已门控，本项读了也无效）。
+    public static final int SHAKE_ACT_LEFT = 0;
+    public static final int SHAKE_ACT_RIGHT = 1;
+    public static final int SHAKE_ACT_UP = 2;
+    public static final int SHAKE_ACT_DOWN = 3;
+
+    /** 四个动作的偏好键（下标 = SHAKE_ACT_*）。 */
+    private static final String[] SHAKE_ACT_KEY = {
+            "shake_local_dir_left", "shake_local_dir_right",
+            "shake_local_dir_up", "shake_local_dir_down"};
+    /** 四个动作的默认「是不是下一页」（下标 = SHAKE_ACT_*）—— 即 TASK-073 的既有对应关系。 */
+    private static final boolean[] SHAKE_ACT_DEFAULT_NEXT = {false, true, false, true};
+
+    /** 该动作晃一下**是否发「下一页」**（否则「上一页」）。越界按「左晃」读，绝不抛。 */
+    public static boolean isShakeLocalActNext(Context c, int act) {
+        if (act < 0 || act >= SHAKE_ACT_KEY.length) {
+            act = SHAKE_ACT_LEFT;
+        }
+        return sp(c).getBoolean(SHAKE_ACT_KEY[act], SHAKE_ACT_DEFAULT_NEXT[act]);
+    }
+
+    public static void setShakeLocalActNext(Context c, int act, boolean next) {
+        if (act < 0 || act >= SHAKE_ACT_KEY.length) {
+            return;
+        }
+        sp(c).edit().putBoolean(SHAKE_ACT_KEY[act], next).commit();
+    }
+
     // ── 🆕 TASK-041：手机端深色模式（V1.1.1-beta）──
     //
     // 🔴 **仅手机端**（install_role=phone）生效；阅读器端据此键也为 false 默认 ⇒ 零差异。

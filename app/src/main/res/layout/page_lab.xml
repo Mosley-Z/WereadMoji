@@ -36,7 +36,7 @@
 
                 <!-- ── 页顶不再重复「实验室」标题：页名已由外层顶部标签栏承担 ── -->
 
-                <!-- 🆕 TASK-021 实验室子标签栏（TASK-023 起扩到 3 段「遥控翻页 | 锁屏密码 | 续航优化」） -->
+                <!-- 🆕 TASK-021 实验室子标签栏（🆕 TASK-072 起 3 段「翻页 | 锁屏密码 | 续航优化」——「热点翻页」与「蓝牙控制」已合并为同一页内的「连接方式」单选） -->
                 <!-- 🆕 2026-09-30 微调：40dp → 36dp，且 marginTop 12dp → 0 —— 与外层大标签栏**紧贴**
                      （外层 ScrollView 的顶部留白已挪到 page_init / page_custom 各自身上 ⇒ 这两页
                       的**顶部留白不变**；它们只因大标签栏变矮 5px 而整体上移 5px） -->
@@ -45,12 +45,80 @@
                     android:layout_width="match_parent"
                     android:layout_height="36dp" />
 
-                <!-- 🆕 子页 A：遥控翻页（现有内容原样搬入，功能零改动） -->
+                <!-- 🆕 TASK-072：子页 A「翻页」—— 原「热点翻页」+「蓝牙控制」两页合并；
+                     🔴 本区域在 page_lab.xml / settings_layout.xml 两份文件里**逐字节相同**，改一处必须同步另一处。 -->
                 <LinearLayout
                     android:id="@+id/page_lab_remote"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
+                <!-- ── 🆕 TASK-072：连接方式（三选一）——
+                     把原「热点翻页」+「蓝牙控制」两个并列子标签收敛为**同一个问题**：
+                     「翻页怎么送到墨水屏」。选中项展开、未选中折叠；
+                     原有「开蓝牙会自动结束热点」的互斥提示已删（单选本身即互斥）。
+                     两条链路**底层行为一行未改**（TCP 会话 / HID 保活 / 配对流程）。 ── -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/lab_conn_label"
+                    android:textColor="#FF000000"
+                    android:textSize="15sp" />
+
+                <RadioGroup
+                    android:id="@+id/rg_conn_mode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:orientation="vertical">
+
+                    <RadioButton
+                        android:id="@+id/rb_conn_off"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/lab_conn_off"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_conn_hotspot"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/lab_conn_hotspot"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_conn_bt"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/lab_conn_bt"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+                </RadioGroup>
+
+                <!-- ── 状态胶囊：当前通道 + 连接态（refreshConnUi 实时拼，一处看清）── -->
+                <TextView
+                    android:id="@+id/tv_conn_hint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:lineSpacingExtra="3dp"
+                    android:textColor="#FF000000"
+                    android:textSize="13sp" />
+
+                <!-- ===== 🆕 TASK-072：选「热点」时展开（= 原「热点翻页」内容，功能零改动）===== -->
+                <LinearLayout
+                    android:id="@+id/ll_conn_hotspot"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+
 
                 <!-- ── 遥控翻页（子标签栏已显示页名，此处不再重复小标题）── -->
                 <TextView
@@ -409,12 +477,12 @@
                         android:textColor="@color/btn_ink_text"
                         android:textSize="15sp" />
                 </LinearLayout>
-                </LinearLayout><!-- /page_lab_remote -->
-
+                </LinearLayout><!-- /ll_conn_hotspot -->
                 <!-- ============================================================
                      🆕 TASK-033 子页：蓝牙控制（HID 外设通道）
+                     🆕 TASK-072：由**独立子标签**降级为「翻页」页内**选「蓝牙」才展开的分支**。
+                     🔴 id `page_lab_bt` 沿用（不新增/不改名 ⇒ 两端 id 集不变，验收 A4）。
                      启用开关 + 状态 + 测试翻页 + 配对/重连引导。
-                     默认整块 GONE，由 seg_lab 切页控制。
                      🔴 墨水屏端：整个控件块隐藏、只留说明 ⇒ 保证"零侵入"（验收 A10）。
                      ============================================================ -->
                 <LinearLayout
@@ -442,6 +510,8 @@
                         android:layout_height="wrap_content"
                         android:orientation="vertical">
 
+                        <!-- 🆕 TASK-072：启用/停用已由页顶「连接方式」单选承担 ⇒ 本勾选框置 GONE。
+                             🔴 id 保留（不删不改名，两端 id 集不变）；监听与回填逻辑一并保留，零行为副作用。 -->
                         <CheckBox
                             android:id="@+id/cb_bt_enabled"
                             android:layout_width="wrap_content"
@@ -450,7 +520,8 @@
                             android:buttonTint="#FF000000"
                             android:text="@string/lab_bt_enable"
                             android:textColor="#FF000000"
-                            android:textSize="15sp" />
+                            android:textSize="15sp"
+                            android:visibility="gone" />
 
                         <TextView
                             android:id="@+id/tv_bt_unsupported"
@@ -624,15 +695,6 @@
                                 android:text="@string/lab_bt_reconnect_tip"
                                 android:textColor="#FF3C3C3C"
                                 android:textSize="13sp" />
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="4dp"
-                                android:lineSpacingExtra="3dp"
-                                android:text="@string/lab_bt_not_conflict_tip"
-                                android:textColor="#FF3C3C3C"
-                                android:textSize="13sp" />
                         </LinearLayout>
                     </LinearLayout><!-- /ll_bt_controls -->
 
@@ -648,6 +710,343 @@
                         android:textSize="13sp"
                         android:visibility="gone" />
                 </LinearLayout><!-- /page_lab_bt -->
+                <!-- ============================================================
+                     🆕 TASK-073：本机晃动翻页（晃本机 ⇒ 翻**本机**上的微信读书）
+                     🔴 与上方「连接方式」**互相独立**（用户 Q2 拍板：不依赖 install_role）
+                        ⇒ 两端形态都可见；两个开关同开时两条路径**同时**触发（TASK-074 口径）。
+                     🔴 无加速度计的机型（如墨水屏）⇒ 开关置灰 + 如实提示（沿用 lab_bt_unsupported 范式）。
+                     ============================================================ -->
+                <LinearLayout
+                    android:id="@+id/ll_shake_local_block"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/lab_shake_local_title"
+                        android:textColor="#FF000000"
+                        android:textSize="15sp" />
+
+                    <!-- 🆕 折叠卡（TASK-065 同范式）：两段说明（本机翻页 / 一起翻页）收进折叠，
+                         首屏只留「标题 + 开关」；点标题行展开 / 收起。两段字号**统一 13sp**。 -->
+                    <com.inkread.weekread.ui.FoldHintView
+                        android:id="@+id/fold_shake_local"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp" />
+
+                    <LinearLayout
+                        android:id="@+id/ll_fold_shake_local"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/lab_shake_local_intro"
+                            android:textColor="#FF3C3C3C"
+                            android:textSize="13sp" />
+
+                        <!-- 一起翻页（本机 + 对端同时生效）—— 静态条件句说明（仅「连接方式」已连时才成立） -->
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/lab_shake_local_combine_tip"
+                            android:textColor="#FF3C3C3C"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+
+                    <CheckBox
+                        android:id="@+id/cb_shake_local"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:buttonTint="#FF000000"
+                        android:text="@string/lab_shake_local_label"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+
+                    <!-- 🆕 TASK-073：翻页方式二选一（点击贴边 / 横向滑动）。🔴 仅竖屏横向翻页（见下方说明行） -->
+                    <LinearLayout
+                        android:id="@+id/ll_shake_local_mode"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/lab_shake_local_mode_label"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp" />
+
+                        <RadioGroup
+                            android:id="@+id/rg_shake_local_mode"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:orientation="vertical">
+
+                            <RadioButton
+                                android:id="@+id/rb_shake_local_tap"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:buttonTint="#FF000000"
+                                android:text="@string/lab_shake_local_mode_tap"
+                                android:textColor="#FF000000"
+                                android:textSize="13sp" />
+
+                            <RadioButton
+                                android:id="@+id/rb_shake_local_swipe"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:buttonTint="#FF000000"
+                                android:text="@string/lab_shake_local_mode_swipe"
+                                android:textColor="#FF000000"
+                                android:textSize="13sp" />
+                        </RadioGroup>
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:lineSpacingExtra="3dp"
+                            android:text="@string/lab_shake_local_portrait_note"
+                            android:textColor="#FF3C3C3C"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
+                    <!-- 🆕 TASK-074：四动作方向自选（左/右/上/下 各一个单选，互不冲突）——
+                         两行 × 两列；默认 左/上→上一页、右/下→下一页。 -->
+                    <LinearLayout
+                        android:id="@+id/ll_shake_local_dir"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/lab_shake_local_dir_label"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:orientation="horizontal">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/lab_shake_local_dir_left"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+
+                                <RadioGroup
+                                    android:id="@+id/rg_shake_dir_left"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="4dp"
+                                    android:orientation="horizontal">
+
+                                    <RadioButton
+                                        android:id="@+id/rb_shake_dir_left_prev"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:buttonTint="#FF000000"
+                                        android:text="@string/lab_shake_page_prev"
+                                        android:textColor="#FF000000"
+                                        android:textSize="12sp" />
+
+                                    <RadioButton
+                                        android:id="@+id/rb_shake_dir_left_next"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:layout_marginStart="6dp"
+                                        android:buttonTint="#FF000000"
+                                        android:text="@string/lab_shake_page_next"
+                                        android:textColor="#FF000000"
+                                        android:textSize="12sp" />
+                                </RadioGroup>
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/lab_shake_local_dir_right"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+
+                                <RadioGroup
+                                    android:id="@+id/rg_shake_dir_right"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="4dp"
+                                    android:orientation="horizontal">
+
+                                    <RadioButton
+                                        android:id="@+id/rb_shake_dir_right_prev"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:buttonTint="#FF000000"
+                                        android:text="@string/lab_shake_page_prev"
+                                        android:textColor="#FF000000"
+                                        android:textSize="12sp" />
+
+                                    <RadioButton
+                                        android:id="@+id/rb_shake_dir_right_next"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:layout_marginStart="6dp"
+                                        android:buttonTint="#FF000000"
+                                        android:text="@string/lab_shake_page_next"
+                                        android:textColor="#FF000000"
+                                        android:textSize="12sp" />
+                                </RadioGroup>
+                            </LinearLayout>
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:orientation="horizontal">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/lab_shake_local_dir_up"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+
+                                <RadioGroup
+                                    android:id="@+id/rg_shake_dir_up"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="4dp"
+                                    android:orientation="horizontal">
+
+                                    <RadioButton
+                                        android:id="@+id/rb_shake_dir_up_prev"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:buttonTint="#FF000000"
+                                        android:text="@string/lab_shake_page_prev"
+                                        android:textColor="#FF000000"
+                                        android:textSize="12sp" />
+
+                                    <RadioButton
+                                        android:id="@+id/rb_shake_dir_up_next"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:layout_marginStart="6dp"
+                                        android:buttonTint="#FF000000"
+                                        android:text="@string/lab_shake_page_next"
+                                        android:textColor="#FF000000"
+                                        android:textSize="12sp" />
+                                </RadioGroup>
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/lab_shake_local_dir_down"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+
+                                <RadioGroup
+                                    android:id="@+id/rg_shake_dir_down"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="4dp"
+                                    android:orientation="horizontal">
+
+                                    <RadioButton
+                                        android:id="@+id/rb_shake_dir_down_prev"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:buttonTint="#FF000000"
+                                        android:text="@string/lab_shake_page_prev"
+                                        android:textColor="#FF000000"
+                                        android:textSize="12sp" />
+
+                                    <RadioButton
+                                        android:id="@+id/rb_shake_dir_down_next"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:layout_marginStart="6dp"
+                                        android:buttonTint="#FF000000"
+                                        android:text="@string/lab_shake_page_next"
+                                        android:textColor="#FF000000"
+                                        android:textSize="12sp" />
+                                </RadioGroup>
+                            </LinearLayout>
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <!-- 动态自证行（refreshShakeLocalUi 实时拼：当前映射 / 未开启） -->
+                    <TextView
+                        android:id="@+id/tv_shake_local_note"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:lineSpacingExtra="3dp"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp" />
+
+                    <!-- 无加速度计（如墨水屏设备）⇒ 如实提示不可用 -->
+                    <TextView
+                        android:id="@+id/tv_shake_local_unsupported"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/lab_shake_local_unsupported"
+                        android:textColor="#FF000000"
+                        android:textSize="13sp"
+                        android:visibility="gone" />
+                </LinearLayout>
+                </LinearLayout><!-- /page_lab_remote -->
 
                 <!-- ============================================================
                      🆕 TASK-022 子页 B：锁屏密码（应用级软锁）

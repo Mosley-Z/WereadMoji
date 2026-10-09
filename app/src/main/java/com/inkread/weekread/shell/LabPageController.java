@@ -18,13 +18,19 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.provider.Settings;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.util.Log;
 import android.view.View;
 import android.view.ViewParent;
 import android.widget.Button;
@@ -42,9 +48,10 @@ import java.io.File;
 /**
  * 实验室页控制器（🆕 TASK-045 / V1.2.0-beta 抽出）。
  *
- * <p>接管 {@code page_lab} 容器（{@code seg_lab} + 4 个子容器：热点翻页 / 蓝牙控制 /
- * 锁屏密码 / 续航优化）的**全部**逻辑 —— 即改造前 {@link SettingsActivity} 里
+ * <p>接管 {@code page_lab} 容器（{@code seg_lab} + 3 个子容器：翻页 / 锁屏密码 / 续航优化）的
+ * <b>全部</b>逻辑 —— 即改造前 {@link SettingsActivity} 里
  * lab 相关段落的**逐字平移**（遥控会话、晃动翻页、蓝牙 HID、应用级软锁、省电指令）。
+ * 🆕 TASK-072：原「热点翻页」+「蓝牙控制」两页合并为「翻页」页内的「连接方式」三选一。
  *
  * <p>🔴 为什么要抽：改造后实验室有两个宿主 ——
  * <ul>
@@ -63,6 +70,29 @@ import java.io.File;
 public class LabPageController {
 
     private final Activity host;
+
+    // ── 🆕 TASK-072：「连接方式」三选一（原「热点翻页」+「蓝牙控制」两页合并）──
+    /** 连接方式：关闭 */
+    private static final int CONN_OFF = 0;
+    /** 连接方式：热点（= remote_role != OFF 且未开蓝牙） */
+    private static final int CONN_HOTSPOT = 1;
+    /** 连接方式：蓝牙（= bt_control_enabled） */
+    private static final int CONN_BT = 2;
+
+    private RadioGroup rgConnMode;
+    private RadioButton rbConnOff;
+    private RadioButton rbConnHotspot;
+    private RadioButton rbConnBt;
+    private TextView tvConnHint;         // 状态胶囊：当前通道 + 连接态
+    private View llConnHotspot;          // 热点配置块（选「热点」才展开）
+    private View llConnBt;               // 蓝牙配置块（= 原 page_lab_bt，选「蓝牙」才展开）
+    /** 防回环：refreshConnUi() 回填单选时会触发监听，置位期间忽略回调。 */
+    private boolean mConnUiSyncing;
+    /** 防回环：refreshRoleUi() 回填角色单选时置位。 */
+    private boolean mRoleUiSyncing;
+    /** 状态胶囊用：最近一次会话状态文案 / 蓝牙状态文案（由各自刷新函数写入）。 */
+    private String mLastSessionText;
+    private String mLastBtStatus;
 
     // ── V1.0 Beta（TASK-018）实验室 · 遥控翻页 ──
     private RadioButton rbRoleOff;
@@ -90,6 +120,24 @@ public class LabPageController {
     private TextView tvShakeMap;         // ⑤ 动态「当前映射」自证行
     /** 防回环：refreshShakeUi() 回填控件时会触发监听，置位期间忽略回调。 */
     private boolean mShakeUiSyncing;
+
+    // ── 🆕 TASK-073 实验室 · 翻页 · 「本机晃动」（晃本机 ⇒ 翻本机上的微信读书）──
+    private CheckBox cbShakeLocal;            // 本机晃动总开关
+    private TextView tvShakeLocalNote;        // 动态自证行（已开启→当前映射 / 未开启）
+    private TextView tvShakeLocalUnsupported; // 无加速度计时的如实提示
+    /** 🆕 TASK-073（二改）· 「翻页方式」组（点击贴边 / 横向滑动）：仅开关打开且有加速度计时可见。 */
+    private View llShakeLocalMode;
+    private RadioGroup rgShakeLocalMode;
+    private RadioButton rbShakeLocalTap;
+    private RadioButton rbShakeLocalSwipe;
+    /** 本机是否具备加速度计（无则整组置灰 + 提示，不假装能用）。bind 时探测一次。 */
+    private boolean mHasAccel;
+    /** 🆕 TASK-074 · 「四动作方向」自选（左/右/上/下 各一个单选，两行×两列）：与「翻页方式」同显隐（开关打开才可见）。 */
+    private View llShakeLocalDir;
+    private RadioGroup rgShakeDirLeft;
+    private RadioGroup rgShakeDirRight;
+    private RadioGroup rgShakeDirUp;
+    private RadioGroup rgShakeDirDown;
 
     // ── 🆕 TASK-033 实验室 · 蓝牙控制（HID 外设通道）──
     private TextView tvBtIntro;          // 页顶简介（手机端 / 墨水屏端文案不同）
@@ -141,6 +189,15 @@ public class LabPageController {
 
     /** 装配本页全部控件与监听（等价于改造前 {@link SettingsActivity#onCreate} 的 lab 段）。 */
     public void bind() {
+        // ── 🆕 TASK-072：「连接方式」三选一（翻页页顶）──
+        rgConnMode = (RadioGroup) host.findViewById(R.id.rg_conn_mode);
+        rbConnOff = (RadioButton) host.findViewById(R.id.rb_conn_off);
+        rbConnHotspot = (RadioButton) host.findViewById(R.id.rb_conn_hotspot);
+        rbConnBt = (RadioButton) host.findViewById(R.id.rb_conn_bt);
+        tvConnHint = (TextView) host.findViewById(R.id.tv_conn_hint);
+        llConnHotspot = host.findViewById(R.id.ll_conn_hotspot);
+        llConnBt = host.findViewById(R.id.page_lab_bt);   // 蓝牙分支（id 沿用，TASK-072）
+
         // ── V1.0 Beta（TASK-018）实验室 · 遥控翻页 ──
         rbRoleOff = (RadioButton) host.findViewById(R.id.rb_role_off);
         rbRoleEink = (RadioButton) host.findViewById(R.id.rb_role_eink);
@@ -163,6 +220,25 @@ public class LabPageController {
         cbShakeAxisLr = (CheckBox) host.findViewById(R.id.cb_shake_axis_lr);
         cbShakeAxisUd = (CheckBox) host.findViewById(R.id.cb_shake_axis_ud);
         tvShakeMap = (TextView) host.findViewById(R.id.tv_shake_map);
+
+        // ── 🆕 TASK-073：「本机晃动」（与 role / 连接方式**都无关** ⇒ 不随 role 显隐）──
+        cbShakeLocal = (CheckBox) host.findViewById(R.id.cb_shake_local);
+        tvShakeLocalNote = (TextView) host.findViewById(R.id.tv_shake_local_note);
+        tvShakeLocalUnsupported = (TextView) host.findViewById(R.id.tv_shake_local_unsupported);
+        llShakeLocalMode = host.findViewById(R.id.ll_shake_local_mode);       // 🆕 翻页方式容器
+        rgShakeLocalMode = (RadioGroup) host.findViewById(R.id.rg_shake_local_mode);
+        rbShakeLocalTap = (RadioButton) host.findViewById(R.id.rb_shake_local_tap);
+        rbShakeLocalSwipe = (RadioButton) host.findViewById(R.id.rb_shake_local_swipe);
+        // 🆕 TASK-074 · 四动作方向自选（左/右/上/下）
+        llShakeLocalDir = host.findViewById(R.id.ll_shake_local_dir);
+        rgShakeDirLeft = (RadioGroup) host.findViewById(R.id.rg_shake_dir_left);
+        rgShakeDirRight = (RadioGroup) host.findViewById(R.id.rg_shake_dir_right);
+        rgShakeDirUp = (RadioGroup) host.findViewById(R.id.rg_shake_dir_up);
+        rgShakeDirDown = (RadioGroup) host.findViewById(R.id.rg_shake_dir_down);
+        // 🆕 折叠卡（TASK-065 同范式）：把两段说明（本机翻页 / 一起翻页）收进折叠，首屏只留「标题 + 开关」。
+        //    🔴 只切内容容器可见性，不改任何功能行为。
+        bindFold(R.id.fold_shake_local, R.id.ll_fold_shake_local, R.string.fold_shake_local);
+        mHasAccel = hasAccelerometer();
 
         // ── 🆕 TASK-033 实验室 · 蓝牙控制 ──
         tvBtIntro = (TextView) host.findViewById(R.id.tv_bt_intro);
@@ -292,6 +368,7 @@ public class LabPageController {
         CompoundButton.OnCheckedChangeListener roleL = new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton b, boolean checked) {
+                if (mRoleUiSyncing) return;      // 防回环：refreshRoleUi 回填时不落盘（TASK-072）
                 if (!checked) return;            // 只管"被选中的那个"
                 int id = b.getId();
                 int role = (id == R.id.rb_role_eink) ? CardPrefs.REMOTE_ROLE_EINK
@@ -303,11 +380,38 @@ public class LabPageController {
                     RemoteLinkManager.get().stopSession();   // 关遥控顺带断会话
                 }
                 refreshRoleUi();
+                // 🆕 TASK-072：角色直接决定「连接方式」派生值 ⇒ 同步单选 + 分支显隐
+                refreshConnUi();
+                ShakeDetector.sync(host);
             }
         };
         rbRoleOff.setOnCheckedChangeListener(roleL);
         rbRoleEink.setOnCheckedChangeListener(roleL);
         rbRolePhone.setOnCheckedChangeListener(roleL);
+
+        // ── 🆕 TASK-072：「连接方式」三选一 —— 原两页的**唯一总开关** ──
+        //
+        // 派生规则（读物 = 两套既有 pref，不新增第六条偏好；卡片 R2 定案）：
+        //   蓝牙（bt_control_enabled=true）优先；否则 remote_role != OFF ⇒ 热点；否则关闭。
+        // 写入规则：
+        //   关闭   ⇒ remote_role=OFF + bt=false（并收尾：断 TCP 会话、停 HID 保活）
+        //   热点   ⇒ bt=false（停 HID）；remote_role 若为 OFF，按本机形态取默认（手机端=手机 / 阅读器端=墨水屏）
+        //   蓝牙   ⇒ bt=true（启 HID）+ 断 TCP 会话；手机端顺带 remote_role=手机（否则音量键捕获不生效）
+        // 🔴 切走热点 ⇒ 会话结束、45678 监听归 0；切走蓝牙 ⇒ HID 注册停止（验收 A3）。
+        RadioGroup.OnCheckedChangeListener connL = new RadioGroup.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(RadioGroup g, int checkedId) {
+                if (mConnUiSyncing) return;      // 防回环：refreshConnUi 回填时不落盘
+                if (checkedId == R.id.rb_conn_off) applyConnOff();
+                else if (checkedId == R.id.rb_conn_hotspot) applyConnHotspot();
+                else if (checkedId == R.id.rb_conn_bt) applyConnBt();
+                refreshConnUi();
+                refreshRoleUi();
+                refreshBtUi();
+            }
+        };
+        rgConnMode.setOnCheckedChangeListener(connL);
+        refreshConnUi();   // 初次按既有 pref 回填
 
         // 开始 / 结束遥控（按需连接策略的唯一入口）
         btnRemoteStart.setOnClickListener(new View.OnClickListener() {
@@ -415,6 +519,7 @@ public class LabPageController {
                     CardPrefs.setShakeUdRev(host, checked);
                 }
                 refreshShakeUi();
+                refreshShakeLocalUi();      // 🆕 TASK-073：本机晃动映射行随同一套反转开关变
                 ShakeDetector.sync(host);   // G2 即时生效
             }
         };
@@ -423,6 +528,61 @@ public class LabPageController {
         cbShakeUdRev.setOnCheckedChangeListener(shakeL);
         cbShakeAxisLr.setOnCheckedChangeListener(shakeL);   // 🆕 TASK-042
         cbShakeAxisUd.setOnCheckedChangeListener(shakeL);
+
+        // ── 🆕 TASK-073：本机晃动总开关（与上方对端晃动**各自独立**，可同时开）──
+        //   写偏好 ⇒ 刷自证行 ⇒ sync 让捕获层即时启停本机采样（关掉要 ≤1s 停）。
+        cbShakeLocal.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                if (mShakeUiSyncing) return;      // 防回环：refreshShakeLocalUi 回填时不落盘
+                CardPrefs.setShakeLocalEnabled(host, checked);
+                refreshShakeLocalUi();
+                ShakeDetector.sync(host);
+            }
+        });
+
+        // 🆕 TASK-073（二改）· 翻页方式二选一（点击贴边 / 横向滑动）——
+        //   只落盘偏好：注入层 injectLocal **每次现读** shake_local_mode ⇒ 无需通知/重建采样。
+        rgShakeLocalMode.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(RadioGroup g, int checkedId) {
+                if (mShakeUiSyncing) return;      // 防回环：refreshShakeLocalUi 回填时不落盘
+                int mode = (checkedId == R.id.rb_shake_local_swipe)
+                        ? CardPrefs.SHAKE_LOCAL_MODE_SWIPE : CardPrefs.SHAKE_LOCAL_MODE_TAP;
+                CardPrefs.setShakeLocalMode(host, mode);
+            }
+        });
+
+        // 🆕 TASK-074 · 四动作方向自选（左/右/上/下 各一个单选，互不冲突）——
+        //   每格独立落盘（setShakeLocalActNext）⇒ 四个动作互不牵连；
+        //   ShakeDetector.fire **每次现读** ⇒ 改完立即生效，无需通知/重建采样。
+        RadioGroup.OnCheckedChangeListener dirL = new RadioGroup.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(RadioGroup g, int checkedId) {
+                if (mShakeUiSyncing) return;      // 防回环：refreshShakeLocalUi 回填时不落盘
+                int id = g.getId();
+                final int act;
+                if (id == R.id.rg_shake_dir_left) {
+                    act = CardPrefs.SHAKE_ACT_LEFT;
+                } else if (id == R.id.rg_shake_dir_right) {
+                    act = CardPrefs.SHAKE_ACT_RIGHT;
+                } else if (id == R.id.rg_shake_dir_up) {
+                    act = CardPrefs.SHAKE_ACT_UP;
+                } else {
+                    act = CardPrefs.SHAKE_ACT_DOWN;
+                }
+                boolean next = (checkedId == R.id.rb_shake_dir_left_next
+                        || checkedId == R.id.rb_shake_dir_right_next
+                        || checkedId == R.id.rb_shake_dir_up_next
+                        || checkedId == R.id.rb_shake_dir_down_next);
+                CardPrefs.setShakeLocalActNext(host, act, next);
+                refreshShakeLocalUi();
+            }
+        };
+        rgShakeDirLeft.setOnCheckedChangeListener(dirL);
+        rgShakeDirRight.setOnCheckedChangeListener(dirL);
+        rgShakeDirUp.setOnCheckedChangeListener(dirL);
+        rgShakeDirDown.setOnCheckedChangeListener(dirL);
 
         // 🆕 TASK-029 手感优化：灵敏度三档（低/中/高，默认中）——
         //   改档立即落盘 + 通知捕获层**用新参数重建采样**（reload：正在跑才重建）。
@@ -534,18 +694,16 @@ public class LabPageController {
         final boolean phone = CardPrefs.getInstallRole(host) == CardPrefs.INSTALL_ROLE_PHONE;
 
         // ── 可扩展表：新增手机端子标签，在下面追加一行并把 phoneRelevant 置 true 即可 ──
+        // 🆕 TASK-072：「热点翻页」+「蓝牙控制」两页合并为「翻页」⇒ 子标签 **4 → 3**（验收 A1）。
         final int[] labelRes = {
-                R.string.lab_tab_remote,       // 热点翻页
-                R.string.lab_tab_bt,           // 蓝牙控制
+                R.string.lab_tab_remote,       // 翻页（原「热点翻页」+「蓝牙控制」合并）
                 R.string.lab_tab_lockscreen,   // 锁屏密码
                 R.string.lab_tab_power };      // 续航优化
         final View[] page = {
                 host.findViewById(R.id.page_lab_remote),
-                host.findViewById(R.id.page_lab_bt),
                 host.findViewById(R.id.page_lab_lockscreen),
                 host.findViewById(R.id.page_lab_power) };
-        // 蓝牙控制：手机端（发键）与阅读器端（只读说明）都可见 ⇒ 两侧都装配
-        final boolean[] phoneRelevant = { true, true, false, false };
+        final boolean[] phoneRelevant = { true, false, false };
 
         // 按角色过滤出"保留的下标"
         final int[] keep = new int[labelRes.length];
@@ -571,10 +729,11 @@ public class LabPageController {
                 }
                 if (sv != null) sv.scrollTo(0, 0);
                 int orig = keep[index];
-                if (orig == 1) refreshBtUi();      // TASK-033：蓝牙控制（按角色/连态刷状态行）
-                if (orig == 2) refreshLockUi();
+                // 🆕 TASK-072：翻页页 = 连接方式 + 热点配置 + 蓝牙配置 ⇒ 三处一起复核
+                if (orig == 0) { refreshConnUi(); refreshRoleUi(); refreshBtUi(); }
+                if (orig == 1) refreshLockUi();
                 // TASK-023：进续航页复核一次 —— 勾选态一律读设备真值（不读偏好，防「显示已开/实际已关」）
-                if (orig == 3) refreshPowerUi();
+                if (orig == 2) refreshPowerUi();
             }
         });
 
@@ -602,6 +761,8 @@ public class LabPageController {
     public void onResume() {
         HidKeepAliveService.addListener(mHidStateListener);
         refreshBtUi();
+        refreshConnUi();   // 🆕 TASK-072：回页按既有 pref 复核单选 + 分支显隐
+        refreshShakeLocalUi();   // 🆕 TASK-073：回页复核本机晃动开关（可能在别处被改）
     }
 
     /** 宿主 onPause 调用：摘掉本页持有的所有监听（离页不持引用）。 */
@@ -674,7 +835,11 @@ public class LabPageController {
         // 手机端显示控件块；墨水屏端显示「本机=墨水屏端」说明
         llBtControls.setVisibility(phone ? View.VISIBLE : View.GONE);
         tvBtEinkNote.setVisibility(phone ? View.GONE : View.VISIBLE);
-        if (!phone) return;   // 墨水屏端到此为止（无开关、无状态行）
+        if (!phone) {
+            // 🆕 TASK-072：阅读器端不启动 HID ⇒ 状态胶囊不能沿用上一次手机端渲染的旧值
+            mLastBtStatus = null;
+            return;   // 墨水屏端到此为止（无开关、无状态行）
+        }
 
         // 回填开关态（防回环：置位期间 cbBtEnabled 的 onCheckedChanged 会早退）
         mBtUiSyncing = true;
@@ -709,6 +874,7 @@ public class LabPageController {
             status = host.getString(R.string.lab_bt_status_connected, name);
         }
         tvBtStatus.setText(host.getString(R.string.lab_bt_status_prefix) + status);
+        mLastBtStatus = status;   // 🆕 TASK-072：供状态胶囊拼「当前：蓝牙连接 · …」
 
         // 🆕 TASK-034 / TASK-035：两类「未连接」引导**互斥**（按"是否连过"分流，不混）——
         //   ① 从未连过（hid.everConnected()==false）⇒ **首次配对引导**（三步 + 「让本机可被发现」按钮）
@@ -927,6 +1093,96 @@ public class LabPageController {
         }
     }
 
+    // ────────────────────── 🆕 TASK-072：连接方式（三选一）──────────────────────
+
+    /** 当前派生连接方式（读物 = 既有两套 pref）：蓝牙 > 热点 > 关闭。 */
+    private int currentConnMode() {
+        if (CardPrefs.isBtControlEnabled(host)) return CONN_BT;
+        if (CardPrefs.getRemoteRole(host) != CardPrefs.REMOTE_ROLE_OFF) return CONN_HOTSPOT;
+        return CONN_OFF;
+    }
+
+    /** 选「关闭」：两套 pref 归零 + 收尾（断 TCP 会话、停 HID 保活）。 */
+    private void applyConnOff() {
+        CardPrefs.setBtControlEnabled(host, false);
+        CardPrefs.setRemoteRole(host, CardPrefs.REMOTE_ROLE_OFF);
+        stopSessionIfActive();
+        HidKeepAliveService.stop(host);
+    }
+
+    /** 选「热点」：关蓝牙并停 HID；remote_role 若为 OFF，按本机形态取默认值。 */
+    private void applyConnHotspot() {
+        CardPrefs.setBtControlEnabled(host, false);
+        HidKeepAliveService.stop(host);
+        if (CardPrefs.getRemoteRole(host) == CardPrefs.REMOTE_ROLE_OFF) {
+            int def = (CardPrefs.getInstallRole(host) == CardPrefs.INSTALL_ROLE_PHONE)
+                    ? CardPrefs.REMOTE_ROLE_PHONE : CardPrefs.REMOTE_ROLE_EINK;
+            CardPrefs.setRemoteRole(host, def);
+        }
+    }
+
+    /** 选「蓝牙」：启 HID（手机端）；断 TCP 会话；手机端顺带设 remote_role=手机（音量键捕获才生效）。 */
+    private void applyConnBt() {
+        if (!HidLink.supported()) {
+            // 🔴 本机不支持蓝牙键盘 ⇒ 如实提示并**不改状态**（refreshConnUi 会把单选拉回原态）。
+            toast(host.getString(R.string.lab_bt_unsupported));
+            return;
+        }
+        CardPrefs.setBtControlEnabled(host, true);
+        stopSessionIfActive();
+        boolean phone = CardPrefs.getInstallRole(host) == CardPrefs.INSTALL_ROLE_PHONE;
+        if (phone) {
+            HidKeepAliveService.start(host);
+            CardPrefs.setRemoteRole(host, CardPrefs.REMOTE_ROLE_PHONE);
+        }
+    }
+
+    /** 会话非 IDLE 才断（沿用 TASK-033 A6 判据，避免无谓 endSession）。 */
+    private void stopSessionIfActive() {
+        try {
+            if (RemoteLinkManager.get().getState() != RemoteLinkManager.STATE_IDLE) {
+                RemoteLinkManager.get().stopSession();
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
+     * 刷新「连接方式」单选 / 两个分支块的显隐 / 状态胶囊。
+     * bind / onResume / 通道变更 / HID 状态变化 / 会话状态变化 时调用。
+     */
+    public void refreshConnUi() {
+        if (rgConnMode == null) return;
+        int mode = currentConnMode();
+        mConnUiSyncing = true;
+        try {
+            rgConnMode.check(mode == CONN_BT ? R.id.rb_conn_bt
+                    : mode == CONN_HOTSPOT ? R.id.rb_conn_hotspot
+                    : R.id.rb_conn_off);
+        } finally {
+            mConnUiSyncing = false;
+        }
+        if (llConnHotspot != null) {
+            llConnHotspot.setVisibility(mode == CONN_HOTSPOT ? View.VISIBLE : View.GONE);
+        }
+        if (llConnBt != null) {
+            llConnBt.setVisibility(mode == CONN_BT ? View.VISIBLE : View.GONE);
+        }
+        if (tvConnHint != null) {
+            String s;
+            if (mode == CONN_BT) {
+                s = host.getString(R.string.lab_conn_capsule_bt, mLastBtStatus != null
+                        ? mLastBtStatus : host.getString(R.string.lab_conn_state_none));
+            } else if (mode == CONN_HOTSPOT) {
+                s = host.getString(R.string.lab_conn_capsule_hotspot, mLastSessionText != null
+                        ? mLastSessionText : host.getString(R.string.lab_conn_state_none));
+            } else {
+                s = host.getString(R.string.lab_conn_capsule_off);
+            }
+            tvConnHint.setText(s);
+        }
+    }
+
     // ────────────────────── V1.0 Beta（TASK-018）：实验室 · 遥控翻页 ──────────────────────
 
     /**
@@ -943,6 +1199,18 @@ public class LabPageController {
      */
     public void refreshRoleUi() {
         RemoteRole role = RemoteRole.from(host);
+
+        // 🆕 TASK-072：回填角色单选（防回环）—— 角色可能由「连接方式」切换连带设定（默认值）
+        if (rbRoleOff != null) {
+            mRoleUiSyncing = true;
+            try {
+                rbRoleOff.setChecked(role == RemoteRole.OFF);
+                rbRoleEink.setChecked(role == RemoteRole.EINK);
+                rbRolePhone.setChecked(role == RemoteRole.PHONE);
+            } finally {
+                mRoleUiSyncing = false;
+            }
+        }
 
         if (tvRoleHint != null) {
             tvRoleHint.setText(role == RemoteRole.EINK ? host.getString(R.string.lab_role_hint_eink)
@@ -963,6 +1231,7 @@ public class LabPageController {
             llShakeBlock.setVisibility(role == RemoteRole.PHONE ? View.VISIBLE : View.GONE);
         }
         refreshShakeUi();
+        refreshShakeLocalUi();   // 🆕 TASK-073：本机晃动组与角色无关，但随页面刷新一起复核
 
         // 会话状态：注册监听会立刻回推一次当前状态（页面无需手动刷新）
         // 🔴 TASK-029 §2.2：单槽 setStateListener ⇒ addStateListener。否则本页监听会与遥控服务
@@ -971,6 +1240,9 @@ public class LabPageController {
 
         // 🆕 TASK-029：角色可能刚改过（G1）⇒ 重算晃动捕获层的注册/注销。
         ShakeDetector.sync(host);
+
+        // 🆕 TASK-072：角色即「连接方式」派生来源 ⇒ 顺带刷单选框与分支显隐
+        refreshConnUi();
     }
 
     /**
@@ -1032,6 +1304,154 @@ public class LabPageController {
         }
     }
 
+    /**
+     * 🆕 TASK-073：刷新「本机晃动」组（bind / onResume / 角色切换 / 开关变更后调用）。
+     *
+     * <p>① <b>无可用加速度计</b>（真注册失败，见 {@link #hasAccelerometer()}）⇒ **只挂提醒、不拦操作**
+     *   （🔴 用户定则 2026-10-09：墨水屏不强制置灰 —— 部分墨水屏是带传感器的）；
+     * ② 开关一律可操作，按偏好如实回填；开启时拼「当前映射」（与对端晃动**共用同一套用户语义**：
+     *   默认 左晃→上一页 / 右晃→下一页；方向差异已在 {@code ShakeDetector.fire} 内部按模式反转，
+     *   UI 层看到的是**用户语义**，故两处映射行文案一致），未开启时显示「未开启」。
+     */
+    public void refreshShakeLocalUi() {
+        if (cbShakeLocal == null) {
+            return;
+        }
+        // 🔴 用户定则（2026-10-09）：「墨水屏上不需要强制置灰，只需要提醒即可，有些墨水屏可能有传感器」。
+        //    ⇒ 无可用加速度计时**不强制置灰、不强制归 false** —— 开关一律可操作、如实回填当前偏好；
+        //    仅在"真注册失败"时**多挂一条提醒**（判据见 hasAccelerometer()，非 UI 层硬拦）。
+        boolean on = CardPrefs.isShakeLocalEnabled(host);
+        mShakeUiSyncing = true;
+        try {
+            cbShakeLocal.setChecked(on);
+            // 🆕 TASK-073（二改）：回填「翻页方式」单选（仅开关打开时才展示）
+            if (rgShakeLocalMode != null) {
+                boolean swipe = CardPrefs.getShakeLocalMode(host) == CardPrefs.SHAKE_LOCAL_MODE_SWIPE;
+                rgShakeLocalMode.check(swipe ? R.id.rb_shake_local_swipe : R.id.rb_shake_local_tap);
+            }
+            // 🆕 TASK-074：回填「四动作方向」四个单选（左/右/上/下，各 2 选 1）
+            checkDir(rgShakeDirLeft, R.id.rb_shake_dir_left_prev, R.id.rb_shake_dir_left_next,
+                    CardPrefs.isShakeLocalActNext(host, CardPrefs.SHAKE_ACT_LEFT));
+            checkDir(rgShakeDirRight, R.id.rb_shake_dir_right_prev, R.id.rb_shake_dir_right_next,
+                    CardPrefs.isShakeLocalActNext(host, CardPrefs.SHAKE_ACT_RIGHT));
+            checkDir(rgShakeDirUp, R.id.rb_shake_dir_up_prev, R.id.rb_shake_dir_up_next,
+                    CardPrefs.isShakeLocalActNext(host, CardPrefs.SHAKE_ACT_UP));
+            checkDir(rgShakeDirDown, R.id.rb_shake_dir_down_prev, R.id.rb_shake_dir_down_next,
+                    CardPrefs.isShakeLocalActNext(host, CardPrefs.SHAKE_ACT_DOWN));
+        } finally {
+            mShakeUiSyncing = false;
+        }
+        cbShakeLocal.setEnabled(true);
+        if (tvShakeLocalUnsupported != null) {
+            // 无可用传感器 ⇒ 挂提醒（不拦操作）；有 ⇒ 隐藏
+            tvShakeLocalUnsupported.setVisibility(mHasAccel ? View.GONE : View.VISIBLE);
+        }
+        if (llShakeLocalMode != null) {
+            llShakeLocalMode.setVisibility(on ? View.VISIBLE : View.GONE);
+        }
+        if (llShakeLocalDir != null) {                       // 🆕 TASK-074：与「翻页方式」同显隐
+            llShakeLocalDir.setVisibility(on ? View.VISIBLE : View.GONE);
+        }
+        if (tvShakeLocalNote == null) {
+            return;
+        }
+        tvShakeLocalNote.setVisibility(View.VISIBLE);
+        if (!on) {
+            tvShakeLocalNote.setText(host.getString(R.string.lab_shake_local_note_off));
+            return;
+        }
+        // 开启 ⇒ 拼「当前映射」自证行。
+        // 🆕 TASK-074：改读**四动作自选**（不再读旧的左右/上下反转开关）——
+        //   本机方向已由上面四个单选全权决定，与对端口径的 rev 开关彻底解耦。
+        String prev = host.getString(R.string.lab_shake_page_prev);
+        String next = host.getString(R.string.lab_shake_page_next);
+        String lrCol = CardPrefs.isShakeLocalActNext(host, CardPrefs.SHAKE_ACT_LEFT)  ? next : prev;
+        String rrCol = CardPrefs.isShakeLocalActNext(host, CardPrefs.SHAKE_ACT_RIGHT) ? next : prev;
+        String udCol = CardPrefs.isShakeLocalActNext(host, CardPrefs.SHAKE_ACT_UP)    ? next : prev;
+        String ddCol = CardPrefs.isShakeLocalActNext(host, CardPrefs.SHAKE_ACT_DOWN)  ? next : prev;
+        if (!CardPrefs.isShakeAxisLrEnabled(host)) {
+            String off = host.getString(R.string.lab_shake_map_axis_off,
+                    host.getString(R.string.lab_shake_axis_lr));
+            lrCol = off;
+            rrCol = off;
+        }
+        if (!CardPrefs.isShakeAxisUdEnabled(host)) {
+            String off = host.getString(R.string.lab_shake_map_axis_off,
+                    host.getString(R.string.lab_shake_axis_ud));
+            udCol = off;
+            ddCol = off;
+        }
+        tvShakeLocalNote.setText(host.getString(R.string.lab_shake_local_note_on,
+                host.getString(R.string.lab_shake_map_now, lrCol, rrCol, udCol, ddCol)));
+    }
+
+    /**
+     * 🆕 TASK-073：本机加速度计**是否真的可用**（不是"清单里有"）。
+     *
+     * <p>🔴 判据必须是「**真注册一次 + 看返回值**」，**不能**只判
+     * {@link SensorManager#getDefaultSensor}{@code (TYPE_ACCELEROMETER)} 非 null ——
+     * 两者在 S4（阅星曈墨水屏）上**恰好相反**：`dumpsys sensorservice` 的 Sensor List 里
+     * **列着** `Accelerometer sensor`、`pm list features` 也**声明**了
+     * `android.hardware.sensor.accelerometer`，但 `registerListener` **恒返回 false**
+     * （HAL 无后端：`/dev/mma8452_daemon` 缺失、无 `gsensor` input 设备；
+     * 见 `验证记录/102` 与 `验证记录/182`）⇒ 只判 `getDefaultSensor` 会**误判为"有传感器"**，
+     * 真机表现就是"开关能勾、勾了没反应"（正是本卡要避免的"假装可用"）。
+     *
+     * <p>做法：注册一个**空监听器**取返回值，随即注销（同步返回，无需等数据）——
+     * 重载与 {@code ShakeDetector.start()} 对齐（先 3 参 {@code SENSOR_DELAY_GAME}，
+     * 失败再退 {@code SENSOR_DELAY_NORMAL}），确保"这里说可用 ⇒ 检测器真能起来"。
+     *
+     * <p>🔴 fail-safe：任何异常一律返回 false（宁可"说不可用"也不给一个点了没反应的开关）。
+     */
+    private boolean hasAccelerometer() {
+        SensorManager sm = null;
+        SensorEventListener probe = null;
+        try {
+            sm = (SensorManager) host.getSystemService(Context.SENSOR_SERVICE);
+            if (sm == null) {
+                return false;
+            }
+            Sensor acc = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+            if (acc == null) {
+                return false;
+            }
+            probe = new SensorEventListener() {
+                @Override
+                public void onSensorChanged(SensorEvent event) {
+                }
+
+                @Override
+                public void onAccuracyChanged(Sensor sensor, int accuracy) {
+                }
+            };
+            boolean ok = sm.registerListener(probe, acc, SensorManager.SENSOR_DELAY_GAME);
+            if (!ok) {
+                ok = sm.registerListener(probe, acc, SensorManager.SENSOR_DELAY_NORMAL);
+            }
+            Log.i("LabPage", "hasAccelerometer: getDefaultSensor!=null, registerListener=" + ok
+                    + (ok ? " ⇒ 可用" : " ⇒ 判为不可用（HAL 无后端？见 验证记录/102）"));
+            return ok;
+        } catch (Throwable t) {
+            return false;
+        } finally {
+            try {
+                if (sm != null && probe != null) {
+                    sm.unregisterListener(probe);
+                }
+            } catch (Throwable ignore) {
+                // 注销失败不影响判据
+            }
+        }
+    }
+
+    /** 🆕 TASK-074：把某个「四动作方向」单选组回填到指定态（null 组安全跳过）。 */
+    private static void checkDir(RadioGroup rg, int prevId, int nextId, boolean next) {
+        if (rg == null) {
+            return;
+        }
+        rg.check(next ? nextId : prevId);
+    }
+
     /** 会话状态回调（主线程）—— 只更新状态行与两个按钮的可用性。 */
     private final RemoteLinkManager.StateListener mStateListener = new RemoteLinkManager.StateListener() {
         @Override
@@ -1047,7 +1467,10 @@ public class LabPageController {
         @Override
         public void onHidStateChanged() {
             host.runOnUiThread(new Runnable() {
-                @Override public void run() { refreshBtUi(); }
+                @Override public void run() {
+                    refreshBtUi();
+                    refreshConnUi();   // 🆕 TASK-072：HID 连态变化 ⇒ 状态胶囊同步
+                }
             });
         }
     };
@@ -1073,7 +1496,9 @@ public class LabPageController {
                 break;
         }
         tvRemoteStatus.setText(host.getString(R.string.lab_status_prefix) + text);
+        mLastSessionText = text;   // 🆕 TASK-072：供状态胶囊拼「当前：热点连接 · …」
         refreshSessionButtons(state);
+        refreshConnUi();           // 🆕 TASK-072：会话态变化 ⇒ 胶囊同步
     }
 
     /** 会话进行中（CONNECTING / CONNECTED）禁用「开始」—— 避免重复起会话。 */
