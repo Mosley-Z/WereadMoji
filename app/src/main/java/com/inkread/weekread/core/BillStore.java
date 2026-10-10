@@ -95,7 +95,18 @@ public final class BillStore {
 
     // ══════════════════════ 写 ══════════════════════
 
-    /** 落一期账单 + 轮转（各 mode 留 {@link #KEEP} 期）。 */
+    /**
+     * 落一期账单 + 轮转（各 mode 留 {@link #KEEP} 期）。
+     *
+     * <p>🔴 <b>整体覆盖，不做任何合并</b>：同一 `(mode, periodStart)` 的旧记录会被
+     * {@link Bill#toJson()} 的整串结果直接顶掉。而 `toJson()` 是**条件写**（没值的字段不写）
+     * ⇒ <b>调用方必须先把"本次没取到"的字段从旧账继承回来再调本方法</b>，
+     * 否则一次"数据源不可用"的重算就能把旧账的好数据洗成缺省。本方法**故意**不做这个合并：
+     * 类注释承诺"只读写、不做业务判断"，而"哪些字段算取到了"是业务语义（`-1`/`UNKNOWN` 的约定
+     * 定义在 {@link Bill.Item} 里）。实现见 `BillScheduler.generateOne(...)` 尾部的"旧账字段继承"块。
+     *
+     * <p>全仓唯一调用点 = `BillScheduler.generateOne`（task-11(a) 核实）。
+     */
     public static void save(Context c, Bill b) {
         if (b == null || b.periodStart <= 0) return;
         sp(c).edit().putString(keyOf(b.mode, b.periodStart), b.toJson()).commit();

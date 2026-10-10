@@ -78,9 +78,14 @@ public final class BillMoney {
      *
      * <pre>
      *   算法 A · 本期增额（默认）  = 价 × clamp(期末 − 期初, 0, 100) ÷ 100
-     *   算法 B · 累计进度          = 价 × 期末 ÷ 100
+     *   算法 B · 累计进度          = 价 × **该期期末累计** ÷ 100
      *   关闭                       = 不出这一列（本方法返回 UNKNOWN）
      * </pre>
+     *
+     * <p>🆕 task-13（2026-10-11）：算法 B 的进度**不再取 {@link Bill.Item#progressPct}**（那是"期末/
+     * <b>当前</b>"语义，补旧期时写进的是"现在"，于是每期都显示同一个数 —— 用户报的问题），
+     * 改用生成期解析好的 {@link Bill.Item#progressEndPct}（**该期自己的**期末累计）。
+     * 🔴 算法 A 的算式与判据**一字未动**（task-15 才诊断它）。
      *
      * @return {@code >= 0} 实付（分）；{@link #UNKNOWN} ⇒ 该行显示 `—` 且**不计入合计**
      */
@@ -92,12 +97,17 @@ public final class BillMoney {
         if (price <= 0) return UNKNOWN;                     // 免费 / 未知 ⇒ 实付一律 —
 
         final int end = it.progressPct;
-        if (end < 0) return UNKNOWN;                        // 进度未知 ⇒ 算不出来
+        final boolean cumulative = MenuPrefs.PAID_CUMULATIVE.equals(algo);
 
         int delta;
-        if (MenuPrefs.PAID_CUMULATIVE.equals(algo)) {
-            delta = end;                                    // 算法 B
+        if (cumulative) {
+            // 🆕 task-13：累计 = **所选周期末**的累计
+            int ep = it.progressEndPct;
+            if (ep < 0 && it.progressEndKnown) ep = end;     // 老账回落（见下方注释与 `验证记录/207`）
+            if (ep < 0) return UNKNOWN;                     // 该期期末取不到 ⇒ 如实留白，不编数
+            delta = ep;
         } else {
+            if (end < 0) return UNKNOWN;                    // 进度未知 ⇒ 算不出来
             // 算法 A：首期无基线（progressStartPct < 0）或期末不可信 ⇒ 如实留白
             if (!it.progressEndKnown || it.progressStartPct < 0) return UNKNOWN;
             delta = end - it.progressStartPct;

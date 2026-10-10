@@ -323,6 +323,8 @@ public final class BillWallpaper {
 
         // ⑤ 表头（沿用菜单隐喻：🆕 TASK-086 ⇒ 4 列 `品类 │ 主厨 │ 原价 │ 实付`）+ 分隔线
         //    —— 🔴 **只在摘录菜单画**（读书菜单不显示价格列）
+        //    🆕 TASK-12：实付关（`paidCol == false`）时「原价」移到**最右列**（与实付同 x），
+        //    与 `BillSection.Row#draw` 改后的锚点**同一规则**（A11：海报必须与墨台屏幕逐字一致）。
         if (excerpt) {
             p.setTypeface(Typeface.MONOSPACE);
             p.setColor(GRAY);
@@ -330,7 +332,7 @@ public final class BillWallpaper {
             cv.drawText("品类", left, y + sMeta, p);
             p.setTextAlign(Paint.Align.RIGHT);
             if (paidCol) cv.drawText("实付", right, y + sMeta, p);
-            cv.drawText("原价", right - pCol, y + sMeta, p);
+            cv.drawText("原价", paidCol ? (right - pCol) : right, y + sMeta, p);
             p.setTextAlign(Paint.Align.LEFT);
             cv.drawText("主厨", left + avail * 0.34f, y + sMeta, p);
             y += sMeta * lineH;
@@ -394,18 +396,21 @@ public final class BillWallpaper {
             String no = String.format(java.util.Locale.US, "NO.%02d", i + 1);
             if (excerpt) {
                 // 🆕 TASK-086：右端两列（实付贴右、原价在其左），列宽固定 ⇒ 与表头严格成列
+                // 🆕 TASK-12：实付关（`dtxt == null`）时原价锚点 = `right`（占最右列），
+                //    与 `BillSection.Row#draw` 同规则；实付开着时锚点仍是 `right − pCol` ⇒ 版面不变。
                 final String ptxt = BillMoney.priceText(c, it);
                 final String dtxt = paidCol ? BillMoney.paidText(c, it, algo) : null;
                 p.setTextAlign(Paint.Align.RIGHT);
                 if (dtxt != null) cv.drawText(fit(p, dtxt, pCol - s * 4f), right, y + sBody, p);
                 final String pfit = fit(p, ptxt, pCol - s * 4f);
-                cv.drawText(pfit, right - pCol, y + sBody, p);
+                final float priceX = (dtxt != null) ? (right - pCol) : right;   // 🔴 TASK-12：实付关 ⇒ 原价贴右
+                cv.drawText(pfit, priceX, y + sBody, p);
                 p.setTextAlign(Paint.Align.LEFT);
                 // 🔴 同 `BillSection.Row#draw` 的上机教训：标题可用宽 = min(列式界, 原价**实际墨迹**左沿 − 间隔)。
                 //    只按列宽推会在「实付关」时把标题放进价格列里 ⇒ 画出来糊成乱码（A11 要求两边一致）。
                 final float used = pCol * ((dtxt != null) ? 2f : 1f);
                 float titleMax = avail - used - s * 10f;
-                final float titleMaxInk = (right - pCol) - p.measureText(pfit) - left - s * 10f;
+                final float titleMaxInk = priceX - p.measureText(pfit) - left - s * 10f;
                 if (titleMaxInk < titleMax) titleMax = titleMaxInk;
                 cv.drawText(fit(p, no + "  " + nz(it.title), titleMax), left, y + sBody, p);
             } else {

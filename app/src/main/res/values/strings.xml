@@ -43,21 +43,17 @@
          文案仍复用 `label_desk_*`（唯一来源），新增的只有下面这几条。 -->
     <string name="desk_settings">设置</string>
     <string name="desk_settings_title">墨台设置</string>
-    <!-- 🆕 2026-10-10 第二轮（诉求 ⑥）：背景 = 纯白 / 自定义（自定义读**一条固定路径**，
-         与锁屏壁纸同款心智；固定路径常量在 core/PagePrefs.DESK_BG_REL）-->
-    <string name="desk_bg_none">纯白（不使用图片）</string>
-    <string name="desk_bg_custom">自定义</string>
-    <string name="desk_bg_apply">应用</string>
-    <string name="desk_bg_apply_hint">选好后点「应用」；点它时才去读 %1$s。</string>
-    <string name="desk_bg_applied_ok">已应用：%1$s</string>
-    <string name="desk_bg_applied_none">已应用：纯白（不使用图片）</string>
-    <string name="desk_bg_applied_fail">应用失败：没找到 %1$s —— 把想要的图片改名为「墨台背景.jpg」放进 Pictures 文件夹即可（也可能没给存储读权限）。</string>
+    <!-- 🔴 2026-10-11（TASK-18 · 用户 2026-10-10 指令①第 6 条「放弃墨台的壁纸，改为纯白色，
+         删除相关设置」）：原先的墨台背景图设置（纯白 / 自定义 `Pictures/墨台背景.jpg`）
+         与「白纱不透明度」滑条**整组删除** —— 墨台背景自本卡起恒为纯白。
+         随之删除的 10 条字符串：`desk_bg_none` / `desk_bg_custom` / `desk_bg_apply` /
+         `desk_bg_apply_hint` / `desk_bg_applied_ok` / `desk_bg_applied_none` /
+         `desk_bg_applied_fail` / `label_desk_bg` / `label_desk_veil` / `label_desk_bg_tip`。
+         🔴 与「生成壁纸」无关（那套 `desk_wallpaper_*` 是墨单海报，全部保留；`desk_wallpaper_bt_tip`
+         属 TASK-085，未动）。详见 验证记录/209。 -->
     <string name="label_desk_enabled">启用墨台</string>
     <string name="label_desk_modules">内容模块</string>
     <string name="label_desk_modules_tip">勾选决定是否显示；↑ ↓ 调整顺序。顺序即墨台自上而下的顺序，关掉的模块不占高度。</string>
-    <string name="label_desk_bg">背景</string>
-    <string name="label_desk_veil">白纱不透明度</string>
-    <string name="label_desk_bg_tip">白纱越白、背景越淡。读不到背景图时自动回退纯白网点，绝不因此弹不出墨台。</string>
     <!-- 🆕 2026-10-10（用户诉求 ⑤⑥）：墨单头部的「生成壁纸」与「周/月」切换、壁纸保存反馈 -->
     <string name="menu_gen_wallpaper">生成壁纸</string>
     <string name="menu_mode_week">周</string>

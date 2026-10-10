@@ -102,6 +102,29 @@ public final class Bill {
          * ⇒ 置 false ⇒ 算法 A 对这些期显示 `—`（宁可留白，不编假数）。
          */
         public boolean progressEndKnown = false;
+
+        /**
+         * 🆕 **该期期末的累计进度**（0~100；{@code -1} = 取不到）。
+         *
+         * <p>由 {@link BillScheduler} 在**生成期**按"真实性优先"的取值链解析好落盘，渲染期只读
+         * （渲染零请求）。**累计档（算法 B）用它**，于是每个月显示的是**所选周期末**的累计，
+         * 而不是"无论看哪一期都显示当前累计"（用户 2026-10-11 报的问题，见 `验证记录/207`）。
+         *
+         * <p>取值链（宁可留白，不编数）：
+         * <ol>
+         *   <li>{@link ProgressLog} 里**本期**的期界快照（该期期末的真实记录）—— 最可信；</li>
+         *   <li>本期就是"刚结束的那一期"（{@link #progressEndKnown}）⇒ {@link #progressPct} 即期末值；</li>
+         *   <li>本期是**当前进行中**的期 ⇒ {@link #progressPct}（语义是"至今"，非严格期末）；</li>
+         *   <li>都取不到 ⇒ {@code -1} ⇒ 累计档显示 `—`。</li>
+         * </ol>
+         *
+         * <p>🔴 与 {@link #progressPct} 的分工：后者语义是"期末/**当前**"，补旧期时会写进"现在"的值
+         * （各期显示同一个数）；本字段只存**该期自己的**值。增额档（算法 A）不用本字段。
+         *
+         * <p>序列化照 {@link #progressStartPct}：{@code >= 0} 才写、缺失读回 {@code -1}
+         * ⇒ 旧账（无此键）读出来是 {@code -1}，由 {@link BillMoney#paidFen} 的回落分支接管。
+         */
+        public int progressEndPct = -1;
     }
 
     // ══════════════════════ 口径 ══════════════════════
@@ -161,6 +184,17 @@ public final class Bill {
 
     // ══════════════════════ 序列化（落 prefs 的就是它） ══════════════════════
 
+    /**
+     * 序列化为 JSON（落 `SharedPreferences` 的就是它）。
+     *
+     * <p>🔴 **条件写**：`progressPct` / `marketPriceFen` / `progressStartPct` / `progressEndPct`
+     * / `progressEndKnown` 只有"本对象里真的有值"时才写进 JSON（缺省不写 ⇒ 老账/无值行回落"未知"，
+     * 体积极小）。
+     * 配合 {@link BillStore#save} 的**整体覆盖**语义，这条约定意味着：
+     * <b>调用方必须在落盘前把"本次没取到"的字段从旧账继承回来</b>（`-1` 在 `fromJson` 里
+     * 与"没这个字段"等价，缺字段就会被读成缺省）—— 实现在
+     * `BillScheduler.generateOne(...)` 尾部"旧账字段继承"块（task-11(a)）。</p>
+     */
     public String toJson() {
         JSONObject o = new JSONObject();
         try {
@@ -188,6 +222,8 @@ public final class Bill {
                 // 🆕 TASK-086（缺省不写 ⇒ 老账/本例外的行自然回落"未知"，体积极小）
                 if (it.marketPriceFen != BillMoney.UNKNOWN) j.put("marketPriceFen", it.marketPriceFen);
                 if (it.progressStartPct >= 0) j.put("progressStartPct", it.progressStartPct);
+                // 🆕 task-13：**该期期末累计**（累计档用它；缺省不写 ⇒ 老账读回 -1，由 paidFen 回落）
+                if (it.progressEndPct >= 0) j.put("progressEndPct", it.progressEndPct);
                 if (it.progressEndKnown) j.put("progressEndKnown", true);
                 arr.put(j);
             }
@@ -238,6 +274,9 @@ public final class Bill {
                             ? j.optInt("marketPriceFen", BillMoney.UNKNOWN) : BillMoney.UNKNOWN;
                     it.progressStartPct = j.has("progressStartPct")
                             ? j.optInt("progressStartPct", -1) : -1;
+                    // 🆕 task-13：无此键（老账）⇒ -1 ⇒ `BillMoney.paidFen` 的累计档走回落分支
+                    it.progressEndPct = j.has("progressEndPct")
+                            ? j.optInt("progressEndPct", -1) : -1;
                     it.progressEndKnown = j.optBoolean("progressEndKnown", false);
                     b.items.add(it);
                 }

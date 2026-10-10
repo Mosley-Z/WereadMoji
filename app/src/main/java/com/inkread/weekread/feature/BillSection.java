@@ -745,7 +745,11 @@ final class BillSection implements InsightRenderer.Section {
         p.setTextAlign(Paint.Align.LEFT);
         Paint.FontMetrics fm = p.getFontMetrics();
         float ty = panel.top + PAD_TITLE_H_UNITS * unit * 0.52f;
-        c.drawText("录入价格（元）", panel.left + unit * 10f,
+        // 🆕 task-11(b)（2026-10-10）：标题改为**读资源**。此前这里是硬编码字面量、而
+        //    `res/values/strings.xml` 里的 `menu_price_manual_title` 全仓**零引用**（死键）……
+        //    现在单一来源 = `strings.xml`，改文案只改一处（与 `menu_price_manual_hint` 同规矩）。
+        //    🔴 `ctx` 在本方法开头已做非空早退（见上），这里是安全解引用。
+        c.drawText(ctx.getString(R.string.menu_price_manual_title), panel.left + unit * 10f,
                 ty - (fm.ascent + fm.descent) / 2f, p);
         p.setFakeBoldText(false);
         p.setTypeface(Typeface.MONOSPACE);
@@ -1746,20 +1750,28 @@ final class BillSection implements InsightRenderer.Section {
             if (c3 != null) {
                 // 🆕 TASK-086：右端**两列** —— 「实付」贴分区右边距、「原价」落在它左侧同等宽度处。
                 //    🔴 两列都右对齐，表头与每一条书目共用同一份列宽 ⇒ 数字严格成列（不会参差）。
+                // 🆕 TASK-12（用户 2026-10-10 指令① 第 3 条）：**实付关**
+                //    （`MenuPrefs.PAID_OFF` ⇒ 调用方把 `b` 传 null、只给 `c3`）时，
+                //    原价**占用最右列**（锚点 = `right`，与实付开着时**实付所在的同一 x**），
+                //    而不是仍停在 `right − pcw` 把右端空出一格。表头 / 条目行共用本分支 ⇒ 两处一致。
+                //    ⚠️ 只用"锚点"这一处变量搬家，**不动列宽、不动列序、不动行高** ⇒ 实付开着时
+                //    版面逐像素不变（同一份 `pcw`、同一份 `lim` 公式）。
                 final float pcw = PRICE_COL_W * unit;
                 p.setTextAlign(Paint.Align.RIGHT);
                 final String bs = (b != null) ? fit(p, b, pcw - unit * 2f) : null;
                 if (bs != null) c.drawText(bs, right, base, p);
                 final String cs = fit(p, c3, pcw - unit * 2f);
-                c.drawText(cs, right - pcw, base, p);
+                final float priceX = (bs != null) ? (right - pcw) : right;   // 🔴 TASK-12：实付关 ⇒ 原价贴右
+                c.drawText(cs, priceX, base, p);
                 p.setTextAlign(Paint.Align.LEFT);
                 // 🔴 上机实测（2026-10-10，480×800）：`lim` **不能只按列宽推**。
                 //    实付**关**时 `lim = right − pcw − 8u ≈ 372`，而「原价」右对齐在 `right − pcw`、
                 //    其墨迹左沿可能落在 ~326 ⇒ 标题被放进价格列里，**画出来是糊在一起的乱码**
                 //    （实测：「卡拉马佐夫兄弟（套装上下册）」压住「¥97.99」）。
                 //    故再与「原价**实际墨迹**左沿 − 间隔」取小；顺带让窄价（如 ¥15）多让出空间。
-                float lim = right - pcw * ((b != null) ? 2f : 1f) - unit * 8f;
-                final float inkLim = (right - pcw) - p.measureText(cs) - unit * 6f;
+                //    ✅ TASK-12 后这条教训继续成立（实付关时原价移到 `right`，墨迹左沿随之内缩）。
+                float lim = right - pcw * ((bs != null) ? 2f : 1f) - unit * 8f;
+                final float inkLim = priceX - p.measureText(cs) - unit * 6f;
                 if (inkLim < lim) lim = inkLim;
                 if (c2 != null) {
                     // 表头：中列「主厨」（左侧给「品类」，右侧让给价格两列）

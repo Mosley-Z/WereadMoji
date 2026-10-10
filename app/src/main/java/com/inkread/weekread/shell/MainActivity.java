@@ -231,23 +231,18 @@ public class MainActivity extends Activity {
      * <p>不产生任何 UI、不改布局 —— 只读启动 Intent 的调试 extra（adb 驱动）：
      * <ul>
      *   <li>{@code --ez wb_desk true} ⇒ 呼出墨台；{@code --ez wb_desk_hide true} ⇒ 关闭墨台</li>
-     *   <li>{@code --es wb_desk_bg <路径>} ⇒ 先落盘墨台背景路径（验证 A2 自选图）</li>
-     *   <li>{@code --ei wb_desk_veil <0..100>} ⇒ 落盘白纱不透明度</li>
      *   <li>🆕 TASK-076：{@code --ez wb_desk_enabled <bool>} / {@code --ei wb_desk_on_mask <int>} /
      *       {@code --es wb_desk_order <csv>} ⇒ 直接落盘模块总开关 / 开启掩码 / 顺序表
      *       （本卡验「顺序即渲染序、关掉不占高」用；这些键将来由设置页「墨台」分区负责）</li>
      * </ul>
      * 例：{@code adb shell am start -n com.inkread.weekread/.shell.MainActivity --ez wb_desk true}
+     *
+     * <p>🔴 2026-10-11（TASK-18）：原有两个调试 extra {@code --es wb_desk_bg <路径>} 与
+     * {@code --ei wb_desk_veil <0..100>} 已随墨台背景图功能删除（`PagePrefs` 相应 API 不再存在）。
      */
     private void maybeDeskForDebug() {
         Intent it = getIntent();
         if (it == null) return;
-        if (it.hasExtra("wb_desk_bg")) {
-            PagePrefs.setDeskBgPath(this, it.getStringExtra("wb_desk_bg"));
-        }
-        if (it.hasExtra("wb_desk_veil")) {
-            PagePrefs.setDeskBgVeil(this, it.getIntExtra("wb_desk_veil", PagePrefs.DEFAULT_BG_VEIL));
-        }
         // 🔴 TASK-076 临时：直接落盘模块配置（设置页「墨台」分区落码后由 UI 负责）
         if (it.hasExtra("wb_desk_enabled")) {
             PagePrefs.setDeskEnabled(this, it.getBooleanExtra("wb_desk_enabled", true));

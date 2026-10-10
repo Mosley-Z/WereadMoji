@@ -3,17 +3,21 @@ package com.inkread.weekread.core;
 import android.content.Context;
 import android.content.SharedPreferences;
 
-import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * **墨台**（桌面呼出页）的偏好落盘（prefs 文件 `cfg`，与 {@link CardPrefs} / {@link LockPrefs} 同上）。
  *
- * <p>**TASK-075** 落**背景**两项（定稿设计 §6.1 / §10）：
+ * <p>🔴 **2026-10-11（TASK-18）**：TASK-075 落下的**背景两项**
+ * （{@code desk_bg_path} 背景图路径、{@code desk_bg_veil} 白纱不透明度）**已整体删除** ——
+ * 用户 2026-10-10 指令①第 6 条「放弃墨台的壁纸，改为纯白色，删除相关设置」。
+ * 墨台背景自本卡起**恒为纯白**（{@code DeskRenderer.drawBackground} 只画 `0xFFFFFFFF`）。
  * <ul>
- *   <li>{@code desk_bg_path} —— 背景图路径（空 = 浅色底 + 细网点）</li>
- *   <li>{@code desk_bg_veil} —— 全屏白纱不透明度（%，默认 90）</li>
+ *   <li>旧值**保留不读**：两个键若还躺在 `cfg` 里，本类已无任何读取路径 ⇒
+ *       <b>不崩、不读图、不申请存储权限</b>（也不主动清理，避免为一次性的收尾写路径）。</li>
+ *   <li>🔴 与「生成壁纸」无关：墨单海报的预览 / 保存 / 分享（`BillWallpaper` +
+ *       `DeskPageView.MODE_WALLPAPER`）全部保留未动。</li>
  * </ul>
  *
  * <p>**TASK-076** 追加**模块系统**三项（定稿设计 §3.2 / §10）：
@@ -25,17 +29,8 @@ import java.util.List;
  * 口径照抄现有习惯（{@code StatsStore.CARD_ORDER} + {@code CardPrefs.getCardPoolMask} /
  * {@code CARD._ORDER}）：**键值是 CSV / 掩码、读出来一律做一遍"认不认识 / 越界"的净化**，
  * 免得旧版脏值或未来版本的模块 id 把渲染搞崩。
- *
- * <p>背景路径语义与锁屏**完全一致**（同一套"固定路径 + 多目录兜底"解析，见 {@link BgImageUtil}）：
- * 只是换了一个键，从而让"软锁背景"与"墨台背景"各自独立可配。
  */
 public final class PagePrefs {
-
-    /** 背景白纱默认不透明度（% 白）—— 定稿设计 §0 Q4 拍板「默认 90% 白合适」。 */
-    public static final int DEFAULT_BG_VEIL = 90;
-
-    private static final String K_BG_PATH = "desk_bg_path";
-    private static final String K_BG_VEIL = "desk_bg_veil";
 
     // ══════════════════════ 🆕 TASK-076：模块系统 ══════════════════════
     //
@@ -250,58 +245,18 @@ public final class PagePrefs {
         return out;
     }
 
-    // ── 背景图（语义同 LockPrefs 的 lock_bg_path）──
+    // ══════════════════════ 🔴 已删除：墨台背景图 + 白纱 ══════════════════════
     //
-    // 🆕 2026-10-10 第二轮（用户诉求 ⑥）：「墨台背景图片除了纯白之外可选择自定义，和锁屏壁纸一样
-    //   **通过指定路径实现**」⇒ 墨台的背景不再是"扫目录列候选让用户点"，而是**固定一条路径**：
-    //     · 纯白（不使用图片）= `desk_bg_path` 为空；
-    //     · 自定义            = `desk_bg_path` = {@link #DESK_BG_REL}。
-    //   🔴 理由：墨台是 `FLAG_NOT_FOCUSABLE` 的覆盖窗，塞不进 EditText（拿不到输入法），
-    //     而 S4 ROM 又没有系统文件选择器 ⇒ "自己扫目录列出来"是上一版唯一能走的路，
-    //     但它要求存储读权限、还会把**墨单生成的壁纸**（也落在 `Pictures/` 下）混进候选里。
-    //     改成固定路径后这两件事一起消失，用户的心智模型与锁屏完全一致：
-    //     **把想要的图改名放到那个位置，再在墨台里选「自定义」**。
-
-    /** 自定义背景的**固定路径**（相对共享存储根）—— 与锁屏 {@code LockPrefs.DEFAULT_BG_REL} 同款口径。 */
-    public static final String DESK_BG_REL = "Pictures/墨台背景.jpg";
-
-    /** 已设置的墨台背景图路径（空 = 未设置 ⇒ 纯白 + 细网点）。 */
-    public static String getDeskBgPath(Context c) {
-        String v = sp(c).getString(K_BG_PATH, "");
-        return v == null ? "" : v;
-    }
-
-    /** 自定义背景图**实际可读**的文件；没有 ⇒ {@code null}（调用方据此把「自定义」置灰并如实提示）。 */
-    public static File resolveCustomBg(Context c) {
-        return BgImageUtil.resolveBgFile(c, DESK_BG_REL);
-    }
-
-    /** 「自定义」当前可选吗（= 固定路径上真有一张能读的图）。 */
-    public static boolean isCustomBgAvailable(Context c) {
-        return resolveCustomBg(c) != null;
-    }
-
-    public static void setDeskBgPath(Context c, String path) {
-        sp(c).edit().putString(K_BG_PATH, path == null ? "" : path).commit();
-    }
-
-    public static void clearDeskBg(Context c) {
-        sp(c).edit().remove(K_BG_PATH).commit();
-    }
-
-    // ── 白纱（0~100 的 %）──
-
-    /** 全屏白纱不透明度（%）；越界钳进 [0,100]，缺省 = {@link #DEFAULT_BG_VEIL}。 */
-    public static int getDeskBgVeil(Context c) {
-        int v = sp(c).getInt(K_BG_VEIL, DEFAULT_BG_VEIL);
-        if (v < 0) v = 0;
-        if (v > 100) v = 100;
-        return v;
-    }
-
-    public static void setDeskBgVeil(Context c, int pct) {
-        if (pct < 0) pct = 0;
-        if (pct > 100) pct = 100;
-        sp(c).edit().putInt(K_BG_VEIL, pct).commit();
-    }
+    // 2026-10-11（TASK-18 · 用户指令①第 6 条「放弃墨台的壁纸，改为纯白色，删除相关设置」）：
+    //   原有的 `desk_bg_path`（背景图路径）/ `desk_bg_veil`（白纱不透明度）两项偏好、
+    //   连同 `DESK_BG_REL = "Pictures/墨台背景.jpg"`、`getDeskBgPath/setDeskBgPath/clearDeskBg`、
+    //   `resolveCustomBg/isCustomBgAvailable`（会读共享存储的图片）、`getDeskBgVeil/setDeskBgVeil`
+    //   **整体删除**。墨台背景恒为纯白（`feature/DeskRenderer.drawBackground` 只画 `0xFFFFFFFF`）。
+    //
+    // 旧键处理 = **保留不读**：`cfg` 里若残留 `desk_bg_path` / `desk_bg_veil`，本类已无任何读取
+    //   路径 ⇒ 不崩、不读图、不申请存储权限；也不写一次性清理代码（少一条收尾路径就少一个坑）。
+    //
+    // 🔴 与「生成壁纸」的界线（防误删）：墨单海报的 `feature/BillWallpaper.java` 与
+    //   `DeskPageView` 的 `MODE_WALLPAPER`/`enterWallpaper`/`saveWallpaper`/`shareWallpaper`
+    //   全部保留未动 —— 本次删的是"墨台背景图"，不是"生成壁纸"。
 }

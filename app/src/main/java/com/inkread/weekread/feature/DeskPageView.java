@@ -13,7 +13,8 @@ import android.view.View;
 import android.widget.Toast;
 
 import com.inkread.weekread.R;
-import com.inkread.weekread.core.BgImageUtil;
+// 🔴 2026-10-11（TASK-18）：`import com.inkread.weekread.core.BgImageUtil;` 已随墨台背景图功能删除
+//    （本类不再加载任何背景位图；背景由 `DeskRenderer` 直接画纯白）。
 import com.inkread.weekread.core.CardDebug;
 import com.inkread.weekread.core.MenuPrefs;
 import com.inkread.weekread.core.PagePrefs;
@@ -106,9 +107,6 @@ public final class DeskPageView extends View {
     private float scrollY = 0f;
     private float maxScroll = 0f;
 
-    private Bitmap bg;
-    private String bgKey = null;
-
     private String updatedLabel = "";
 
     // ── 墨单壁纸预览（MODE_WALLPAPER）──
@@ -154,8 +152,7 @@ public final class DeskPageView extends View {
     private int axis = AXIS_NONE;
     /** 🆕 TASK-076：本次手势是否**落在排行区视口内**（手势分区 —— 决定这次滑动谁吃）。 */
     private boolean dragRank = false;
-    /** 🆕 设置态：本次手势是否在拖白纱滑条（按住即拖，不走滚动）。 */
-    private boolean dragVeil = false;
+    // 🔴 2026-10-11（TASK-18）：`dragVeil`（设置态拖白纱滑条）已随「背景」组删除。
 
     private static final int AXIS_NONE = 0;
     private static final int AXIS_VERT = 1;
@@ -174,16 +171,13 @@ public final class DeskPageView extends View {
 
     public void setListener(Listener l) { listener = l; }
 
-    /** 每次呼出都从干净状态开始：回列表态 + 滚动归顶 + 背景重读 + 模块重装 + 「更新于」= 现在。 */
+    /** 每次呼出都从干净状态开始：回列表态 + 滚动归顶 + 模块重装 + 「更新于」= 现在。 */
     public void reset() {
         mode = MODE_LIST;
         scrollY = 0f;
         axis = AXIS_NONE;
         dragRank = false;
-        dragVeil = false;
         releasePreview();
-        bg = null;               // 每次呼出重新读背景图（用户可能换了同名文件，缓存不能赖着）
-        bgKey = null;
         updatedLabel = "更新于 " + new SimpleDateFormat("HH:mm", Locale.US).format(new Date());
         buildSections();
         remeasure(getWidth(), getHeight());
@@ -276,22 +270,19 @@ public final class DeskPageView extends View {
         int w = getWidth(), h = getHeight();
         if (w <= 0 || h <= 0) return;
 
-        String key = PagePrefs.getDeskBgPath(getContext());
-        if (bgKey == null || !bgKey.equals(key)) {
-            bgKey = key;
-            bg = BgImageUtil.load(getContext(), key, w, h);
-        }
-        int veil = PagePrefs.getDeskBgVeil(getContext());
+        // 🔴 2026-10-11（TASK-18）：墨台背景**恒纯白** —— 这里原先要读 `PagePrefs` 的背景图路径
+        //    并 `BgImageUtil.load(...)`（会碰共享存储）+ 读白纱不透明度，现已整体删除；
+        //    背景由 `DeskRenderer.drawBackground` 直接画 `0xFFFFFFFF`，本类不再持有 `bg`/`bgKey`。
         applyChrome();
 
         if (mode == MODE_WALLPAPER) {
-            drawWallpaper(c, w, h, veil);
+            drawWallpaper(c, w, h);
             return;
         }
 
         remeasure(w, h);     // 每帧自纠：分区高 / 设置行可能随字号、文案、偏好变化
         if (mode == MODE_SETTINGS) {
-            renderer.drawChrome(c, w, h, unit, bg, veil, updatedLabel);
+            renderer.drawChrome(c, w, h, unit, updatedLabel);
             float barH = renderer.headerHeight(unit);
             c.save();
             c.clipRect(0f, barH, w, h);                  // 与列表态同一套"吸顶"裁剪纪律
@@ -299,7 +290,7 @@ public final class DeskPageView extends View {
             c.restore();
             return;
         }
-        renderer.draw(c, w, h, unit, scrollY, bg, veil, updatedLabel);
+        renderer.draw(c, w, h, unit, scrollY, updatedLabel);
     }
 
     // ══════════════════════ 🆕 2026-10-10：态切换 ══════════════════════
@@ -320,7 +311,6 @@ public final class DeskPageView extends View {
         mode = MODE_LIST;
         scrollY = 0f;
         axis = AXIS_NONE;
-        dragVeil = false;
         buildSections();
         remeasure(getWidth(), getHeight());
         invalidate();
@@ -508,8 +498,8 @@ public final class DeskPageView extends View {
 
     // ══════════════════════ 壁纸预览态：画 ══════════════════════
 
-    private void drawWallpaper(Canvas c, int w, int h, int veil) {
-        renderer.drawChrome(c, w, h, unit, bg, veil, updatedLabel);
+    private void drawWallpaper(Canvas c, int w, int h) {
+        renderer.drawChrome(c, w, h, unit, updatedLabel);
 
         final float barH = renderer.headerHeight(unit);
         final float pad = w * InsightRenderer.PAD_X_RATIO;
@@ -728,23 +718,11 @@ public final class DeskPageView extends View {
                         if (pendingPriceIdx >= 0) postDelayed(longPressRun, LONG_PRESS_MS);
                     }
                 }
-                // 🆕 设置态：按住白纱滑条 ⇒ 本次手势只拖动滑条（不走滚动）
-                if (mode == MODE_SETTINGS) {
-                    DeskSettings.Item it = settings.hitItem(downX,
-                            downY - renderer.headerHeight(unit) + scrollY, getWidth(), unit);
-                    dragVeil = settings.isVeilBar(it);
-                    if (dragVeil) setVeilFromX(downX);
-                } else {
-                    dragVeil = false;
-                }
+                // 🔴 2026-10-11（TASK-18）：设置态的「按住白纱滑条 ⇒ 只拖滑条」分支已随白纱删除
+                //     ⇒ 设置态与列表态共用同一套滚动手势（不再有"按住即拖"的特例）。
                 return true;
 
             case MotionEvent.ACTION_MOVE: {
-                if (dragVeil) {
-                    setVeilFromX(e.getX());
-                    lastY = e.getY();
-                    return true;
-                }
                 totDx = e.getX() - downX;
                 totDy = e.getY() - downY;
                 // 🆕 TASK-086：手指一动就不算长按；长按已开键盘 ⇒ 移动也归键盘（吃掉）
@@ -791,10 +769,6 @@ public final class DeskPageView extends View {
                     return true;
                 }
                 pendingPriceIdx = -1;
-                if (dragVeil) {
-                    dragVeil = false;
-                    return true;
-                }
 
                 // ── 壁纸预览态：只有「保存 / 分享 / 关闭 / 返回 ›」四个动作 ──
                 if (mode == MODE_WALLPAPER) {
@@ -901,15 +875,6 @@ public final class DeskPageView extends View {
                 return true;     // 模态：其余动作也吃掉，绝不穿透到桌面
         }
     }
-
-    /** 设置态：按触点 x 反算白纱百分比并落盘（变了才重画）。 */
-    private void setVeilFromX(float x) {
-        int pct = settings.veilPctAt(x, getWidth(), unit);
-        if (pct != PagePrefs.getDeskBgVeil(getContext())) {
-            PagePrefs.setDeskBgVeil(getContext(), pct);
-            settings.invalidateCache();
-            remeasure(getWidth(), getHeight());
-            invalidate();
-        }
-    }
+    // 🔴 2026-10-11（TASK-18）：原先这里还有 `setVeilFromX(float)`（白纱滑条落盘）——
+    //    已随「背景」组与白纱滑条整体删除。
 }

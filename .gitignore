@@ -44,3 +44,12 @@ Thumbs.db
 
 # ---- 发版门禁临时比对产物（TASK-001）：用完即删，绝不入库 ----
 _release_gate_tmp/
+
+# ---- 本机调试/取证产物（task-11(d)，2026-10-10）：不入库 ----
+# 🔴 只有**仓库内**的这两个目录会被 git 看到（= `weread-widget/_probe/`、`weread-widget/_shots/`），
+#    写相对路径 `_probe/` 即指它们。工作区根下另有一份同名目录（`../_probe/`、`../_shots/`，
+#    放本轮上机截图/脚本），那个**在仓库之外**，`git status` 本来就看不到，gitignore 也管不到它
+#    （gitignore 不能写仓库外路径）—— 明细见 `验证记录/205` §(d)。
+# 内容：上机截图、dex 校验产物、一次性 python/bash 取证脚本、回归样例原始输出。
+_probe/
+_shots/

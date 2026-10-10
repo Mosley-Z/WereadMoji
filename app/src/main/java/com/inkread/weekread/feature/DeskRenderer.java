@@ -1,11 +1,9 @@
 package com.inkread.weekread.feature;
 
-import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
 
-import com.inkread.weekread.core.BgImageUtil;
 import com.inkread.weekread.ui.InkTheme;
 
 import java.util.ArrayList;
@@ -15,11 +13,16 @@ import java.util.List;
  * 🆕 TASK-075：**墨台**的内容渲染器（分区排版 + 背景 + 顶栏）—— 照 {@link InsightRenderer} 的范式。
  *
  * <p>结构 = 顶栏（`‹ 返回` + 居中衬线「墨台」+ 右「更新于 HH:MM」+ 1px 分隔线）
- * + 若干 {@link InsightRenderer.Section}（自上而下）；背景先画（自选图 `centerCrop` + 全屏白纱，
- * 未设图 ⇒ 浅色底 + 细网点）。🔴 **只管"怎么排、怎么画"，不管滚动**（滚动在 {@link DeskPageView}）。
+ * + 若干 {@link InsightRenderer.Section}（自上而下）；背景先画。🔴 **只管"怎么排、怎么画"，
+ * 不管滚动**（滚动在 {@link DeskPageView}）。
  *
  * <p>🔴 墨水屏铁律（`docs/03`）：纯黑白 + 三档灰，**无圆角 / 阴影 / 渐变 / 动画**；
- * 分区之间只用 1px 实线分隔。背景取色/网点半径与软锁**同款**（{@link BgImageUtil#drawCenterCrop}）。
+ * 分区之间只用 1px 实线分隔。
+ *
+ * <p>🔴 2026-10-11（TASK-18，用户拍板「放弃墨台的壁纸，改为纯白色，删除相关设置」）：
+ * 墨台背景**恒纯白**（`drawColor(0xFFFFFFFF)`）—— 原先的"自定义背景图 `centerCrop` + 全屏白纱"
+ * 与"未设图时的浅色底 + 细网点"两条分支、以及相关的 `PagePrefs` 背景键、设置页「背景」组
+ * 已全部删除。**注意**：这与「生成壁纸」海报（{@link BillWallpaper}）无关，那个功能未动。
  *
  * <p>🔴 与 {@link InsightRenderer}：本类**不动**其任何既有行为，只**复用**其静态工具
  * （{@code secHeadH} / {@code drawSectionHead} / {@code drawCenteredIn}）与 {@code Section} 契约。
@@ -120,13 +123,10 @@ final class DeskRenderer {
 
     /**
      * @param scrollY  已滚过的像素（0 = 顶部）；容器负责先钳进 [0, contentHeight − vh]
-     * @param bg       背景位图（null ⇒ 浅色底 + 细网点）
-     * @param veilPct  全屏白纱不透明度（%，0~100）
      * @param updated  「更新于」右侧文案（如 `14:32`）；null/空 ⇒ 不画
      */
-    void draw(Canvas c, float w, float vh, float unit, float scrollY,
-              Bitmap bg, int veilPct, String updated) {
-        drawChrome(c, w, vh, unit, bg, veilPct, updated);
+    void draw(Canvas c, float w, float vh, float unit, float scrollY, String updated) {
+        drawChrome(c, w, vh, unit, updated);
 
         float left = w * PAD_X_RATIO, right = w - left;
         float barH = headerHeight(unit);
@@ -134,7 +134,7 @@ final class DeskRenderer {
 
         // 🔴🔴 2026-10-10 修（用户报告）：顶栏**不透明**、而分区是从 `barH − scrollY` 起画的，
         //    内容上滑时会**压到顶栏文字上**（标题「墨台」/「更新于」与正文叠字）。
-        //    修法 = 把内容**裁剪**到顶栏分隔线以下 —— 顶栏自身照旧显示背景图 + 白纱，
+        //    修法 = 把内容**裁剪**到顶栏分隔线以下 —— 顶栏自身照旧显示（恒纯白背景），
         //    只是正文再也不会越界进来（等价于"吸顶"）。空态同样落在裁区内。
         c.save();
         c.clipRect(0f, barH, w, vh);
@@ -168,33 +168,21 @@ final class DeskRenderer {
      * 必须与列表态同一套 chrome（不然进出设置会"背景/顶栏跳一下"）⇒ 抽成这个方法，
      * 与 {@link #draw} 共用同一份实现（`draw` 现在是"chrome + 分区"）。
      */
-    void drawChrome(Canvas c, float w, float vh, float unit, Bitmap bg, int veilPct, String updated) {
-        drawBackground(c, w, vh, bg, veilPct);
+    void drawChrome(Canvas c, float w, float vh, float unit, String updated) {
+        drawBackground(c, w, vh);
         drawHeader(c, w, unit, updated);
     }
 
     /**
-     * 背景：自选图 `centerCrop` 铺满 + 全屏白纱（默认 90% 白）；未设图 ⇒ 浅色底 + 细网点。
-     * 🔴 与软锁同款（网点 `step = h × 0.03`、半径 1.2px；白纱为**全屏**而非锁屏那种面板块）。
+     * 🔴 2026-10-11（TASK-18）：墨台背景**恒纯白**。
+     *
+     * <p>本方法原先有两条分支 —— 设了自定义背景图 ⇒ `BgImageUtil.drawCenterCrop` + 全屏白纱；
+     * 未设图 ⇒ 纯白 + `0xFFECECEC` 细网点。按用户拍板「放弃墨台的壁纸，改为纯白色，删除相关设置」，
+     * 自定义背景图与白纱已整体删除，**细网点也一并删除**（卡片要求"一律纯白"，
+     * 网点会让像素值不等于 `0xFFFFFFFF`）。⇒ 现在只剩一句 `drawColor`。
      */
-    private void drawBackground(Canvas c, float w, float h, Bitmap bg, int veilPct) {
-        if (bg == null) {
-            c.drawColor(0xFFFFFFFF);
-            p.setStyle(Paint.Style.FILL);
-            p.setColor(0xFFECECEC);
-            float step = h * 0.03f;
-            for (float yy = step; yy < h; yy += step) {
-                for (float xx = step; xx < w; xx += step) {
-                    c.drawCircle(xx, yy, 1.2f, p);
-                }
-            }
-            return;
-        }
-        BgImageUtil.drawCenterCrop(c, bg, w, h, p);
-        int a = veilPct * 255 / 100;
-        p.setStyle(Paint.Style.FILL);
-        p.setColor((a << 24) | 0xFFFFFF);
-        c.drawRect(0f, 0f, w, h, p);
+    private void drawBackground(Canvas c, float w, float h) {
+        c.drawColor(0xFFFFFFFF);
     }
 
     /**

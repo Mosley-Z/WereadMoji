@@ -257,6 +257,23 @@ public final class BillScheduler {
                             }
                         }
                         it.progressEndKnown = endKnown;
+                        // 🆕 task-13（2026-10-11）：**该期期末的累计进度** —— 累计档据此显示"所选周期末"
+                        //   的累计，而不是"现在"（用户报的问题：无论看哪一期都显示同一个 34%）。
+                        // 🔴 必须在下面的 `ProgressLog.put` **之前**读，否则本期快照会被本次的值顶掉、
+                        //   链① 永远取不到"本期原有的历史快照"。
+                        // 🔴 取值链（真实性优先，宁可留白不编数）：
+                        //   ① `ProgressLog` 里**本期**的期界快照（键语义 = "该期结束时"，见 `ProgressLog.put`
+                        //      的 javadoc）—— 该期期末的真实记录，最可信。
+                        //      ⚠️ 卡面写的 `at(nextStart)` **不采用**：`nextStart` 那期的期末值是**未来**的值，
+                        //         拿来当"本期期末"会张冠李戴（已在 `验证记录/207` 登记）。
+                        //   ② 本期就是"刚结束的那一期"（`endKnown`）⇒ 本次抓到的 `pg` 即期末值。
+                        //   ③ 本期是**当前进行中**的期（`periodStart == curStart`）⇒ `pg`，语义是"至今"。
+                        //      （`fill()` 目前不为当期生成账单 ⇒ 本条不可达，留作兜底。）
+                        //   ④ 都取不到 ⇒ -1 ⇒ 累计档该行 `—`（不编数）。
+                        int endPct = ProgressLog.at(c, it.bookId, periodStart);
+                        if (endPct < 0 && endKnown) endPct = pg.intValue();
+                        if (endPct < 0 && periodStart == curStart) endPct = pg.intValue();
+                        it.progressEndPct = endPct;
                         // 记下"本期结束时"的进度，供**下一期**当期初基线（一期一次，常量级增长）
                         // 🔴 拍板② 配套修复（上机倒逼，2026-10-10）：**只在本期真的是"刚结束的那一期"时**才记。
                         //    `endKnown == false` 表示这次抓到的是**"现在"**（补更早的期），
@@ -281,6 +298,70 @@ public final class BillScheduler {
             }
             b.placeholder = true;                                  // 写占位账（"本期无阅读记录"）
         }
+        // ══════════ 🆕 task-11(a) ② 健壮性：旧账字段继承（2026-10-10）══════════
+        // 🔴 症状（上轮 §8 已知缺陷）：`Bill.toJson()` 是**条件写**（`Bill.java:187-191`：`progressPct >= 0` /
+        //    `marketPriceFen != UNKNOWN` / `progressStartPct >= 0` / `progressEndKnown == true` 才写该字段），
+        //    而 `BillStore.save()` 是**整体覆盖**（`putString(key, b.toJson())`，无合并）⇒ 只要有一次 regen
+        //    赶在"数据源不可用"时（`/book/getprogress` 取不到 **且** 索引里的 `readingProgress` 也没有
+        //    ⇒ `pg == null`；价格同理），新记录就**缺** progressPct / progressStartPct / progressEndKnown /
+        //    marketPriceFen 字段，读回时落成缺省（-1 / -1 / false / UNKNOWN）⇒ **旧账里已有的好数据被洗掉**。
+        //    （`BillStore.save` 全仓唯一调用点就是下面那一行 ⇒ 在这里合并 = 覆盖所有落盘路径。）
+        // ✅ 修法：落盘前，与**同一 mode + 同一 periodStart 的旧账**逐本（按 `bookId`）比对，**只补本次没取到的**字段。
+        // 🔴 继承判据 / 清单（**不得把继承值伪装成本期期末可信**）：
+        //    · `progressPct`     ：仅当本次 `< 0`（= 本次没取到）且旧值 `>= 0` 时继承，并**原样沿用**旧账的
+        //                          `progressEndKnown`。该标记的语义是"**这个存下来的值**是不是真的该期期末值"，
+        //                          属于值本身（不是"这一次跑的结论"）⇒ 继承时**绝不把它抬成 true**；
+        //                          旧值是 false 就保持 false，从源头杜绝"继承来的值冒充可信期末值"。
+        //    · `progressStartPct`：仅当本次 `< 0` 且旧值 `>= 0` 时继承（它是**上一期**的期末快照，与本次成败无关）。
+        //    · `progressEndPct`  ：🆕 task-13 同款判据（"该期**自己的**期末累计"，属值本身的语义；不继承会让累计档无故 `—`）。
+        //    · `marketPriceFen`  ：仅当本次为 `UNKNOWN` 且旧值 `!= UNKNOWN` 时继承（**含 FREE=0**，0 也是有效真值，
+        //                          所以比较必须用 `== UNKNOWN` 而不是 `<= 0`）。
+        //    · 其余字段（`title` / `author` / `readTimeSec` / `mineCount` / `mineText` / `hotText`）**一律不继承**：
+        //      它们本次是**真实重算**的（阅读时长/摘录来自本地统计与本地索引，不存在"数据源不可用"的灰区），
+        //      继承只会把旧值当新值。**不在本期 `keep` 里的书也不回填**——那属于"这次统计里真没有"，不是缺字段。
+        // 🔴 为什么放在调度层而不是 `BillStore.save`：`BillStore` 的类注释承诺"只读写、不做业务判断"，而
+        //    "哪些字段算取到了"是业务语义（`-1`/`UNKNOWN` 的约定定义在 `Bill.Item` 里）。
+        // ⚠️ 已知的**同域但不在本卡范围**的另一条洗数路径（仅登记、未修，见 `验证记录/205` §遗留）：
+        //    `MenuPrefs.EMPTY_SKIP` 之外的"本次 keep 为空 ⇒ placeholder 占位账"会把旧账的 items 整体换成空表；
+        //    以及调试钩子 `--ez wb_bill_regen true` 会先 `BillStore.clear()` 再重建（那时旧账已不存在，无可继承）。
+        int inheritedFields = 0;
+        Bill oldSame = BillStore.load(c, mode, periodStart);
+        if (oldSame != null && oldSame.periodStart == periodStart && oldSame.items != null) {
+            for (int i = 0; i < b.items.size(); i++) {
+                Bill.Item it = b.items.get(i);
+                if (it.bookId == null || it.bookId.length() == 0) continue;   // 无 bookId 无从对齐，宁可不动
+                for (int j = 0; j < oldSame.items.size(); j++) {
+                    Bill.Item oit = oldSame.items.get(j);
+                    if (oit == null || !it.bookId.equals(nz(oit.bookId))) continue;
+                    if (it.progressPct < 0 && oit.progressPct >= 0) {
+                        it.progressPct = oit.progressPct;
+                        it.progressEndKnown = oit.progressEndKnown;   // 原样沿用；**不**抬成 true
+                        inheritedFields++;
+                    }
+                    if (it.progressStartPct < 0 && oit.progressStartPct >= 0) {
+                        it.progressStartPct = oit.progressStartPct;
+                        inheritedFields++;
+                    }
+                    // 🆕 task-13：`progressEndPct` 是"该期**自己的**期末累计"，属**值本身**的语义
+                    //    （不像 `progressEndKnown` 那样描述"这次生成时机是否可信"）⇒ 本次取不到时
+                    //    从旧账同书继承是安全的；**不**继承会让累计档在老账上无故变 `—`。
+                    if (it.progressEndPct < 0 && oit.progressEndPct >= 0) {
+                        it.progressEndPct = oit.progressEndPct;
+                        inheritedFields++;
+                    }
+                    if (it.marketPriceFen == BillMoney.UNKNOWN && oit.marketPriceFen != BillMoney.UNKNOWN) {
+                        it.marketPriceFen = oit.marketPriceFen;
+                        inheritedFields++;
+                    }
+                    break;   // bookId 在一期内唯一，命中即可停
+                }
+            }
+        }
+        if (inheritedFields > 0) {
+            CardDebug.noteV(c, "bill: 旧账字段继承 " + mode + " " + periodStart
+                    + " 生效条目=" + b.items.size() + " 继承字段数=" + inheritedFields);
+        }
+
         BillStore.save(c, b);
         CardDebug.noteV(c, "bill: 生成 " + mode + " " + periodStart + " 本数=" + b.items.size()
                 + " 有价=" + BillMoney.pricedCount(c, b.items) + "/" + b.items.size()

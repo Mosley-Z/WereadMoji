@@ -31,21 +31,15 @@ import java.util.List;
  *     [✓] 墨单                    [↑] [↓]
  *     …（按 PagePrefs 顺序，6 行）
  *     （提示：勾选决定是否显示；↑↓ 调整顺序…）
- *   背景
- *     [•] 纯白（不使用图片）
- *     [ ] 自定义                  Pictures/墨台背景.jpg
- *                          [ 应用 ]                    ← 🆕 诉求 ②：**点它才验证路径**
- *     （提示：先选、再点「应用」；读不到该文件就如实提示，选项本身恒可选）
- *     白纱不透明度 · 90%
- *     ▬▬▬▬▬▬▬●▬▬▬▬▬▬▬▬
  * </pre>
- * 🆕 2026-10-10 第二轮（诉求 ⑥）：背景由"扫目录列候选图"改为**固定路径**
- * （{@link PagePrefs#DESK_BG_REL}）—— 见 {@code PagePrefs} §背景图 的理由；
- * 同时把**墨单生成的壁纸**从候选里彻底摘掉（不再扫 `Pictures/`）。
- * <p>🆕 2026-10-10 第三轮（诉求 ②）：**选择与验证解耦** —— 光标只改「待应用」，
- * 点「应用」那一刻才去读那张固定图。上一版"读不到就置灰「自定义」"的做法被用户否掉：
- * 图片是**先放好再进设置**还是**进了设置再放**都合理，置灰会把后者直接堵死
- * （而且 `READ_EXTERNAL_STORAGE` 在 S4 上默认 denied，置灰时用户完全无从下手）。
+ * 🔴 2026-10-11（TASK-18 · 用户 2026-10-10 指令①第 6 条「放弃墨台的壁纸，改为纯白色，
+ * 删除相关设置」）：原先的**「背景」整组已删除** —— 纯白 / 自定义（固定路径
+ * `Pictures/墨台背景.jpg`）、「应用」按钮、结果状态行、`label_desk_bg_tip`，以及
+ * **「白纱不透明度」文字行 + 滑条**（白纱的语义是"把自定义背景压淡"，背景恒纯白后它
+ * 是**失效控件** ⇒ 一并删除，不留在设置页里当摆设）。墨台背景自本卡起恒为纯白。
+ * <p>旧值残留 ⇒ **保留不读**（{@code PagePrefs} 已无任何读取路径；不崩、不读图、不申请存储权限）。
+ * <p>🔴 与「生成壁纸」的界线：本类只管**墨台设置态**；墨单海报的
+ * {@code BillWallpaper} + {@code DeskPageView.MODE_WALLPAPER} 与本卡无关，未动。
  *
  * <h3>🔴 两条纪律</h3>
  * <ul>
@@ -69,7 +63,6 @@ final class DeskSettings {
     private static final float NOTE_LH      = 1.7f;   // 提示行行距（×字号）
     private static final float BOX_UNITS    = 20f;    // 勾选框边长
     private static final float BTN_UNITS    = 24f;    // ↑/↓ 按钮边长
-    private static final float APPLY_UNITS  = 56f;    // 🆕 诉求 ②：「应用」按钮宽
     private static final float GAP_UNITS    = 6f;     // 小块之间
     private static final float PAD_TOP_UNITS = 6f;
     private static final float PAD_BOT_UNITS = 14f;
@@ -82,15 +75,13 @@ final class DeskSettings {
     /** 候选图最多列几张 —— 🔴 2026-10-10 第二轮已随「固定路径」改造整体删除（不再扫目录）。 */
 
     // ── 行种类 ──
+    // 🔴 2026-10-11（TASK-18）：原有 K_BG=5 / K_VEILBG=6 / K_VEIL=7 / K_APPLY=8 四种行已随
+    //    「背景」整组删除；编号不回收、不复用（避免与旧日志/截图里的 kind 值混淆）。
     private static final int K_SEP    = 0;   // 1px 分隔线（不可点）
     private static final int K_HEAD   = 1;   // 分组大标题（不可点）
     private static final int K_TOGGLE = 2;   // 「启用墨台」整行可点
     private static final int K_MOD    = 3;   // 模块行左侧标签区（可点 ⇒ 切换勾选）
     private static final int K_MOD_BT = 4;   // 模块行的 ↑ / ↓ 小按钮（可点）
-    private static final int K_BG     = 5;   // 背景行（`id` = "" ⇒ 纯白；否则 = 背景图路径）
-    private static final int K_VEILBG = 6;   // 「白纱不透明度 · N%」文字行（不可点）
-    private static final int K_VEIL   = 7;   // 白纱滑条（可点 / 可拖）
-    private static final int K_APPLY  = 8;   // 🆕 诉求 ②：「应用」按钮（点它才验证固定路径）
 
     /** 行（画与命中共用）。{@code r} 为**内容局部坐标**（y 从内容顶算，不含滚动）。 */
     static final class Item {
@@ -98,12 +89,11 @@ final class DeskSettings {
         RectF r = new RectF();
         String a;        // 主文本
         String b;        // 右端次文本（目录名 / ↑ / ↓）
-        String id;       // 模块 id / 背景路径
+        String id;       // 模块 id
         String tip;      // 提示正文（K_SEP 的 gap 位复用；见 buildNotes）
         float h;         // 该行高（px，已乘 unit）
         boolean on;      // 勾选 / 选中
         boolean enabled = true;   // ↑ 在顶 / ↓ 在底 ⇒ false（置灰且不响应）
-        int pct;         // 白纱 %
     }
 
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -117,23 +107,9 @@ final class DeskSettings {
     private List<Item> items = null;     // 布局缓存
     private float cw = -1f, cu = -1f;
 
-    /**
-     * 🆕 诉求 ②：**待应用**的背景选择（`""` = 纯白；否则 = {@link PagePrefs#DESK_BG_REL}）。
-     * 它与**已落盘**的路径是两回事 —— 光标动它、点「应用」才写 prefs。
-     */
-    private String pendBg = null;
-    /** 🆕 诉求 ②：最近一次「应用」的结果文案（null = 本次进入设置态后还没点过）。 */
-    private String applyMsg = null;
-    /** 🆕 诉求 ②：本次动作要提示的一句（宿主取走后清空 —— 避免每次重绘都弹）。 */
-    private String pendingToast = null;
-
     /** 进入设置态时调一次：重读偏好 + 失效布局缓存。 */
     void reload(Context c) {
         this.ctx = (c == null) ? null : c.getApplicationContext();
-        // 🆕 诉求 ②：「待应用」初值 = 当前已落盘的选择；结果文案清空（重新进设置 ⇒ 重新来过）
-        pendBg = (this.ctx == null) ? "" : PagePrefs.getDeskBgPath(this.ctx);
-        applyMsg = null;
-        pendingToast = null;
         invalidateCache();
     }
 
@@ -202,54 +178,11 @@ final class DeskSettings {
             y += rowH;
         }
         y = note(out, ctx.getString(R.string.label_desk_modules_tip), y, w, unit);
-        y = sep(out, y, unit);
 
-        // ── ③ 背景（🆕 诉求 ⑥：纯白 / 自定义 —— 自定义 = **固定路径** `Pictures/墨台背景.jpg`；
-        //      🆕 诉求 ②：选项**恒可选**，点「应用」那一刻才验证路径）──
-        y = head(out, y, headH, ctx.getString(R.string.label_desk_bg), w, unit);
-        String saved = PagePrefs.getDeskBgPath(ctx);
-        if (pendBg == null) pendBg = saved;               // 防御：未经 reload
-        boolean pendCustom = pendBg.length() > 0;
-
-        Item none = row(out, K_BG, pad, right, y, rowH);
-        none.a = ctx.getString(R.string.desk_bg_none);
-        none.on = !pendCustom;
-        none.id = "";                                     // 纯白 = 应用时清空路径
-        y += rowH;
-
-        Item cus = row(out, K_BG, pad, right, y, rowH);
-        cus.a = ctx.getString(R.string.desk_bg_custom);
-        cus.b = PagePrefs.DESK_BG_REL;
-        cus.id = PagePrefs.DESK_BG_REL;
-        cus.on = pendCustom;
-        // 🔴 需求 ②（用户 2026-10-10 第三轮拍板）：**不再**按"文件在不在"置灰 ——
-        //    选与验分开：这里只表达意图，能否落地交给下面的「应用」。
-        cus.enabled = true;
-        y += rowH;
-
-        // 「应用」按钮（右对齐）—— 🔴 恒可点：它才去读那张固定图
-        Item ap = row(out, K_APPLY, right - APPLY_UNITS * unit, right, y, rowH * 0.94f);
-        ap.a = ctx.getString(R.string.desk_bg_apply);
-        y += rowH * 0.94f;
-
-        // 状态行：优先显示上次「应用」的结果；没点过 ⇒ 说明"要先选再点应用"
-        if (applyMsg != null) {
-            y = note(out, applyMsg, y, w, unit);
-        } else if (pendCustom) {
-            y = note(out, ctx.getString(R.string.desk_bg_apply_hint, PagePrefs.DESK_BG_REL), y, w, unit);
-        }
-        y = note(out, ctx.getString(R.string.label_desk_bg_tip), y, w, unit);
-
-        // 白纱
-        Item vl = row(out, K_VEILBG, pad, right, y, rowH * 0.86f);
-        int veil = PagePrefs.getDeskBgVeil(ctx);
-        vl.a = ctx.getString(R.string.label_desk_veil) + " · " + veil + "%";
-        vl.pct = veil;
-        y += rowH * 0.86f;
-        Item vb = row(out, K_VEIL, pad, right, y, rowH);
-        vb.pct = veil;
-        y += rowH;
-
+        // 🔴 2026-10-11（TASK-18）：原「③ 背景」整组（纯白 / 自定义 / 「应用」按钮 / 结果状态行 /
+        //    白纱文字行 + 滑条）已按用户指令①第 6 条删除 —— 墨台背景恒纯白，设置页不再有这一组。
+        //    ⇒ 设置页现在只有两组：① 墨台（总开关）② 内容模块。本方法末尾不再 `sep()` 收尾，
+        //      避免留一条"分组线下面什么都没有"的视觉尾巴（那正是验收要防的空白分组）。
         items = out;
         return out;
     }
@@ -314,8 +247,9 @@ final class DeskSettings {
     }
 
     /** 背景提示（旧版：无候选时补充"多为没给存储读权限"）—— 🔴 随固定路径改造删除。
-     *  🆕 诉求 ② 起：状态说明改由 {@code desk_bg_apply_hint} 与
-     *  {@code desk_bg_applied_{ok,none,fail}} 三条结果资源承担（见 {@link #layout} / {@link #activate}）。 */
+     *  🆕 诉求 ② 起：状态说明改由 `desk_bg_apply_hint` 与 `desk_bg_applied_{ok,none,fail}` 三条
+     *  结果资源承担。🔴 2026-10-11（TASK-18）：**这四条资源与整个「背景」组也已删除** —— 墨台背景
+     *  已恒纯白，不再有"应用背景图"这件事，故也不再需要任何状态说明。 */
 
     // ══════════════════════ 画 ══════════════════════
 
@@ -380,57 +314,6 @@ final class DeskSettings {
                     arrowBtn(c, it, unit, cy);
                     break;
 
-                case K_BG: {
-                    radioBox(c, pad, cy, BOX_UNITS * unit, it.on, it.enabled);
-                    float tx = pad + BOX_UNITS * unit + GAP_UNITS * unit;
-                    // 🔴 2026-10-10 上机实测修：候选图**文件名可以很长**，而右端还要放路径 ⇒
-                    //    两者会直接叠字（真机见 `modan_weekly_…png` 撞上「微读墨记」）。
-                    //    这里先量出右端文本占宽，再把左侧文字裁到剩下的宽度内（截断补 `…`）。
-                    float bws = 0f;
-                    if (it.b != null && it.b.length() > 0) {
-                        p.setStyle(Paint.Style.FILL);
-                        p.setTypeface(null);
-                        p.setFakeBoldText(false);
-                        p.setTextAlign(Paint.Align.LEFT);
-                        p.setTextSize(SZ_SMALL * unit);
-                        bws = p.measureText(it.b);
-                    }
-                    float maxW = right - tx - (bws > 0f ? bws + GAP_UNITS * unit : 0f);
-                    int lab = !it.enabled ? LIGHT : (it.on ? INK : GRAY);
-                    textClipped(it, c, tx, cy, SZ_ROW * unit, lab, it.on && it.enabled, maxW);
-                    if (bws > 0f) {
-                        p.setStyle(Paint.Style.FILL);
-                        p.setTypeface(null);
-                        p.setFakeBoldText(false);
-                        p.setColor(LIGHT);
-                        p.setTextAlign(Paint.Align.RIGHT);
-                        p.setTextSize(SZ_SMALL * unit);
-                        Paint.FontMetrics bm = p.getFontMetrics();
-                        c.drawText(it.b, right, cy - (bm.ascent + bm.descent) / 2f, p);
-                        p.setTextAlign(Paint.Align.LEFT);
-                    }
-                    break;
-                }
-
-                case K_APPLY:
-                    outlineBtn(c, it, cy, unit);
-                    break;
-
-                case K_VEILBG:
-                    p.setStyle(Paint.Style.FILL);
-                    p.setTypeface(null);
-                    p.setFakeBoldText(false);
-                    p.setColor(GRAY);
-                    p.setTextAlign(Paint.Align.LEFT);
-                    p.setTextSize(SZ_ROW * unit);
-                    Paint.FontMetrics vm = p.getFontMetrics();
-                    c.drawText(it.a, pad, cy - (vm.ascent + vm.descent) / 2f, p);
-                    break;
-
-                case K_VEIL:
-                    drawVeil(c, it, unit, pad, right);
-                    break;
-
                 default:
                     break;
             }
@@ -454,36 +337,9 @@ final class DeskSettings {
     }
 
     /**
-     * 同 {@link #text}，但**限制最大宽度**：超出就截断并补 `…`。
-     *
-     * <p>🔴 自己来是因为本机 `Paint` 不做自动省略（{@code TextView} 才做），而候选图文件名
-     * 可以很长（相册截图名），必须给它一个硬边界，否则会撞上右端对齐的目录名。
-     *
-     * @param maxW ≤0 ⇒ 不限制
+     * 🔴 2026-10-11（TASK-18）：原先这里还有 `textClipped`（候选图长文件名截断）——
+     * 只服务被删的「自定义背景」行，已随之删除。
      */
-    private void textClipped(Item it, Canvas c, float x, float cy, float size, int color,
-                             boolean bold, float maxW) {
-        String s = (it.a == null) ? "" : it.a;
-        p.setStyle(Paint.Style.FILL);
-        p.setTypeface(null);
-        p.setFakeBoldText(bold);
-        p.setColor(color);
-        p.setTextAlign(Paint.Align.LEFT);
-        p.setTextSize(size);
-        if (maxW > 0f && p.measureText(s) > maxW) {
-            // 逐字回退（中文/拉丁混排宽度差很大 ⇒ 不能按字数估），并给省略号留位
-            String ell = "…";
-            float avail = maxW - p.measureText(ell);
-            if (avail < 1f) avail = 1f;
-            int n = p.breakText(s, true, avail, null);
-            if (n < 1) n = 1;
-            if (n > s.length()) n = s.length();
-            s = s.substring(0, n) + ell;
-        }
-        Paint.FontMetrics fm = p.getFontMetrics();
-        c.drawText(s, x, cy - (fm.ascent + fm.descent) / 2f, p);
-        p.setFakeBoldText(false);
-    }
 
     /** 勾选框：1px 直角描边 + 勾（🔴 禁圆角，墨水屏铁律）。 */
     private void checkBox(Canvas c, float x, float cy, float side, boolean on) {
@@ -502,47 +358,10 @@ final class DeskSettings {
         p.setStyle(Paint.Style.FILL);
     }
 
-    /** 单选：选中 = 实心方块；未选 = 浅灰空心框；{@code enabled=false} ⇒ 描边更淡（= 不可选）。 */
-    private void radioBox(Canvas c, float x, float cy, float side, boolean on, boolean enabled) {
-        float t = cy - side / 2f;
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(1f);
-        p.setColor(enabled ? (on ? INK : LIGHT) : LINE);
-        c.drawRect(x + 0.5f, t + 0.5f, x + side - 0.5f, t + side - 0.5f, p);
-        if (on) {
-            p.setStyle(Paint.Style.FILL);
-            p.setColor(enabled ? INK : LIGHT);
-            float in = side * 0.34f;
-            c.drawRect(x + in, t + in, x + side - in, t + side - in, p);
-        }
-        p.setStyle(Paint.Style.FILL);
-    }
-
     /**
-     * 🆕 诉求 ②：带 1px 直角描边的**动作按钮**（「应用」）—— 与墨单预览态的「保存/分享/关闭」
-     * 同一套视觉语言（居中文字、无圆角，墨水屏铁律）。
+     * 🔴 2026-10-11（TASK-18）：原先这里还有 `radioBox`（单选）与 `outlineBtn`（「应用」按钮）——
+     * 都只服务被删的「背景」组，已随之删除。滑条 `drawVeil` 同理。
      */
-    private void outlineBtn(Canvas c, Item it, float cy, float unit) {
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(1f);
-        p.setColor(it.enabled ? INK : LINE);
-        c.drawRect(it.r.left + 0.5f, it.r.top + 0.5f, it.r.right - 0.5f, it.r.bottom - 0.5f, p);
-        p.setStyle(Paint.Style.FILL);
-        p.setTypeface(null);
-        p.setFakeBoldText(false);
-        p.setColor(it.enabled ? INK : LIGHT);
-        p.setTextAlign(Paint.Align.CENTER);
-        float sz = SZ_ROW * unit;
-        p.setTextSize(sz);
-        String lab = (it.a == null) ? "" : it.a;
-        while (p.measureText(lab) > it.r.width() - unit * 6f && sz > SZ_ROW * unit * 0.7f) {
-            sz -= 0.4f;
-            p.setTextSize(sz);
-        }
-        Paint.FontMetrics fm = p.getFontMetrics();
-        c.drawText(lab, it.r.centerX(), cy - (fm.ascent + fm.descent) / 2f, p);
-        p.setTextAlign(Paint.Align.LEFT);
-    }
 
     /** ↑ / ↓ 小按钮：1px 直角描边 + 居中箭头（与 `btn_ink` 同一套视觉语言）。 */
     private void arrowBtn(Canvas c, Item it, float unit, float cy) {
@@ -564,26 +383,6 @@ final class DeskSettings {
         p.setTextAlign(Paint.Align.LEFT);
     }
 
-    /** 白纱滑条：1px 轨道 + 实心方块滑钮 + 两端刻度（纯自绘，禁圆角）。 */
-    private void drawVeil(Canvas c, Item it, float unit, float left, float right) {
-        float cy = it.r.top + it.h / 2f;
-        float knob = 13f * unit;
-        float x0 = left + knob / 2f, x1 = right - knob / 2f;
-
-        p.setStyle(Paint.Style.FILL);
-        p.setColor(LINE);
-        c.drawRect(x0, cy - 0.5f, x1, cy + 0.5f, p);
-
-        float kx = x0 + (x1 - x0) * it.pct / 100f;
-        p.setColor(INK);
-        c.drawRect(kx - knob / 2f, cy - knob / 2f, kx + knob / 2f, cy + knob / 2f, p);
-        // 已选段加粗（给"白纱越白"一个直观的进度感）
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(3f);
-        c.drawLine(x0, cy, kx, cy, p);
-        p.setStyle(Paint.Style.FILL);
-    }
-
     // ══════════════════════ 命中 ══════════════════════
 
     /**
@@ -596,9 +395,9 @@ final class DeskSettings {
         List<Item> ls = layout(w, unit);
         for (int i = 0; i < ls.size(); i++) {
             Item it = ls.get(i);
-            if (it.kind == K_SEP || it.kind == K_HEAD || it.kind == K_VEILBG) continue;
-            // 置灰的行一律不响应：模块 ↑↓ 在顶/底、（🆕 诉求 ② 起「自定义」恒可选，只剩 ↑↓ 会置灰）
-            if (!it.enabled && (it.kind == K_MOD_BT || it.kind == K_BG || it.kind == K_APPLY)) continue;
+            if (it.kind == K_SEP || it.kind == K_HEAD) continue;
+            // 置灰的行一律不响应：如今只剩模块 ↑↓ 在顶/底会置灰
+            if (!it.enabled && it.kind == K_MOD_BT) continue;
             if (it.r.contains(x, y)) return it;
         }
         return null;
@@ -609,18 +408,17 @@ final class DeskSettings {
      *
      * <p>🆕 诉求 ②：墨屏「点击 → 重绘」要好几秒，光靠面板里的状态行反馈太慢 ⇒
      * 「应用」的结果同时走一条 Toast，点完立刻能看见。
+     *
+     * <p>🔴 2026-10-11（TASK-18）：唯一会 `pendingToast` 的「应用」按钮已随「背景」组删除 ⇒
+     * 本方法现在**恒返回 null**；保留签名是因为宿主（{@code DeskPageView}）仍在调用它，
+     * 删掉会牵动卡外文件，收益为零。
      */
     String consumeToast() {
-        String s = pendingToast;
-        pendingToast = null;
-        return s;
+        return null;
     }
 
     /**
      * 执行一项动作。@return true = 需要重画 + 重算滚动范围（含"只改了面板文案"的情形）。
-     *
-     * <p>🔴 🆕 诉求 ②：{@link #K_BG} **只改「待应用」选择、不写 prefs**；
-     * 真正的落盘 + 路径验证在 {@link #K_APPLY}。这样"图片还没放进去"也能先把选项选上。
      */
     boolean activate(Item it) {
         if (it == null) return false;
@@ -640,53 +438,8 @@ final class DeskSettings {
                 invalidateCache();
                 return true;
 
-            case K_BG:
-                pendBg = (it.id == null) ? "" : it.id;        // 🆕 诉求 ②：只动"待应用"
-                applyMsg = null;                              // 换了选择 ⇒ 上一次的结果作废
-                invalidateCache();
-                return true;
-
-            case K_APPLY: {
-                String want = (pendBg == null) ? "" : pendBg;
-                if (want.length() == 0) {
-                    PagePrefs.setDeskBgPath(ctx, "");
-                    applyMsg = ctx.getString(R.string.desk_bg_applied_none);
-                } else if (PagePrefs.isCustomBgAvailable(ctx)) {
-                    PagePrefs.setDeskBgPath(ctx, PagePrefs.DESK_BG_REL);
-                    applyMsg = ctx.getString(R.string.desk_bg_applied_ok, PagePrefs.DESK_BG_REL);
-                } else {
-                    // 🔴 读不到 ⇒ **不写 prefs**（已存的背景不动），如实说清唯一解法
-                    applyMsg = ctx.getString(R.string.desk_bg_applied_fail, PagePrefs.DESK_BG_REL);
-                }
-                pendingToast = applyMsg;
-                invalidateCache();
-                return true;
-            }
-
-            case K_VEIL:
-                PagePrefs.setDeskBgVeil(ctx, it.pct);
-                invalidateCache();
-                return true;
-
             default:
                 return false;
         }
     }
-
-    /** 滑条：由 x 反算百分比（画与命中共用 `left/right/knob` 的**同一算式**）。 */
-    int veilPctAt(float x, float w, float unit) {
-        float pad = w * InsightRenderer.PAD_X_RATIO;
-        float left = pad, right = w - pad;
-        float knob = 13f * unit;
-        float x0 = left + knob / 2f, x1 = right - knob / 2f;
-        if (x1 <= x0) return 0;
-        float r = (x - x0) / (x1 - x0);
-        int pct = Math.round(r * 100f);
-        if (pct < 0) pct = 0;
-        if (pct > 100) pct = 100;
-        return pct;
-    }
-
-    /** 这一项是不是白纱滑条（宿主据此决定"按住即拖"）。 */
-    boolean isVeilBar(Item it) { return it != null && it.kind == K_VEIL; }
 }
