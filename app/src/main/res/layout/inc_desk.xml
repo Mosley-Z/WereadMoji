@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  🆕 TASK-076 · 共用子布局：自定义页 · 「墨台」分区
+  （总开关 + 内容模块〔7 行开关 + 调序，由 SettingsPageController 按注册表动态装配〕+ 背景）
+
+  🔴 由 page_settings.xml（阅读器端）与 settings_layout.xml（手机端）**共用** ——
+     与 inc_card_custom.xml 同一套「<include> 化」做法 ⇒ 改这里一处即两端同步，天然无双份漂移。
+  ⚠️ 手机端整个「自定义」页不装配（见 SettingsActivity.bindTopTabs）⇒ 分区在 phone 端不可达。
+-->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/section_desk"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="14dp"
+    android:orientation="vertical">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/label_desk_group"
+        android:textColor="#FF000000"
+        android:textSize="17sp" />
+
+    <CheckBox
+        android:id="@+id/cb_desk_enabled"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:buttonTint="#FF000000"
+        android:text="@string/label_desk_enabled"
+        android:textColor="#FF000000"
+        android:textSize="14sp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/label_desk_modules"
+        android:textColor="#FF000000"
+        android:textSize="15sp" />
+
+    <!-- 🔴 7 行（勾选 + ↑↓）由 SettingsPageController 按 PagePrefs.MODULE_ORDER 动态装入 -->
+    <LinearLayout
+        android:id="@+id/ll_desk_rows"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:orientation="vertical" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:lineSpacingExtra="2dp"
+        android:text="@string/label_desk_modules_tip"
+        android:textColor="#FF3C3C3C"
+        android:textSize="13sp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/label_desk_bg"
+        android:textColor="#FF000000"
+        android:textSize="15sp" />
+
+    <EditText
+        android:id="@+id/et_desk_bg_path"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:hint="@string/hint_desk_bg"
+        android:inputType="text"
+        android:maxLines="1"
+        android:textColor="#FF000000"
+        android:textColorHint="#FF9A9A9A"
+        android:textSize="15sp" />
+
+    <TextView
+        android:id="@+id/tv_desk_veil"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/label_desk_veil"
+        android:textColor="#FF000000"
+        android:textSize="15sp" />
+
+    <SeekBar
+        android:id="@+id/sb_desk_veil"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:max="100"
+        android:progressDrawable="@drawable/seek_ink"
+        android:splitTrack="false"
+        android:thumb="@drawable/seek_thumb" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:lineSpacingExtra="2dp"
+        android:text="@string/label_desk_bg_tip"
+        android:textColor="#FF3C3C3C"
+        android:textSize="13sp" />
+</LinearLayout>

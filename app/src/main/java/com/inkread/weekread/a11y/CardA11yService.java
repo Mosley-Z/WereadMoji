@@ -1,5 +1,6 @@
 package com.inkread.weekread.a11y;
 
+import com.inkread.weekread.core.BillScheduler;
 import com.inkread.weekread.core.CardDebug;
 import com.inkread.weekread.core.CardPrefs;
 import com.inkread.weekread.core.LockPrefs;
@@ -110,6 +111,8 @@ public class CardA11yService extends AccessibilityService {
     private ElaHomeProbe homeProbe;
     /** TASK-022 应用级软锁的全屏覆盖窗（与卡片窗口相互独立，见 {@link LockOverlay}） */
     private LockOverlay lock;
+    /** 🆕 TASK-075 墨台的全屏覆盖窗（**第三窗**，与卡片 / 软锁相互独立，见 {@link DeskOverlay}） */
+    private DeskOverlay desk;
 
     // ── 供同进程其它组件调用 ──
 
@@ -140,6 +143,47 @@ public class CardA11yService extends AccessibilityService {
     /** 偏好或数据变化后叫它一声，让卡片与当前状态同步（同进程静态调用） */
     public static void sync() {
         if (sInstance != null) sInstance.refresh();
+    }
+
+    // ── 🆕 TASK-075：墨台（第三覆盖窗）入口 ──
+
+    /**
+     * 呼出墨台。触发端 = 卡片左上角「打开墨台」按钮（**TASK-080**）。
+     * 🔴 服务未连上 / 窗口未建时静默无操作（与 {@link #sync()} 同纪律，绝不因调用方早到而崩）。
+     */
+    public static void showDesk() {
+        if (sInstance != null && sInstance.desk != null) sInstance.desk.show();
+    }
+
+    /** 关闭墨台。 */
+    public static void hideDesk() {
+        if (sInstance != null && sInstance.desk != null) sInstance.desk.hide();
+    }
+
+    /** 墨台此刻是否挂屏（供排查 / 自测断言）。 */
+    public static boolean isDeskShowing() {
+        return sInstance != null && sInstance.desk != null && sInstance.desk.isShowing();
+    }
+
+    /** 软锁此刻是否挂屏 —— 与墨台的**互斥判定**（定稿设计 §8.3：软锁先弹则墨台不叠加）。 */
+    static boolean lockShowing() {
+        return sInstance != null && sInstance.lock != null && sInstance.lock.isShowing();
+    }
+
+    /** 自家 UI 是否在前台（供墨台等新覆盖层"保存 / 还原"用）。 */
+    static boolean ownUiForeground() {
+        return sOwnUiForeground;
+    }
+
+    /**
+     * 墨台关闭后**显式**重算一次卡片显隐。
+     *
+     * <p>为什么不靠 {@link #noteOwnUiForeground(boolean)}：覆盖层被 add/remove **不会**产生桌面窗口
+     * 事件，而 {@code noteOwnUiForeground(false)} 刻意"什么都不做"（防闪屏）⇒ 从桌面呼出墨台再关闭时，
+     * 卡片会卡在"让位"状态不回来。这里补一次直接重算（`OverlayController.applyVisibility()` 是唯一出口）。
+     */
+    static void recomputeVisibilityNow() {
+        if (sInstance != null) sInstance.ov.applyVisibility();
     }
 
     /**
@@ -223,6 +267,8 @@ public class CardA11yService extends AccessibilityService {
         }
         // TASK-022：软锁覆盖窗（只建一次；不参与卡片的显隐让位链，自己管自己）
         if (lock == null) lock = new LockOverlay(this, ui);
+        // 🆕 TASK-075：墨台覆盖窗（只建一次；同纪律 —— 自己管自己，不并入 OverlayController）
+        if (desk == null) desk = new DeskOverlay(this, ui);
         st.resetAll();
         sForceRecomputeOnLeave = false;             // v0.8.1：重连时旧的一次性意图作废
         registerScreenOn();
@@ -238,6 +284,9 @@ public class CardA11yService extends AccessibilityService {
         refresh();
         CardDebug.note(this, "service connected, enabled=" + CardPrefs.isEnabled(this)
                 + ", ownUi=" + sOwnUiForeground);
+        // 🆕 TASK-077：账单**幂等补齐**（后台线程 + 并发闸；稳态只做一次 has 检查 ⇒ 零请求）。
+        //    另一个调用点是 `MainActivity.onStart()` —— 两处各调一次，谁先谁生效，重复无害。
+        BillScheduler.ensureBills(this);
     }
 
     /**
@@ -290,6 +339,7 @@ public class CardA11yService extends AccessibilityService {
         cancelPending();
         ov.removeWindow();
         if (lock != null) lock.remove();
+        if (desk != null) desk.remove();
         sInstance = null;
         return super.onUnbind(intent);
     }
@@ -300,6 +350,7 @@ public class CardA11yService extends AccessibilityService {
         cancelPending();
         ov.removeWindow();
         if (lock != null) lock.remove();
+        if (desk != null) desk.remove();
         sInstance = null;
         super.onDestroy();
     }
@@ -367,6 +418,8 @@ public class CardA11yService extends AccessibilityService {
      */
     private void maybeLockOnScreenOn() {
         if (lock == null) return;
+        // 🆕 TASK-075：墨台显示中 ⇒ **不弹软锁**（避免两覆盖窗叠压；定稿设计 §8.3「二者互斥」）。
+        if (isDeskShowing()) return;
         if (LockPrefs.isActive(this)) {
             lock.show();
         }

@@ -19,6 +19,8 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 微信读书官方 Skill 网关客户端（纯 HttpURLConnection，无第三方依赖）。
@@ -182,6 +184,73 @@ public class WereadApi {
         } catch (Exception ignored) {
         }
         post(apiKey, "/book/chapterinfo", a, cb);
+    }
+
+    // ══════════════════════ 🆕 TASK-077：账单后台预热用的**阻塞式**口 ══════════════════════
+    //
+    // 🔴 这两个方法**只能在后台线程调**（`BillScheduler` 的生成/预热时机）。
+    //    账单**渲染**一律只读 `BillStore` 缓存，**永不发请求**（项目铁律，`tasks/TASK-077` §关键约束 4）。
+
+    /**
+     * 🆕 TASK-077：**阻塞式**拉某周期的统计（`/readdata/detail`）并解析成 {@link PeriodStats}。
+     *
+     * <p>与 {@link #fetchDetail} 的区别：不走主线程回调，直接返回结果 —— 供
+     * `BillScheduler` 在它自己的后台线程里串行生成账单用。
+     *
+     * @return 解析结果；无 Key / 网络失败 / 业务错误 / **结构不像统计回包**（`incomplete`）
+     *         ⇒ **null**（调用方据此"跳过本期、不写假账"，见 `tasks/TASK-077` §关键约束 2）
+     */
+    public static PeriodStats fetchDetailBlocking(String apiKey, String mode, long baseTime) {
+        if (apiKey == null || apiKey.trim().length() == 0) return null;
+        try {
+            JSONObject args = new JSONObject();
+            args.put("mode", mode);
+            args.put("baseTime", baseTime);
+            Resp r = raw(apiKey.trim(), buildBody("/readdata/detail", args));
+            if (r.error != null || r.json == null) return null;
+            PeriodStats st = PeriodStats.parse(r.json, System.currentTimeMillis(), mode, baseTime);
+            st.rawJson = r.json.toString();
+            if (st.incomplete) return null;          // 🔴 与 fetchDetail 同口径（B6）
+            return st;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * 🆕 TASK-077：**阻塞式**拉某本书的**热门划线**（公开 Popular Highlights，`/book/bestbookmarks`）。
+     *
+     * <p>回包结构（见 `docs/_原始设计/weread-reference/skills_pkg/weread-skills/notes.md`
+     * §`/book/bestbookmarks`）：`items[].markText`（划线原文）+ `items[].totalCount`（划线人数），
+     * 按热度排序，服务端固定返回 ≤20 条，**不支持分页**。
+     *
+     * <p>🔴 这是**公开热门**，**不等于用户本人的划线** ⇒ 账单渲染时须注明来源（风险 R4）。
+     *
+     * @return 热门划线原文（按热度降序）；无 Key / 请求失败 / 该书无热门 ⇒ **空列表**
+     *         （🔴 不返回 null，调用方直接 `isEmpty()` 判即可）
+     */
+    public static List<String> fetchBestBookmarks(String apiKey, String bookId) {
+        List<String> out = new ArrayList<String>();
+        if (apiKey == null || apiKey.trim().length() == 0) return out;
+        if (bookId == null || bookId.length() == 0) return out;
+        try {
+            JSONObject a = new JSONObject();
+            a.put("bookId", bookId);
+            Resp r = raw(apiKey.trim(), buildBody("/book/bestbookmarks", a));
+            if (r.error != null || r.json == null) return out;
+            JSONArray items = r.json.optJSONArray("items");
+            if (items == null) return out;
+            for (int i = 0; i < items.length(); i++) {
+                JSONObject it = items.optJSONObject(i);
+                if (it == null) continue;
+                String t = it.optString("markText", "");
+                if (t == null) continue;
+                t = t.replace('\n', ' ').trim();
+                if (t.length() > 0) out.add(t);
+            }
+        } catch (Throwable ignored) {
+        }
+        return out;
     }
 
     /** 起一个线程调网关，结果回主线程 */

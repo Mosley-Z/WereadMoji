@@ -1,0 +1,348 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  🆕 TASK-079 · 共用子布局：实验室 · 壁纸管家子页（数据层 = TASK-078，UI/生成 = TASK-079）
+  🔴 由 settings_layout.xml（手机端）与 page_lab.xml（阅读器端）**各 include 一次**，
+     改这里一处即两端同步（照 inc_lab_lockscreen / inc_lab_power 的 TASK-068 范式）。
+  ⚠️ 本页是**墨水屏端**功能 ⇒ 手机端不装配该子标签（LabPageController.phoneRelevant=false），
+     但布局仍两端共用 —— 保持一致，将来放手机端也不用手写第二份。
+
+  五块（tasks/TASK-079 §5.3）：① 图片池 ② 轮换 ③ 应用范围 ④ 生成账单壁纸 ⑤ 当前生效
+-->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/page_lab_wallpaper"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:visibility="gone">
+
+    <!-- 子标签栏已显示页名，此处不再重复小标题 -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:lineSpacingExtra="3dp"
+        android:text="@string/wall_intro"
+        android:textColor="#FF3C3C3C"
+        android:textSize="13sp" />
+
+    <!-- ══════════════ ① 图片池 ══════════════ -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:text="@string/wall_pool_label"
+        android:textColor="#FF000000"
+        android:textSize="15sp" />
+
+    <!-- 照锁屏那套：可编辑路径输入框（本机无文件选择器 ⇒ 不走 SAF） -->
+    <EditText
+        android:id="@+id/et_wall_src"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:hint="@string/wall_src_hint"
+        android:inputType="text"
+        android:maxLines="1"
+        android:textColor="#FF000000"
+        android:textColorHint="#FF9A9A9A"
+        android:textSize="15sp" />
+
+    <Button
+        android:id="@+id/btn_wall_add"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:layout_marginTop="6dp"
+        android:background="@drawable/btn_ink"
+        android:minWidth="0dp"
+        android:minHeight="0dp"
+        android:stateListAnimator="@null"
+        android:text="@string/wall_btn_add"
+        android:textColor="@color/btn_ink_text"
+        android:textSize="15sp" />
+
+    <TextView
+        android:id="@+id/tv_wall_pool"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:lineSpacingExtra="3dp"
+        android:textColor="#FF000000"
+        android:textSize="14sp" />
+
+    <Button
+        android:id="@+id/btn_wall_clear"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:layout_marginTop="6dp"
+        android:background="@drawable/btn_ink"
+        android:minWidth="0dp"
+        android:minHeight="0dp"
+        android:stateListAnimator="@null"
+        android:text="@string/wall_btn_clear"
+        android:textColor="@color/btn_ink_text"
+        android:textSize="15sp" />
+
+    <!-- ══════════════ ② 轮换 ══════════════ -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/wall_rot_label"
+        android:textColor="#FF000000"
+        android:textSize="15sp" />
+
+    <CheckBox
+        android:id="@+id/cb_wall_rot"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:buttonTint="#FF000000"
+        android:text="@string/wall_rot_enable"
+        android:textColor="#FF000000"
+        android:textSize="15sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <EditText
+            android:id="@+id/et_wall_interval"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="@string/wall_rot_interval_hint"
+            android:inputType="number"
+            android:maxLength="3"
+            android:textColor="#FF000000"
+            android:textColorHint="#FF9A9A9A"
+            android:textSize="15sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="6dp"
+            android:text="@string/wall_rot_interval_suffix"
+            android:textColor="#FF000000"
+            android:textSize="15sp" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tv_wall_rot_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:lineSpacingExtra="3dp"
+        android:textColor="#FF000000"
+        android:textSize="14sp" />
+
+    <!-- ══════════════ ③ 应用范围 ══════════════ -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/wall_scope_label"
+        android:textColor="#FF000000"
+        android:textSize="15sp" />
+
+    <!-- 🆕 TASK-079 · A7：「屏保（Daydream）」未验证 ⇒ 该项与「两者」**置灰**（代码里 setEnabled(false)
+         + 转灰字），并配下面那行如实提示；⛔ 绝不写成"已支持屏保"。 -->
+    <RadioGroup
+        android:id="@+id/rg_wall_scope"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:orientation="vertical">
+
+        <RadioButton
+            android:id="@+id/rb_wall_scope_soft"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:buttonTint="#FF000000"
+            android:text="@string/wall_scope_soft"
+            android:textColor="#FF000000"
+            android:textSize="15sp" />
+
+        <RadioButton
+            android:id="@+id/rb_wall_scope_dream"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:buttonTint="#FF000000"
+            android:enabled="false"
+            android:text="@string/wall_scope_dream"
+            android:textColor="#FFA8A8A8"
+            android:textSize="15sp" />
+
+        <RadioButton
+            android:id="@+id/rb_wall_scope_both"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:buttonTint="#FF000000"
+            android:enabled="false"
+            android:text="@string/wall_scope_both"
+            android:textColor="#FFA8A8A8"
+            android:textSize="15sp" />
+    </RadioGroup>
+
+    <TextView
+        android:id="@+id/tv_wall_scope_tip"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:lineSpacingExtra="3dp"
+        android:text="@string/wall_scope_tip"
+        android:textColor="#FF6A6A6A"
+        android:textSize="12sp" />
+
+    <!-- ══════════════ ④ 生成账单壁纸 ══════════════ -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/wall_bill_label"
+        android:textColor="#FF000000"
+        android:textSize="15sp" />
+
+    <!-- 选周期（周 / 月）——切周期即回到该周期最新一期 -->
+    <RadioGroup
+        android:id="@+id/rg_billw_mode"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:orientation="horizontal">
+
+        <RadioButton
+            android:id="@+id/rb_billw_week"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:buttonTint="#FF000000"
+            android:checked="true"
+            android:text="@string/wall_bill_week"
+            android:textColor="#FF000000"
+            android:textSize="15sp" />
+
+        <RadioButton
+            android:id="@+id/rb_billw_month"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="18dp"
+            android:buttonTint="#FF000000"
+            android:text="@string/wall_bill_month"
+            android:textColor="#FF000000"
+            android:textSize="15sp" />
+    </RadioGroup>
+
+    <!-- 选最近一期：‹ 更早 | 单号 · 区间 | 更晚 › -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btn_billw_older"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:background="@drawable/btn_ink"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:stateListAnimator="@null"
+            android:text="@string/wall_bill_older"
+            android:textColor="@color/btn_ink_text"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/tv_billw_serial"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="6dp"
+            android:layout_marginRight="6dp"
+            android:layout_weight="1.7"
+            android:gravity="center"
+            android:lineSpacingExtra="3dp"
+            android:textColor="#FF000000"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/btn_billw_newer"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:background="@drawable/btn_ink"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:stateListAnimator="@null"
+            android:text="@string/wall_bill_newer"
+            android:textColor="@color/btn_ink_text"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/btn_billw_gen"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:layout_marginTop="6dp"
+        android:background="@drawable/btn_ink"
+        android:minWidth="0dp"
+        android:minHeight="0dp"
+        android:stateListAnimator="@null"
+        android:text="@string/wall_btn_gen"
+        android:textColor="@color/btn_ink_text"
+        android:textSize="15sp" />
+
+    <TextView
+        android:id="@+id/tv_billw_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:lineSpacingExtra="3dp"
+        android:textColor="#FF000000"
+        android:textSize="14sp" />
+
+    <!-- ══════════════ ⑤ 当前生效 ══════════════ -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/wall_eff_label"
+        android:textColor="#FF000000"
+        android:textSize="15sp" />
+
+    <TextView
+        android:id="@+id/tv_wall_effective"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:lineSpacingExtra="3dp"
+        android:textColor="#FF000000"
+        android:textSize="14sp" />
+
+    <Button
+        android:id="@+id/btn_wall_apply"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:layout_marginTop="6dp"
+        android:background="@drawable/btn_ink"
+        android:minWidth="0dp"
+        android:minHeight="0dp"
+        android:stateListAnimator="@null"
+        android:text="@string/wall_btn_apply"
+        android:textColor="@color/btn_ink_text"
+        android:textSize="15sp" />
+
+    <!-- ⛔ 文案不超前：这里是「应用级软锁」的底图，**不是**系统壁纸 / 待机图 -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="12dp"
+        android:lineSpacingExtra="3dp"
+        android:text="@string/wall_note"
+        android:textColor="#FF6A6A6A"
+        android:textSize="12sp" />
+</LinearLayout><!-- /page_lab_wallpaper -->

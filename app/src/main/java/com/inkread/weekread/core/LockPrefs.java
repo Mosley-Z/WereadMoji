@@ -2,7 +2,6 @@ package com.inkread.weekread.core;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.os.Environment;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
@@ -141,10 +140,6 @@ public final class LockPrefs {
     /** 输入框默认值，也是候选兜底里的首选相对路径（相对共享存储根 /sdcard）。 */
     public static final String DEFAULT_BG_REL = "Pictures/背景.jpg";
 
-    /** 兜底候选目录（按序找同名文件）—— 图放哪儿都尽量能认出来。 */
-    private static final String[] BG_FALLBACK_DIRS = {
-            "Pictures", "Picture", "DCIM", "Download", "Documents" };
-
     /** 已设置的背景图路径（空 = 未设置 ⇒ 浅色网点；验收 A6「默认零差异」）。 */
     public static String getBgPath(Context c) {
         String v = sp(c).getString(K_BG, "");
@@ -163,47 +158,20 @@ public final class LockPrefs {
     /**
      * 解析出<b>实际可读</b>的背景图文件；没有则返回 {@code null}（调用方回退浅色网点）。
      *
-     * <p>顺序：① 用户设置的原路径（绝对路径直接用；相对路径拼共享存储根）
-     * → ② 同名文件在常见图片目录（Pictures / Picture / DCIM / Download / Documents）
-     * → ③ App 私有外部目录（<b>零权限</b>，可用 {@code adb push} 放图 ⇒ 作为"不给权限"时的兜底）。
-     *
-     * <p>⚠ 无 {@code READ_EXTERNAL_STORAGE} 时 ①/② 会静默判"不存在"（分区存储行为）——
-     * 这正是我们要的：拿不到就老老实实回退默认底，绝不因此弹不出锁屏。
+     * <p>🆕 TASK-075：实现已**搬到** {@link BgImageUtil#resolveBgFile}（软锁与墨台共用）；
+     * 本方法只做"读本机路径 → 转交"的委托，**行为与历史逐字节一致**。
      */
     public static File resolveBgFile(Context c) {
-        String p = getBgPath(c);
-        if (p.length() == 0) return null;                 // 未设置 ⇒ 浅色网点
-        if (p.startsWith("content://")) return null;      // 历史 SAF URI：交给 ContentResolver
-
-        File f = toAbsolute(p);
-        if (isReadableFile(f)) return f;
-
-        String name = new File(p).getName();
-        if (name.length() > 0) {
-            for (String dir : BG_FALLBACK_DIRS) {
-                File g = new File(new File(Environment.getExternalStorageDirectory(), dir), name);
-                if (isReadableFile(g)) return g;
-            }
-            File priv = c.getExternalFilesDir(null);       // 私有目录兜底（零权限）
-            if (priv != null && isReadableFile(new File(priv, name))) {
-                return new File(priv, name);
-            }
-        }
-        return null;
+        return BgImageUtil.resolveBgFile(c, getBgPath(c));
     }
 
-    /** 相对路径 → 拼共享存储根；绝对路径原样返回（也供"触发媒体扫描"用）。 */
+    /**
+     * 相对路径 → 拼共享存储根；绝对路径原样返回（也供"触发媒体扫描"用）。
+     *
+     * <p>🆕 TASK-075：搬到 {@link BgImageUtil#toAbsolute}，本方法委托（行为不变）。
+     */
     public static File toAbsolute(String path) {
-        File f = new File(path);
-        return f.isAbsolute() ? f : new File(Environment.getExternalStorageDirectory(), path);
-    }
-
-    private static boolean isReadableFile(File f) {
-        try {
-            return f != null && f.isFile() && f.canRead();
-        } catch (Throwable t) {
-            return false;
-        }
+        return BgImageUtil.toAbsolute(path);
     }
 
     // ── 内部：哈希 / hex ──

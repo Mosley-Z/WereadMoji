@@ -1,26 +1,21 @@
 package com.inkread.weekread.a11y;
 
 import com.inkread.weekread.R;
+import com.inkread.weekread.core.BgImageUtil;
+import com.inkread.weekread.core.WallpaperPrefs;
 import com.inkread.weekread.core.CardDebug;
 import com.inkread.weekread.core.LockPrefs;
 
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
-import android.graphics.RectF;
-import android.net.Uri;
 import android.os.Handler;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
-
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.InputStream;
 
 /**
  * 应用级「软锁」的全屏覆盖窗（TASK-022，V1.0.1-beta，方案乙）。
@@ -214,7 +209,10 @@ final class LockOverlay {
         }
 
         private void drawBackground(Canvas c, float w, float h) {
-            String key = LockPrefs.getBgPath(getContext());
+            // 🆕 TASK-078：背景路径改为问「壁纸管家」要 —— **轮换关 / 池 < 2 张 / 范围不含软锁** 时
+            //    它原样返回 `LockPrefs.getBgPath()` ⇒ 本方法与改动前**逐像素一致**（验收 A4）；
+            //    启用轮换时这里就是**唯一**的推进时机（不引入任何后台定时）。
+            String key = WallpaperPrefs.effectiveSoftLockPath(getContext());
             if (bgKey == null || !bgKey.equals(key)) {
                 bgKey = key;
                 bg = loadBg((int) w, (int) h);
@@ -234,10 +232,7 @@ final class LockOverlay {
             }
             // 自选图片：centerCrop 铺满全屏，半透明白层**只盖输入面板那一块**
             // （面板外不再压白纱 ⇒ 壁纸保持原样清晰；4 个点与键盘都落在面板内，可读性不受影响）
-            float sc = Math.max(w / bg.getWidth(), h / bg.getHeight());
-            float dw = bg.getWidth() * sc, dh = bg.getHeight() * sc;
-            float left = (w - dw) / 2f, top = (h - dh) / 2f;
-            c.drawBitmap(bg, null, new RectF(left, top, left + dw, top + dh), p);
+            BgImageUtil.drawCenterCrop(c, bg, w, h, p);
             p.setStyle(Paint.Style.FILL);
             p.setColor(PANEL_VEIL);
             c.drawRect(PANEL_MARGIN_H, PANEL_MARGIN_V,
@@ -247,73 +242,14 @@ final class LockOverlay {
         /**
          * 载入背景图（TASK-022-R1：改为「固定路径」）。
          *
-         * <p>优先按文件路径读（{@link LockPrefs#resolveBgFile}，含多目录与私有目录兜底）；
-         * 历史 {@code content://} URI 仍兼容。任何失败一律返回 {@code null} ⇒ 回退浅色网点。
+         * <p>🆕 TASK-075：实现已**搬到** {@link BgImageUtil#load}（软锁与墨台共用）；
+         * 本方法只做委托，**解码/兜底行为逐字节不变**。
+         *
+         * <p>🆕 TASK-078：路径不再自己读 `LockPrefs`，而是用**上面刚算好的 `bgKey`**
+         * （= `WallpaperPrefs.effectiveSoftLockPath()`）—— 保证"判缓存用的路径"与"真加载的路径"**同一份**。
          */
         private Bitmap loadBg(int w, int h) {
-            try {
-                File f = LockPrefs.resolveBgFile(getContext());
-                if (f != null) {
-                    Bitmap bm = decodeFile(f, w, h);
-                    if (bm != null) return bm;
-                }
-                String s = LockPrefs.getBgPath(getContext());
-                if (s.startsWith("content://")) {
-                    return decodeUri(Uri.parse(s), w, h);
-                }
-            } catch (Throwable t) {
-                // 读不出来就退回默认底，绝不因此弹不出锁屏
-            }
-            return null;
-        }
-
-        private Bitmap decodeFile(File f, int w, int h) {
-            try {
-                BitmapFactory.Options bounds = new BitmapFactory.Options();
-                bounds.inJustDecodeBounds = true;
-                InputStream in = new FileInputStream(f);
-                BitmapFactory.decodeStream(in, null, bounds);
-                in.close();
-                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null;
-                BitmapFactory.Options opt = new BitmapFactory.Options();
-                opt.inSampleSize = sampleFor(bounds.outWidth, bounds.outHeight, w, h);
-                InputStream in2 = new FileInputStream(f);
-                Bitmap bm = BitmapFactory.decodeStream(in2, null, opt);
-                in2.close();
-                return bm;
-            } catch (Throwable t) {
-                return null;
-            }
-        }
-
-        private Bitmap decodeUri(Uri u, int w, int h) {
-            try {
-                BitmapFactory.Options bounds = new BitmapFactory.Options();
-                bounds.inJustDecodeBounds = true;
-                InputStream in = getContext().getContentResolver().openInputStream(u);
-                if (in == null) return null;
-                BitmapFactory.decodeStream(in, null, bounds);
-                in.close();
-                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null;
-                BitmapFactory.Options opt = new BitmapFactory.Options();
-                opt.inSampleSize = sampleFor(bounds.outWidth, bounds.outHeight, w, h);
-                InputStream in2 = getContext().getContentResolver().openInputStream(u);
-                if (in2 == null) return null;
-                Bitmap bm = BitmapFactory.decodeStream(in2, null, opt);
-                in2.close();
-                return bm;
-            } catch (Throwable t) {
-                return null;
-            }
-        }
-
-        /** 两遍解码的公共一步：按目标尺寸算 2 的幂采样率，避免整张大图进内存。 */
-        private int sampleFor(int ow, int oh, int w, int h) {
-            int sample = 1;
-            while (ow / (sample * 2) >= w && oh / (sample * 2) >= h) {
-                sample *= 2;
-            }
-            return sample;
+            return BgImageUtil.load(getContext(), bgKey, w, h);
         }
 
         private void drawTitle(Canvas c, float w, float h) {

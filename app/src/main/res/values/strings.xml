@@ -29,6 +29,19 @@
     <string name="nav_book">本书</string>
     <string name="nav_note">本记</string>
     <string name="nav_insight">洞察</string>
+    <!-- 🆕 TASK-075：「墨台」桌面呼出页（第三全屏覆盖窗）-->
+    <string name="desk_title">墨台</string>
+    <string name="desk_back">‹ 返回</string>
+    <string name="desk_empty">暂无内容</string>
+    <!-- 🆕 TASK-076：设置页「墨台」分区（总开关 / 内容模块开关+调序 / 背景）-->
+    <string name="label_desk_group">墨台</string>
+    <string name="label_desk_enabled">启用墨台</string>
+    <string name="label_desk_modules">内容模块</string>
+    <string name="label_desk_modules_tip">勾选决定是否显示；↑ ↓ 调整顺序。顺序即墨台自上而下的顺序，关掉的模块不占高度。</string>
+    <string name="label_desk_bg">背景</string>
+    <string name="hint_desk_bg">背景图路径（留空 = 浅色网点）</string>
+    <string name="label_desk_veil">白纱不透明度</string>
+    <string name="label_desk_bg_tip">白纱越白、背景越淡。背景图需可读权限，读不到时自动回退浅色网点。</string>
     <!-- TASK-048：原 `insight_placeholder`（"洞察页（开发中）…"）已随占位 TextView 一并删除 ——
          洞察页改为 InsightPageView 自绘（分区标题/空态文案按本项目惯例硬编码在渲染器里，
          与 CardRenderer 一致），此处不再需要该字符串。 -->
@@ -358,6 +371,66 @@
     <string name="power_battery_opt_tip">系统的深度省电可能限制后台，导致卡片 / 遥控被掐断。到这个页面把「微读墨记」设为「不优化」，能保住它。</string>
     <string name="power_battery_opt_failed">本机打不开这个系统页面</string>
     <string name="power_write_failed">写入失败：可能还没授权，或本机系统不允许改这一项。</string>
+
+    <!-- 🆕 TASK-079（V1.3.0-Beta）：实验室 · 壁纸管家（图片池 · 轮换 · 应用范围 · 生成账单壁纸 · 当前生效）。
+         数据层 = TASK-078（core/WallpaperPrefs）；渲染 = feature/BillWallpaper。
+         🔴 文案硬约束（卡面 R4）：只描述**已验证能力** —— 这里是「应用级软锁」的底图，
+            ⛔ 绝不写成「系统壁纸 / 待机图」；屏保（Daydream）未验证 ⇒ 明确写"未验证、暂不可选"。 -->
+    <string name="lab_tab_wallpaper">壁纸管家</string>
+    <string name="wall_intro">把本机图片收进「图片池」，软锁背景就能按天数换成池里的图；也能把阅读账单渲染成一张壁纸存进池里。图片会复制进 App 私有目录，之后删掉原图不影响已收的图。</string>
+
+    <!-- ① 图片池 -->
+    <string name="wall_pool_label">图片池</string>
+    <string name="wall_src_hint">图片路径（如 Pictures/背景.jpg，也可填绝对路径）</string>
+    <string name="wall_btn_add">收图</string>
+    <string name="wall_btn_clear">清空图片池</string>
+    <string name="wall_pool_fmt">图片池：%1$d 张</string>
+    <string name="wall_pool_list_prefix">已收：</string>
+    <string name="wall_pool_more_fmt"> 等 %1$d 张</string>
+    <string name="wall_add_ok">已收进图片池</string>
+    <string name="wall_add_fail">收图失败：这个路径读不到文件（相对路径按共享存储根解析）</string>
+    <string name="wall_add_need_path">先填一个图片路径</string>
+    <string name="wall_clear_done_fmt">已清空：删掉 %1$d 张（轮换开关与范围不受影响）</string>
+
+    <!-- ② 轮换 -->
+    <string name="wall_rot_label">轮换</string>
+    <string name="wall_rot_enable">启用轮换</string>
+    <string name="wall_rot_interval_hint">间隔</string>
+    <string name="wall_rot_interval_suffix">天换一张</string>
+    <string name="wall_rot_status_off">轮换：关</string>
+    <string name="wall_rot_status_on">轮换：开 · 每 %1$d 天换一张 · %2$s</string>
+    <string name="wall_rot_not_softlock">（软锁未启用：当前范围不含软锁）</string>
+    <string name="wall_rot_need_pool">（图片池不足 2 张，暂不会换）</string>
+
+    <!-- ③ 应用范围 -->
+    <string name="wall_scope_label">应用范围</string>
+    <string name="wall_scope_soft">仅软锁</string>
+    <string name="wall_scope_dream">仅屏保</string>
+    <string name="wall_scope_both">两者</string>
+    <string name="wall_scope_tip">「屏保（Daydream）」还没验证，本版只有「仅软锁」真的生效 —— 另两项先置灰，免得以为是已经在屏保上生效了。</string>
+
+    <!-- ④ 生成账单壁纸 -->
+    <string name="wall_bill_label">生成账单壁纸</string>
+    <string name="wall_bill_week">周</string>
+    <string name="wall_bill_month">月</string>
+    <string name="wall_bill_older">‹ 更早</string>
+    <string name="wall_bill_newer">更晚 ›</string>
+    <string name="wall_bill_none">该周期还没有账单</string>
+    <string name="wall_bill_pick_fmt">%1$s\n%2$s</string>
+    <string name="wall_bill_hint_none">还没生成过这个周期的账单。去墨台的「阅读账单」看一眼（它会自动生成本期账单），或先在设置里刷新一次数据。</string>
+    <string name="wall_btn_gen">生成并存入图片池</string>
+    <string name="wall_gen_running">正在生成…（后台渲染，界面不会卡住）</string>
+    <string name="wall_gen_ok_fmt">已生成并存进图片池：%1$s</string>
+    <string name="wall_gen_fail">生成失败：这一期账单可能读不出来，换一期再试</string>
+
+    <!-- ⑤ 当前生效 -->
+    <string name="wall_eff_label">当前生效</string>
+    <string name="wall_eff_none">软锁背景：未设置（唤醒时是浅色网点）</string>
+    <string name="wall_eff_fmt">软锁背景：%1$s</string>
+    <string name="wall_btn_apply">把当前壁纸设为软锁背景</string>
+    <string name="wall_apply_none">图片池是空的，先收一张图或生成一张账单壁纸</string>
+    <string name="wall_apply_ok">已设为软锁背景（下一次唤醒软锁时生效）</string>
+    <string name="wall_note">如实说明：这里改的是「应用级软锁」的底图，不是系统壁纸 / 待机图。系统级屏保（Daydream）还没做，见后续版本。</string>
 
     <!-- ══════════ TASK-024：待办（APP 页 + 桌面卡片）V1.0.3-beta ══════════ -->
     <string name="todo_tab_pending">待办列表</string>

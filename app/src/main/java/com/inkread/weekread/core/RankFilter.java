@@ -40,8 +40,22 @@ public final class RankFilter {
      * @return 过滤后的**新列表**（顺序不变）；开关关 / 无清单 / 入参空 ⇒ 返回 {@code src} 本身
      */
     public static List<PeriodStats.Longest> apply(Context c, List<PeriodStats.Longest> src) {
+        return apply(c, src, c != null && CardPrefs.isRankShelfOnly(c));
+    }
+
+    /**
+     * 🆕 TASK-077：**显式给"是否只统计书架"开关**的重载。
+     *
+     * <p>为什么需要它：阅读账单的「去除不在书架的书」（{@link MenuPrefs#dropOffShelf}）是
+     * **独立于**「书籍排名只统计书架」（{@link CardPrefs#isRankShelfOnly}）的另一项用户配置 ⇒
+     * 不能借后者当开关；**但过滤实现必须只有一份**（`shelfIds` 缺失 ⇒ 不过滤的口径、
+     * 以及"空 bookId 一律保留"的判据都在这儿）⇒ 于是把开关值交给调用方传。
+     *
+     * @param shelfOnly true = 启用过滤；false ⇒ 与开关关闭完全等价（原样返回）
+     */
+    public static List<PeriodStats.Longest> apply(Context c, List<PeriodStats.Longest> src, boolean shelfOnly) {
         if (src == null || src.isEmpty()) return src;
-        if (c == null || !CardPrefs.isRankShelfOnly(c)) return src;   // ① 开关关 ⇒ 零差异
+        if (c == null || !shelfOnly) return src;                      // ① 开关关 ⇒ 零差异
         Set<String> ids = BookStore.shelfIds(c);
         if (ids == null) return src;                                  // ② 无全量书架 ⇒ 回退不过滤（等补拉）
 

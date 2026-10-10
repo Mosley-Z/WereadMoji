@@ -2,17 +2,24 @@ package com.inkread.weekread.shell;
 
 import com.inkread.weekread.R;
 import com.inkread.weekread.a11y.CardA11yService;
+import com.inkread.weekread.core.BillScheduler;
+import com.inkread.weekread.core.BillStore;
 import com.inkread.weekread.core.BookStats;
 import com.inkread.weekread.core.BookStore;
 import com.inkread.weekread.core.CardDebug;
 import com.inkread.weekread.core.CardPrefs;
 import com.inkread.weekread.core.CoverStore;
 import com.inkread.weekread.core.FeatureGate;
+import com.inkread.weekread.core.LockPrefs;
+import com.inkread.weekread.core.MenuPrefs;
+import com.inkread.weekread.core.NavExtra;
 import com.inkread.weekread.core.NoteStats;
 import com.inkread.weekread.core.NoteStore;
+import com.inkread.weekread.core.PagePrefs;
 import com.inkread.weekread.core.PeriodRange;
 import com.inkread.weekread.core.PeriodStats;
 import com.inkread.weekread.core.StatsStore;
+import com.inkread.weekread.core.WallpaperPrefs;
 import com.inkread.weekread.feature.BookPickView;
 import com.inkread.weekread.feature.InsightPageView;
 import com.inkread.weekread.feature.NoteExport;
@@ -36,6 +43,8 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
+
+import java.io.File;
 
 /**
  * 「微读墨记」主页。
@@ -200,9 +209,255 @@ public class MainActivity extends Activity {
             //    那一瞬的阅读器 UI 无副作用（全新安装还没有 Key，refresh() 直接空转）。
             setupReaderUi();
             askInstallRole();
+            maybeDeskForDebug();     // 🔴 TASK-075 临时入口（TASK-080 落真触发端后回收）
             return;
         }
         enterApp();
+        applyNavExtra(getIntent());  // 🆕 TASK-079：跨包深链（须在临时调试钩子之前，深链优先）
+        maybeDeskForDebug();         // 🔴 TASK-075 临时入口（TASK-080 落真触发端后回收）
+    }
+
+    /**
+     * 🔴 **TASK-075 自测临时**（TASK-080 回收）：已在最前时 `am start` 走这条，
+     * 让调试 extra 可重复驱动（不必每次重建 Activity）。
+     */
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        applyNavExtra(intent);       // 🆕 TASK-079：深链（同一 Activity 复用时走这条）
+        maybeDeskForDebug();
+    }
+
+    /**
+     * 🆕 TASK-079：处理**跨包深链** —— 目前只有一条：墨台「壁纸管家 → 管理」，
+     * 期望「打开大标签③ 实验室 + 切到壁纸管家子标签」（定稿设计 §5.5）。
+     *
+     * <p>🔴 键名走 {@link NavExtra}（{@code core}）：发起方在 {@code a11y}，本类在 {@code shell}，
+     * 两边都只依赖 {@code core} ⇒ 不会形成反向依赖。未知 {@code lab_sub} 值**静默忽略**
+     * （只定位到实验室页，不乱跳）。
+     */
+    private void applyNavExtra(Intent it) {
+        if (it == null) return;
+        String sub = it.getStringExtra(NavExtra.LAB_SUB);
+        if (sub == null || sub.length() == 0) return;
+        if (!FeatureGate.labVisible(this) || labCtrl == null) {
+            CardDebug.note(this, "深链实验室被拒：本形态实验室不可见（sub=" + sub + "）");
+            return;
+        }
+        showMainPage(MP_LAB);
+        if (NavExtra.LAB_SUB_WALLPAPER.equals(sub)) {
+            boolean ok = labCtrl.selectLabPage(R.id.page_lab_wallpaper);
+            CardDebug.note(this, "深链实验室·壁纸管家 " + (ok ? "OK" : "FAIL(子标签未装配)"));
+        }
+    }
+
+    /**
+     * 🔴 **TASK-075/076 自测临时入口**（TASK-080 落"卡片左上角按钮"真触发端后**回收**）。
+     *
+     * <p>不产生任何 UI、不改布局 —— 只读启动 Intent 的调试 extra（adb 驱动）：
+     * <ul>
+     *   <li>{@code --ez wb_desk true} ⇒ 呼出墨台；{@code --ez wb_desk_hide true} ⇒ 关闭墨台</li>
+     *   <li>{@code --es wb_desk_bg <路径>} ⇒ 先落盘墨台背景路径（验证 A2 自选图）</li>
+     *   <li>{@code --ei wb_desk_veil <0..100>} ⇒ 落盘白纱不透明度</li>
+     *   <li>🆕 TASK-076：{@code --ez wb_desk_enabled <bool>} / {@code --ei wb_desk_on_mask <int>} /
+     *       {@code --es wb_desk_order <csv>} ⇒ 直接落盘模块总开关 / 开启掩码 / 顺序表
+     *       （本卡验「顺序即渲染序、关掉不占高」用；这些键将来由设置页「墨台」分区负责）</li>
+     * </ul>
+     * 例：{@code adb shell am start -n com.inkread.weekread/.shell.MainActivity --ez wb_desk true}
+     */
+    private void maybeDeskForDebug() {
+        Intent it = getIntent();
+        if (it == null) return;
+        if (it.hasExtra("wb_desk_bg")) {
+            PagePrefs.setDeskBgPath(this, it.getStringExtra("wb_desk_bg"));
+        }
+        if (it.hasExtra("wb_desk_veil")) {
+            PagePrefs.setDeskBgVeil(this, it.getIntExtra("wb_desk_veil", PagePrefs.DEFAULT_BG_VEIL));
+        }
+        // 🔴 TASK-076 临时：直接落盘模块配置（设置页「墨台」分区落码后由 UI 负责）
+        if (it.hasExtra("wb_desk_enabled")) {
+            PagePrefs.setDeskEnabled(this, it.getBooleanExtra("wb_desk_enabled", true));
+        }
+        if (it.hasExtra("wb_desk_on_mask")) {
+            PagePrefs.setDeskOnMask(this, it.getIntExtra("wb_desk_on_mask", PagePrefs.DEFAULT_ON_MASK));
+        }
+        if (it.hasExtra("wb_desk_order")) {
+            String csv = it.getStringExtra("wb_desk_order");
+            PagePrefs.setDeskOrder(this, csv == null ? null : csv.split(","));
+        }
+        // 🔴 TASK-077 临时：直接落盘「阅读账单」的配置（13 项 + 视图/备注两个内部状态），
+        //    并可**强制重建全部账单**。理由：设置页入口**不在本卡范围**
+        //   （`tasks/TASK-077` §涉及文件未列 `SettingsPageController`）⇒ A7/A8/A9/空态/备注
+        //    这几项只能靠这里驱动。TASK-080 回收临时钩子时连同本段一并删除。
+        if (it.hasExtra("wb_menu")) {
+            applyMenuDebug(it.getStringExtra("wb_menu"));
+        }
+        if (it.getBooleanExtra("wb_bill_regen", false)) {
+            BillStore.clear(this);                     // 只清账单段（不动 api_key / 统计缓存）
+            BillScheduler.ensureBills(this);           // 立刻按当前配置重建
+        }
+        // 🔴 TASK-078 临时：壁纸管家的**夹具 + 状态探针**（TASK-080 回收临时钩子时一并删除）。
+        //    理由：壁纸池的"收图"入口在 TASK-079（实验室子标签）；本卡验 A1/A2/A3/A5 只能从这里驱动。
+        //    收图源必须是**本进程可读**的路径（推荐先 run-as 推到自己 files/ 下再传绝对路径）。
+        applyWallDebug(it);
+        // 🔴 TASK-075 临时：模拟"从桌面呼出"——先 finish 本页（ownUi→false），再延后呼出墨台；
+        //    TASK-080 落真触发端后连同本整段一并回收。
+        if (it.getBooleanExtra("wb_desk_late", false)) {
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    CardA11yService.showDesk();
+                }
+            }, 1200);
+            finish();
+            return;
+        }
+        if (it.getBooleanExtra("wb_desk_hide", false)) {
+            CardA11yService.hideDesk();
+        } else if (it.getBooleanExtra("wb_desk", false)) {
+            CardA11yService.showDesk();
+        }
+    }
+
+    /**
+     * 🔴 **TASK-077 临时钩子**（TASK-080 回收）—— 把 `k=v;k=v` 落进 {@code MenuPrefs}。
+     *
+     * <p>支持键：{@code title / unit / top_n / min_min / drop_shelf / note_src / excerpt /
+     * show_author / show_duration / show_progress / footer / blocks / title_serif / body_mono /
+     * fs_title / fs_body / fs_serial / empty / view / footer_note / book_note}。
+     * 未知键静默忽略（验收脚本写错不该把 App 弄崩）。
+     */
+    private void applyMenuDebug(String spec) {
+        if (spec == null || spec.length() == 0) return;
+        String[] kvs = spec.split(";");
+        for (int i = 0; i < kvs.length; i++) {
+            String kv = kvs[i];
+            int eq = kv.indexOf('=');
+            if (eq <= 0) continue;
+            String k = kv.substring(0, eq).trim();
+            String v = kv.substring(eq + 1).trim();
+            if ("title".equals(k))              MenuPrefs.setTitle(this, v);
+            else if ("unit".equals(k))          MenuPrefs.setUnit(this, v);
+            else if ("top_n".equals(k))         MenuPrefs.setTopN(this, dInt(v, 5));
+            else if ("min_min".equals(k))       MenuPrefs.setMinMinutes(this, dInt(v, 0));
+            else if ("drop_shelf".equals(k))    MenuPrefs.setDropOffShelf(this, dBool(v));
+            else if ("note_src".equals(k))      MenuPrefs.setNoteSrc(this, v);
+            else if ("excerpt".equals(k))       MenuPrefs.setExcerptMode(this, v);
+            else if ("show_author".equals(k))   MenuPrefs.setShowAuthor(this, dBool(v));
+            else if ("show_duration".equals(k)) MenuPrefs.setShowDuration(this, dBool(v));
+            else if ("show_progress".equals(k)) MenuPrefs.setShowProgress(this, dBool(v));
+            else if ("footer".equals(k))        MenuPrefs.setFooter(this, v);
+            else if ("blocks".equals(k))        MenuPrefs.setBlocks(this, dInt(v, MenuPrefs.BLOCK_ALL));
+            else if ("title_serif".equals(k))   MenuPrefs.setTitleSerif(this, dBool(v));
+            else if ("body_mono".equals(k))     MenuPrefs.setBodyMono(this, dBool(v));
+            else if ("fs_title".equals(k))      MenuPrefs.setFsTitle(this, dInt(v, 1));
+            else if ("fs_body".equals(k))       MenuPrefs.setFsBody(this, dInt(v, 1));
+            else if ("fs_serial".equals(k))     MenuPrefs.setFsSerial(this, dInt(v, 1));
+            else if ("empty".equals(k))         MenuPrefs.setEmptyAction(this, v);
+            else if ("view".equals(k))          MenuPrefs.setView(this, dInt(v, 0));
+            else if ("footer_note".equals(k))   MenuPrefs.setFooterNote(this, v);
+            else if ("book_note".equals(k)) {
+                int c2 = v.indexOf(':');        // `book_note=<bookId>:<备注>`
+                if (c2 > 0) MenuPrefs.setNoteOf(this, v.substring(0, c2), v.substring(c2 + 1));
+            }
+        }
+    }
+
+    private static int dInt(String s, int def) {
+        try { return Integer.parseInt(s.trim()); } catch (Exception e) { return def; }
+    }
+    private static boolean dBool(String s) {
+        return "1".equals(s) || "true".equalsIgnoreCase(s) || "on".equalsIgnoreCase(s);
+    }
+
+    /**
+     * 🔴 **TASK-078 临时钩子**（TASK-080 回收）—— 壁纸管家的夹具 + 状态探针。
+     *
+     * <p>支持键（全部可选）：
+     * <ul>
+     *   <li>{@code --es wb_wall_add <绝对路径>} ⇒ 收图进池（源须本进程可读；重复调用同一源**不会重复收**）</li>
+     *   <li>{@code --ei wb_wall_interval <天>} ⇒ 轮换间隔（&le;0 = 关）</li>
+     *   <li>{@code --es wb_wall_scope <soft-lock|dream|both>} ⇒ 应用范围</li>
+     *   <li>{@code --ei wb_wall_index <n>} ⇒ 当前序号</li>
+     *   <li>{@code --es wb_wall_last <yyyy-MM-dd>} ⇒ 上次轮换日期（验幂等时把日期改成"昨天"）</li>
+     *   <li>{@code --ez wb_wall_rotate true} ⇒ 立即换一张</li>
+     *   <li>{@code --ez wb_wall_clear true} ⇒ 清空池（不动间隔 / 范围）</li>
+     *   <li>{@code --ez wb_wall_dump true} ⇒ 把当前状态写进 {@code card_debug.log}（免 run-as）</li>
+     *   <li>{@code --ez wb_wall_effective true} ⇒ **显式触发一次** {@code effectiveSoftLockPath}
+     *       （= 软锁取背景时的同一入口）并把返回值写进日志 —— 用于验 A2 幂等 / A3 循环而不必真出软锁</li>
+     *   <li>{@code --es wb_lock_bg <路径>} ⇒ 落盘软锁背景路径（A4 像素对照的"底图"）</li>
+     *   <li>{@code --es wb_lock_pin <4位>} ⇒ 启用软锁并设密码（**亮屏才会弹软锁** ⇒ A4 对照用）；
+     *       {@code --ez wb_lock_off true} ⇒ 关软锁并清密码（**收尾必调**）</li>
+     * </ul>
+     */
+    private void applyWallDebug(Intent it) {
+        try {
+            if (it.hasExtra("wb_lock_pin")) {
+                String pin = it.getStringExtra("wb_lock_pin");
+                boolean ok = LockPrefs.setPin(this, pin);
+                LockPrefs.setEnabled(this, true);
+                CardDebug.note(this, "wall: lock enable pin set=" + ok + " active=" + LockPrefs.isActive(this));
+            }
+            if (it.hasExtra("wb_lock_off") && it.getBooleanExtra("wb_lock_off", false)) {
+                LockPrefs.setEnabled(this, false);
+                LockPrefs.clearPin(this);
+                LockPrefs.clearBg(this);            // 连背景路径一并清 ⇒ 键都不留（收尾还原用）
+                CardDebug.note(this, "wall: lock disabled active=" + LockPrefs.isActive(this)
+                        + " bg=" + LockPrefs.getBgPath(this));
+            }
+            if (it.hasExtra("wb_lock_bg")) {
+                LockPrefs.setBgPath(this, it.getStringExtra("wb_lock_bg"));
+                CardDebug.note(this, "wall: lock bg=" + it.getStringExtra("wb_lock_bg"));
+            }
+            if (it.hasExtra("wb_wall_clear") && it.getBooleanExtra("wb_wall_clear", false)) {
+                int n = WallpaperPrefs.clear(this);
+                CardDebug.note(this, "wall: clear 删除 " + n + " 张");
+            }
+            if (it.hasExtra("wb_wall_add")) {
+                String p = it.getStringExtra("wb_wall_add");
+                boolean ok = WallpaperPrefs.add(this, p);
+                CardDebug.note(this, "wall: add " + (ok ? "OK" : "FAIL") + " src=" + p);
+            }
+            if (it.hasExtra("wb_wall_interval")) {
+                WallpaperPrefs.setIntervalDays(this, it.getIntExtra("wb_wall_interval", WallpaperPrefs.DEFAULT_INTERVAL));
+            }
+            if (it.hasExtra("wb_wall_scope")) {
+                WallpaperPrefs.setScope(this, it.getStringExtra("wb_wall_scope"));
+            }
+            if (it.hasExtra("wb_wall_index")) {
+                WallpaperPrefs.setIndex(this, it.getIntExtra("wb_wall_index", 0));
+            }
+            if (it.hasExtra("wb_wall_last")) {
+                WallpaperPrefs.setLastDate(this, it.getStringExtra("wb_wall_last"));
+            }
+            if (it.hasExtra("wb_wall_rotate") && it.getBooleanExtra("wb_wall_rotate", false)) {
+                WallpaperPrefs.rotateNow(this);
+            }
+            if (it.hasExtra("wb_wall_dump") && it.getBooleanExtra("wb_wall_dump", false)) {
+                java.util.List<String> p = WallpaperPrefs.pool(this);
+                CardDebug.note(this, "wall: dump n=" + p.size()
+                        + " index=" + WallpaperPrefs.index(this)
+                        + " interval=" + WallpaperPrefs.intervalDays(this)
+                        + " scope=" + WallpaperPrefs.scope(this)
+                        + " last=" + WallpaperPrefs.lastDate(this));
+                for (int i = 0; i < p.size(); i++) {
+                    File f = new File(p.get(i));
+                    CardDebug.note(this, "wall:   [" + i + "] " + p.get(i) + " bytes=" + f.length());
+                }
+            }
+            if (it.hasExtra("wb_wall_effective") && it.getBooleanExtra("wb_wall_effective", false)) {
+                String eff = WallpaperPrefs.effectiveSoftLockPath(this);
+                String base = LockPrefs.getBgPath(this);
+                CardDebug.note(this, "wall: effective=" + eff
+                        + "  base=" + base
+                        + "  same=" + (eff == null ? base == null : eff.equals(base))
+                        + "  index=" + WallpaperPrefs.index(this)
+                        + "  last=" + WallpaperPrefs.lastDate(this));
+            }
+        } catch (Throwable t) {
+            CardDebug.note(this, "wall: debug 钩子异常 " + t);
+        }
     }
 
     /**
@@ -1103,6 +1358,14 @@ public class MainActivity extends Activity {
         // 🆕 TASK-057：手机端形态下卡片相关的 UI 全隐 ⇒ 选书弹层一并收起（不留可见残影）
         findViewById(R.id.note_pick).setVisibility(View.GONE);
         findViewById(R.id.book_pick).setVisibility(View.GONE);        // 🆕 TASK-069
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        // 🆕 TASK-077：账单**幂等补齐**（后台线程；已有账单不重算、缺的期补上，不写假账）。
+        //    与 `CardA11yService.onServiceConnected` 各调一次 —— 谁先谁生效，重复无害。
+        BillScheduler.ensureBills(this);
     }
 
     @Override

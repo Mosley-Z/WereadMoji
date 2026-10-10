@@ -5,6 +5,7 @@ import com.inkread.weekread.a11y.CardA11yService;
 import com.inkread.weekread.core.AchievementPrefs;
 import com.inkread.weekread.core.CardPrefs;
 import com.inkread.weekread.core.FeatureGate;
+import com.inkread.weekread.core.PagePrefs;
 import com.inkread.weekread.core.StatsStore;
 import com.inkread.weekread.feature.NoteExport;
 import com.inkread.weekread.feature.WeekCardView;
@@ -17,15 +18,18 @@ import android.app.Activity;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
+import android.content.res.ColorStateList;
 import android.provider.Settings;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
 import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.SeekBar;
@@ -135,6 +139,18 @@ public class SettingsPageController {
 
     /** 初始化页 ⓪「本机角色」单选组（阅读器端 / 手机端）。 */
     private RadioGroup rgInstallRole;
+
+    // ── 🆕 TASK-076：自定义页「墨台」分区（总开关 / 内容模块开关+调序 / 背景）──
+    //   🔴 7 行模块行是**按 PagePrefs 注册表动态装配**的（不是 XML 硬编码 7 行）：
+    //      顺序会变、以后还会加模块，写死 7 行等于把注册表抄一遍 ⇒ 必漂。
+    private View sectionDesk;
+    private CheckBox cbDeskEnabled;
+    private EditText etDeskBgPath;
+    private TextView tvDeskVeil;
+    private SeekBar sbDeskVeil;
+    private LinearLayout llDeskRows;
+    /** 防回环：以代码回填 UI（refreshDeskUi / buildDeskRows）时抑制监听器落盘。 */
+    private boolean mDeskSyncing = false;
 
     // ── v0.5.0 更新区状态机 ──
     // 一个按钮走完全程（检查 → 下载并安装 → 下载中 xx%），按钮文字始终说明「下一步会发生什么」。
@@ -634,6 +650,173 @@ public class SettingsPageController {
                 Toast.makeText(host, R.string.install_role_changed, Toast.LENGTH_LONG).show();
             }
         });
+
+        // ── 🆕 TASK-076：自定义页「墨台」分区 ──
+        bindDesk();
+    }
+
+    // ══════════════════════ 🆕 TASK-076：「墨台」分区 ══════════════════════
+
+    /**
+     * 装配「墨台」分区：总开关 + 动态 7 行（勾选 + ↑↓ 调序）+ 背景（路径 / 白纱）。
+     *
+     * <p>🔴 **空安全**：手机端 `settings_layout.xml` 与阅读器端 `page_settings.xml` 都 include 了
+     * {@code inc_desk}，但将来若某端不带本分区，这里必须静默跳过（本项目已有 `cbRankShelfOnly`
+     * 因控件缺失而 NPE 的前车之鉴 —— 见本方法末尾那段注释的出处）。
+     */
+    private void bindDesk() {
+        sectionDesk = host.findViewById(R.id.section_desk);
+        if (sectionDesk == null) return;                 // 本布局无「墨台」分区 ⇒ 静默
+        cbDeskEnabled = (CheckBox) host.findViewById(R.id.cb_desk_enabled);
+        etDeskBgPath = (EditText) host.findViewById(R.id.et_desk_bg_path);
+        tvDeskVeil = (TextView) host.findViewById(R.id.tv_desk_veil);
+        sbDeskVeil = (SeekBar) host.findViewById(R.id.sb_desk_veil);
+        llDeskRows = (LinearLayout) host.findViewById(R.id.ll_desk_rows);
+
+        cbDeskEnabled.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                if (mDeskSyncing) return;
+                PagePrefs.setDeskEnabled(host, checked);
+            }
+        });
+
+        // 背景图路径：随敲随存（与锁屏子页「载入」按钮不同 —— 这里没有"加载预览"动作，
+        //   墨台下次呼出才会重读；路径无效时渲染侧静默回退浅色网点，不会报错）。
+        etDeskBgPath.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) { }
+            @Override public void afterTextChanged(Editable s) {
+                if (mDeskSyncing) return;
+                PagePrefs.setDeskBgPath(host, s == null ? "" : s.toString().trim());
+            }
+        });
+
+        sbDeskVeil.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onStartTrackingTouch(SeekBar sb) { }
+            @Override public void onStopTrackingTouch(SeekBar sb) { }
+            @Override
+            public void onProgressChanged(SeekBar sb, int progress, boolean fromUser) {
+                if (tvDeskVeil != null) tvDeskVeil.setText(veilLabel(progress));
+                if (mDeskSyncing || !fromUser) return;
+                PagePrefs.setDeskBgVeil(host, progress);
+            }
+        });
+
+        buildDeskRows();
+        refreshDeskUi();
+    }
+
+    /** 「白纱不透明度 · 90%」。 */
+    private String veilLabel(int pct) {
+        return host.getString(R.string.label_desk_veil) + " · " + pct + "%";
+    }
+
+    /**
+     * 按 {@code PagePrefs.getDeskOrder} 重建 7 行（每行 = `↑` `↓` + 模块复选）。
+     *
+     * <p>🔴 **顺序即渲染顺序** ⇒ 调序后**必须整段重建**（不是换文字）：行的位置就是顺序本身。
+     * 🔴 行内的 ↑ / ↓ 在**顶/底**时会被 {@code PagePrefs.moveModule} 返回 false ⇒ 不动、不重建。
+     */
+    private void buildDeskRows() {
+        if (llDeskRows == null) return;
+        llDeskRows.removeAllViews();
+        final String[] order = PagePrefs.getDeskOrder(host);
+        final int sideW = dp(42f);
+        for (int i = 0; i < order.length; i++) {
+            final String id = order[i];
+            LinearLayout row = new LinearLayout(host);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+
+            Button up = arrowButton("↑");
+            Button down = arrowButton("↓");
+
+            CheckBox cb = new CheckBox(host);
+            cb.setText(PagePrefs.moduleName(id));
+            cb.setTextColor(0xFF000000);
+            cb.setTextSize(14f);
+            cb.setButtonTintList(ColorStateList.valueOf(0xFF000000));
+            cb.setTag(id);
+            cb.setChecked(PagePrefs.isModuleOn(host, id));
+            cb.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+                @Override
+                public void onCheckedChanged(CompoundButton b, boolean checked) {
+                    if (mDeskSyncing) return;
+                    PagePrefs.setModuleOn(host, id, checked);
+                }
+            });
+
+            up.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) {
+                    if (PagePrefs.moveModule(host, id, -1)) buildDeskRows();
+                }
+            });
+            down.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) {
+                    if (PagePrefs.moveModule(host, id, +1)) buildDeskRows();
+                }
+            });
+
+            row.addView(up, new LinearLayout.LayoutParams(sideW, ViewGroup.LayoutParams.WRAP_CONTENT));
+            row.addView(down, new LinearLayout.LayoutParams(sideW, ViewGroup.LayoutParams.WRAP_CONTENT));
+            row.addView(cb, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            llDeskRows.addView(row);
+        }
+    }
+
+    /** 墨屏描边小按钮（↑ / ↓）—— 与 XML 里的 `btn_ink` 按钮同款。 */
+    private Button arrowButton(String text) {
+        Button b = new Button(host);
+        b.setText(text);
+        b.setTextSize(15f);
+        b.setAllCaps(false);
+        b.setBackgroundResource(R.drawable.btn_ink);
+        b.setTextColor(host.getColorStateList(R.color.btn_ink_text));
+        b.setMinWidth(0);
+        b.setMinimumWidth(0);
+        b.setMinHeight(0);
+        b.setMinimumHeight(0);
+        b.setPadding(0, 0, 0, 0);
+        return b;
+    }
+
+    private int dp(float v) {
+        return Math.round(v * host.getResources().getDisplayMetrics().density);
+    }
+
+    /**
+     * 按当前偏好回填「墨台」分区 UI（不落盘 —— 全程 {@code mDeskSyncing} 抑制监听器）。
+     *
+     * <p>调用时机：`bind()` 末尾 + {@link #refreshRoleVisibility()}（宿主 onResume / 切页时）。
+     */
+    public void refreshDeskUi() {
+        if (sectionDesk == null) return;
+        mDeskSyncing = true;
+        try {
+            if (cbDeskEnabled != null) cbDeskEnabled.setChecked(PagePrefs.isDeskEnabled(host));
+            if (etDeskBgPath != null) etDeskBgPath.setText(PagePrefs.getDeskBgPath(host));
+            int veil = PagePrefs.getDeskBgVeil(host);
+            if (sbDeskVeil != null) sbDeskVeil.setProgress(veil);
+            if (tvDeskVeil != null) tvDeskVeil.setText(veilLabel(veil));
+            if (llDeskRows != null) {
+                for (int i = 0; i < llDeskRows.getChildCount(); i++) {
+                    View rowView = llDeskRows.getChildAt(i);
+                    if (!(rowView instanceof ViewGroup)) continue;
+                    ViewGroup g = (ViewGroup) rowView;
+                    for (int k = 0; k < g.getChildCount(); k++) {
+                        View ch = g.getChildAt(k);
+                        if (!(ch instanceof CheckBox)) continue;
+                        Object tag = ch.getTag();
+                        if (tag instanceof String) {
+                            ((CheckBox) ch).setChecked(PagePrefs.isModuleOn(host, (String) tag));
+                        }
+                    }
+                }
+            }
+        } finally {
+            mDeskSyncing = false;
+        }
     }
 
     // ══════════════════════ 刷新 ══════════════════════
@@ -665,6 +848,10 @@ public class SettingsPageController {
             sectionInstallRoleInit.setVisibility(
                     FeatureGate.rolePickVisible(host) ? View.VISIBLE : View.GONE);
         }
+        // 🆕 TASK-076：「墨台」分区与「桌面卡片」同门控 —— 墨台是从**卡片**呼出的（`TASK-080` 触发端），
+        //   手机角色没有卡片 ⇒ 整块隐藏（口径与上面两处「桌面卡片」分区完全一致）。
+        if (sectionDesk != null) sectionDesk.setVisibility(cardVis);
+        refreshDeskUi();
         relocateInstallRoleBlock();
     }
 

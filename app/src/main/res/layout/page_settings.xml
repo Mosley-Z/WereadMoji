@@ -607,6 +607,10 @@
                         android:textColor="#FF3C3C3C"
                         android:textSize="13sp" />
                 </LinearLayout>
+
+                <!-- ── 🆕 TASK-076：「墨台」分区（总开关 / 内容模块开关+调序 / 背景）──
+                     与 settings_layout.xml **共用同一 include** ⇒ 两端天然同步、零漂移。 -->
+                <include layout="@layout/inc_desk" />
             </LinearLayout>
 
         </LinearLayout>
