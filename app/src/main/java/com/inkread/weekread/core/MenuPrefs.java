@@ -337,6 +337,62 @@ public final class MenuPrefs {
                 EMPTY_SKIP.equals(v) ? EMPTY_SKIP : EMPTY_PLACEHOLDER).commit();
     }
 
+    // ══════════════════════ 🆕 TASK-086 ⑭ 实付算法（三选一） ══════════════════════
+    //
+    // 用户 2026-10-10 第五轮拍板（Q3/Q4）：实付列默认 **算法 A 本期增额**；
+    // 控件放**周/月同一行**、右靠；文案 `实付算法：增额 ▾` ⇒ 点开**自绘下拉框**三选一。
+    //
+    // 🔴 只落**选择结果**这一条键；下拉框的"开/合"是**瞬时态，不落盘**（弹层不是配置）。
+    // 🔴 切换**不触发重生成账单** —— 两种算法都是渲染期纯乘除（见 `core/BillMoney`）。
+
+    private static final String K_PAID_ALGO = "menu_paid_algo";
+    /** 算法 A · 本期增额（**默认**）。 */
+    public static final String PAID_PERIOD = "period";
+    /** 算法 B · 累计进度。 */
+    public static final String PAID_CUMULATIVE = "cumulative";
+    /** 关闭：实付列整列不显示。 */
+    public static final String PAID_OFF = "off";
+
+    /** 下拉框选项顺序（= 绘制与命中同一份顺序，勿各写一套）。 */
+    public static final String[] PAID_CHOICES = { PAID_PERIOD, PAID_CUMULATIVE, PAID_OFF };
+    /** 与 {@link #PAID_CHOICES} **逐位对应**的显示名。 */
+    public static final String[] PAID_LABELS = { "增额", "累计", "关闭" };
+    /** 设置页 / 日志里的一句人话。 */
+    public static final String[] PAID_DESCS = {
+            "本期增额 · 本单这本书替我读回多少",
+            "累计进度 · 这本书我一共读回多少",
+            "关闭 · 不显示实付列",
+    };
+
+    public static String paidAlgo(Context c) {
+        String v = sp(c).getString(K_PAID_ALGO, PAID_PERIOD);
+        if (PAID_CUMULATIVE.equals(v) || PAID_OFF.equals(v)) return v;
+        return PAID_PERIOD;
+    }
+
+    public static void setPaidAlgo(Context c, String v) {
+        if (!PAID_CUMULATIVE.equals(v) && !PAID_OFF.equals(v)) v = PAID_PERIOD;
+        sp(c).edit().putString(K_PAID_ALGO, v).commit();
+    }
+
+    /** 选项下标（0/1/2）→ 取值；越界回落默认。 */
+    public static String paidAlgoAt(int idx) {
+        return (idx >= 0 && idx < PAID_CHOICES.length) ? PAID_CHOICES[idx] : PAID_PERIOD;
+    }
+
+    /** 取值 → 选项下标；认不出 ⇒ 0（默认档）。 */
+    public static int paidIndex(String algo) {
+        for (int i = 0; i < PAID_CHOICES.length; i++) {
+            if (PAID_CHOICES[i].equals(algo)) return i;
+        }
+        return 0;
+    }
+
+    /** 取值 → 显示名（`增额` / `累计` / `关闭`）。 */
+    public static String paidLabel(String algo) {
+        return PAID_LABELS[paidIndex(algo)];
+    }
+
     // ══════════════════════ 每本书长期备注（按 bookId） ══════════════════════
 
     /** 取某本书的长期备注（无 ⇒ ""）。 */

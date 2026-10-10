@@ -143,14 +143,24 @@ public final class NoteStore {
     /**
      * 索引格式版本（TASK-056 起记录）。
      *
+     * <pre>
      * v2 = 每本书多两个字段 `charCount` / `ideaChars`（字数）。
+     * v3 = 🆕 `TASK-086` 拍板④（2026-10-10）：`compactIndex()` 每本书**多留 5 个价格/进度字段**
+     *      （`centPrice` / `priceY` / `origY` / `free` / `progress`）⇒ 索引的**结构语义已变**。
+     * </pre>
      *
-     * ⚠️ **读到老版本（无 `v` / `v<2`）不强制重建** —— 缺字段按 0 读，功能不受影响；
-     * 下次正常的索引刷新（{@link #saveIndex}）会把 `charCount` 字段给每本书补齐，
+     * ⚠️ **读到老版本（无 `v` / `v<3`）不强制重建** —— 缺字段按各自的 `optInt(…, 默认值)` 读，
+     * 功能不受影响（缺价 ⇒ 该行落 {@link BillMoney#UNKNOWN} ⇒ 显示 `—`，正是卡面 §老账兼容要的形态）；
+     * 下次正常的索引刷新（{@link #saveIndex}）会把新字段给每本书补齐，
      * 已算出的字数由 {@link #carryCharCounts} 搬过来，不会清零。
      * 这样避免"升级即多发一次 `/user/notebooks`"（卡面「零新请求」的红利）。
+     *
+     * <p>🔴 **本常量目前只被写、从不被读**（写入点：{@link #saveIndex} 与
+     * {@link #writeIndexKeepCache} 的 {@code o.put("v", INDEX_VERSION)}；全仓**没有** {@code optInt("v")}
+     * 之类的版本闸）⇒ 升到 3 **不触发任何回退 / 重建分支**，老索引（v=2）靠字段级默认值 + 字数搬运容忍。
+     * 复核命令与输出见 `验证记录/201`（拍板④）。
      */
-    public static final int INDEX_VERSION = 2;
+    public static final int INDEX_VERSION = 3;
 
     // ══════════════════════ ① 索引（内存缓存 + 文件指纹）══════════════════════
 
@@ -233,6 +243,52 @@ public final class NoteStore {
 
     public static boolean indexFresh(Context c) {
         return index(c) != null && indexAge(c) <= INDEX_TTL_MS;
+    }
+
+    // ══════════════════════ 🆕 TASK-086：索引里的书价 / 进度 ══════════════════════
+
+    /**
+     * 从**本地索引**取某本书的价（**分**）。
+     *
+     * <p>🔴 索引读的是"压缩时多留的那几个字段"（见 {@link #compactIndex}）——
+     * 数据来自 `/user/notebooks`，**不发任何请求**。
+     *
+     * @return {@code > 0} 有价（分）；{@code 0} 明确免费（`free==1`）；
+     *         {@link BillMoney#UNKNOWN} = 查不到 / 老索引无字段（**未知**，不是 0 元）
+     */
+    public static int priceFenOf(Context c, String bookId) {
+        if (c == null || bookId == null || bookId.length() == 0) return BillMoney.UNKNOWN;
+        JSONArray a = index(c);
+        if (a == null) return BillMoney.UNKNOWN;
+        for (int i = 0; i < a.length(); i++) {
+            JSONObject o = a.optJSONObject(i);
+            if (o == null) continue;
+            if (!bookId.equals(o.optString("bookId", ""))) continue;
+            return BillMoney.fenOf(o.optInt("centPrice", 0), o.optDouble("priceY", 0.0),
+                    o.optInt("origY", 0), o.optInt("free", 0) == 1);
+        }
+        return BillMoney.UNKNOWN;
+    }
+
+    /**
+     * 从本地索引取某本书的**阅读进度**（`readingProgress`，0–100）。
+     *
+     * <p>用途：`/book/getprogress` 拉失败时的**兜底**（索引是上一次同步的快照，略旧但真实）。
+     *
+     * @return {@code 0..100}；查不到 / 老索引无字段 ⇒ {@code -1}
+     */
+    public static int progressOf(Context c, String bookId) {
+        if (c == null || bookId == null || bookId.length() == 0) return -1;
+        JSONArray a = index(c);
+        if (a == null) return -1;
+        for (int i = 0; i < a.length(); i++) {
+            JSONObject o = a.optJSONObject(i);
+            if (o == null) continue;
+            if (!bookId.equals(o.optString("bookId", ""))) continue;
+            int p = o.optInt("progress", -1);
+            return (p >= 0 && p <= 100) ? p : -1;
+        }
+        return -1;
     }
 
     /**
@@ -366,6 +422,15 @@ public final class NoteStore {
                 // 保证"重建索引"不会把已算出的字数清零。
                 o.put("charCount", 0);      // 笔记字数 = 划线原文 + 想法正文
                 o.put("ideaChars", 0);      // 其中的想法正文（用户自撰）
+                // ── 🆕 TASK-086：**书价与进度**（`/user/notebooks` 回包里本来就有，压缩时被丢掉了）──
+                //    🔴 加价**零新增请求** —— 数据在 `book` 子对象里，同一次回包一路带回来的。
+                //    老索引没有这些字段 ⇒ `optXxx` 取默认值 ⇒ **未知**（不是 0 元），不崩、不误判。
+                o.put("centPrice", book == null ? 0 : book.optInt("centPrice", 0));
+                o.put("priceY", book == null ? 0.0 : book.optDouble("price", 0.0));
+                o.put("origY", book == null ? 0 : book.optInt("originalPrice", 0));
+                o.put("free", book == null ? 0 : book.optInt("free", 0));
+                // 进度在**条目顶层**（不在 `book` 里）—— 与价格同一次回包（实付的兜底数据源）
+                o.put("progress", b.optInt("readingProgress", -1));
             } catch (Exception e) {
                 continue;
             }

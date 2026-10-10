@@ -181,6 +181,18 @@ public final class BillScheduler {
         boolean wantProgress = MenuPrefs.showProgress(c);
         long endSec = periodEnd(mode, periodStart) - 1L;
 
+        // 🆕 TASK-086：**实付**要用进度（算法 A 要期初+期末、算法 B 要期末）⇒
+        //    实付列没关就必须逐本抓进度。接口仍是既有的 `/book/getprogress`（**零新增接口**），
+        //    代价是"补齐一期"多 Top-N 次请求（N ≤ 8）—— 一期只发生一次，可接受。
+        final boolean needProgress = wantProgress
+                || !MenuPrefs.PAID_OFF.equals(MenuPrefs.paidAlgo(c));
+
+        // 🆕 TASK-086：本期是不是"刚刚结束的那一期" —— 只有它抓到的进度才等于**本期期末进度**。
+        //    补更早的期时（三周没开 App）抓到的其实是"现在"，不能冒充期末 ⇒ progressEndKnown=false。
+        final long curStart = PeriodRange.startOf(mode, PeriodRange.nowSec());
+        final boolean endKnown = (periodStart == PeriodRange.shift(mode, curStart, -1));
+        final long prevStart = PeriodRange.shift(mode, periodStart, -1);
+
         for (int i = 0; i < keep.size(); i++) {
             PeriodStats.Longest l = keep.get(i);
             Bill.Item it = new Bill.Item();
@@ -188,7 +200,15 @@ public final class BillScheduler {
             it.title = nz(l.title);
             it.author = nz(l.author);
             it.readTimeSec = l.readTime;
-            it.price = Bill.priceOf(l.readTime);
+
+            // 🆕 TASK-086：**市场价** —— ① 本期直接读过的书：`/readdata/detail` 自带 `centPrice`（最直接）
+            //    ② 否则查本地价格索引（来自 `/user/notebooks`，零请求）③ 都没有 ⇒ UNKNOWN（显示 `—`）
+            int fen = (l.centPrice > 0)
+                    ? l.centPrice
+                    : (it.bookId.length() > 0
+                        ? NoteStore.priceFenOf(c, it.bookId) : BillMoney.UNKNOWN);
+            if (l.centPrice <= 0 && l.free) fen = BillMoney.FREE;
+            it.marketPriceFen = fen;
 
             if (it.bookId.length() > 0) {
                 // 个人摘录（**本地只读**，不发请求）
@@ -203,10 +223,51 @@ public final class BillScheduler {
                     List<String> hot = WereadApi.fetchBestBookmarks(apiKey, it.bookId);
                     if (!hot.isEmpty()) it.hotText = hot.get(0);
                 }
-                // 进度（默认关 ⇒ 零请求）
-                if (wantProgress) {
+                // 进度（默认关；🆕 实付列开着时强制抓 —— 见 needProgress）
+                if (needProgress) {
                     Integer pg = fetchProgressPct(apiKey, it.bookId);
-                    if (pg != null) it.progressPct = pg.intValue();
+                    if (pg == null) {
+                        // 兜底：索引里顺带带回的 `readingProgress`（略旧但真实，且零请求）
+                        int idxPg = NoteStore.progressOf(c, it.bookId);
+                        if (idxPg >= 0) pg = Integer.valueOf(idxPg);
+                    }
+                    if (pg != null) {
+                        it.progressPct = pg.intValue();
+                        // 🆕 TASK-086：**期初进度** = 上一期结束时的快照（`ProgressLog`）
+                        // 🆕 TASK-086 拍板②（2026-10-10）：`ProgressLog` 没有该期快照时（首期 / 升版前
+                        //    生成的账没有快照 / 换机），回落到**上一期账单里同书的 `progressPct`** ——
+                        //    `BillStore` 留 12 期，其 `progressPct` 是**当期真实的期末值**（拍板文档 §3-2）。
+                        // 🔴 判据（照 Lead 核实的理由，必须留档）：`Bill.Item.progressEndKnown` 标记
+                        //    "这个进度是不是真的该期期末值"。补旧期时抓到的其实是**"现在"**，不能冒充期末
+                        //    ⇒ **只有 `endKnown == true` 且 `progressPct >= 0` 的上一期才可当基线**。
+                        // 🔴 `it.progressEndKnown = endKnown` 的语义**不改** —— `BillMoney.paidFen` 依赖它。
+                        it.progressStartPct = ProgressLog.at(c, it.bookId, prevStart);
+                        if (it.progressStartPct < 0) {
+                            Bill prev = BillStore.load(c, mode, prevStart);
+                            // 拍板② 兜底的前提：这**真的是**上一期的账单（期号自证，别信 store 的返回值）
+                            if (prev != null && prev.periodStart == prevStart && prev.items != null) {
+                                for (int j = 0; j < prev.items.size(); j++) {
+                                    Bill.Item pit = prev.items.get(j);
+                                    if (pit != null && it.bookId.equals(nz(pit.bookId))
+                                            && pit.progressEndKnown && pit.progressPct >= 0) {
+                                        it.progressStartPct = pit.progressPct;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        it.progressEndKnown = endKnown;
+                        // 记下"本期结束时"的进度，供**下一期**当期初基线（一期一次，常量级增长）
+                        // 🔴 拍板② 配套修复（上机倒逼，2026-10-10）：**只在本期真的是"刚结束的那一期"时**才记。
+                        //    `endKnown == false` 表示这次抓到的是**"现在"**（补更早的期），
+                        //    它**不是**那一期的期末值；若照样 `put`，会用"现在"顶掉那一期的真实快照，
+                        //    并让 `ProgressLog.at(下一期)` 永久失配 ⇒ 下一期实付整列 `—`。
+                        //    上机实测（S4）：`31808219` 的快照被补旧期覆盖成 `1788192000:34`，
+                        //    于是当期 `1790524800` 取不到基线 ⇒ 整列 `—`，正是拍板② 要治的病根之一。
+                        if (endKnown) {
+                            ProgressLog.put(c, it.bookId, periodStart, pg.intValue());
+                        }
+                    }
                 }
             }
             b.items.add(it);
@@ -222,7 +283,10 @@ public final class BillScheduler {
         }
         BillStore.save(c, b);
         CardDebug.noteV(c, "bill: 生成 " + mode + " " + periodStart + " 本数=" + b.items.size()
-                + " 合计¥" + b.totalPrice() + (b.placeholder ? " (占位)" : ""));
+                + " 有价=" + BillMoney.pricedCount(c, b.items) + "/" + b.items.size()
+                + " 实付合计=" + BillMoney.yuan(BillMoney.totalPaidFen(c, b.items, MenuPrefs.paidAlgo(c)))
+                + (endKnown ? "" : " (补旧期·期末进度不可信)")
+                + (b.placeholder ? " (占位)" : ""));
         return true;
     }
 

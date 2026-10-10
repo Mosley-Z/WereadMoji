@@ -15,6 +15,7 @@ import android.widget.Toast;
 import com.inkread.weekread.R;
 import com.inkread.weekread.core.BgImageUtil;
 import com.inkread.weekread.core.CardDebug;
+import com.inkread.weekread.core.MenuPrefs;
 import com.inkread.weekread.core.PagePrefs;
 
 import java.text.SimpleDateFormat;
@@ -65,6 +66,18 @@ public final class DeskPageView extends View {
     /** 关闭回调（左滑 / 点 `‹ 返回` 都走它）。 */
     public interface Listener {
         void onDeskClose();
+
+        /**
+         * 🆕 2026-10-10 用户 ⑤：本页即将去起**外部界面**（系统分享面板）⇒ 宿主必须**先让位**。
+         *
+         * <p>墨台是 {@code TYPE_ACCESSIBILITY_OVERLAY} 的全屏覆盖窗，窗口层级**高于普通 Activity**
+         * ⇒ 不让位则分享面板会被整个盖住（真机实测：`Displayed ChooserActivity` 确实发生，
+         * 但屏上仍是墨台，用户点不到任何可分享目标）。宿主须在 {@code startActivity} 之前摘掉本窗。
+         *
+         * <p>🔴 与 {@link #onDeskClose()} 的区别：让位后**墨台不再自动回来**（外界面接管前台），
+         * 这是有意为之 —— 分享完回桌面即可由卡片重新呼出。
+         */
+        void onShareRequested();
     }
 
     private final DeskRenderer renderer = new DeskRenderer();
@@ -110,6 +123,30 @@ public final class DeskPageView extends View {
     private final RectF btnClose = new RectF();
     /** 🆕 2026-10-10 用户 ⑤：本次预览**已落盘**得到的相册 uri —— 分享复用它，避免重复落盘。 */
     private Uri savedUri;
+
+    // ── 🆕 TASK-086：长按录价 / 模态弹层（都是**瞬时态**，不落任何盘）──
+    /** 长按录价的候选书目下标（-1 = 当前这次按下不在无价行上）。 */
+    private int pendingPriceIdx = -1;
+    /** 长按是否**已经**触发（触发后这一次抬手不再当"点击"处理）。 */
+    private boolean longFired;
+    /** 数字键盘模态：按下时键盘已开 ⇒ 整段手势只归键盘。 */
+    private boolean padModal;
+    /** 长按判定时长 —— 墨屏上手指停留普遍比手机久，取 550ms 比 400ms 稳。 */
+    private static final int LONG_PRESS_MS = 550;
+
+    /** 长按到点 ⇒ 开数字键盘（🔴 键盘是**自绘**的：覆盖窗里塞不进 `View`/`EditText`）。 */
+    private final Runnable longPressRun = new Runnable() {
+        @Override
+        public void run() {
+            if (pendingPriceIdx < 0) return;
+            final int idx = pendingPriceIdx;
+            longFired = true;
+            billSection.openPad(idx);
+            pendingPriceIdx = -1;
+            CardDebug.note(getContext(), "墨单：长按无价行 ⇒ 打开录价键盘 idx=" + idx);
+            invalidate();
+        }
+    };
 
     // ── 手势 ──
     private float downX, downY, lastY;
@@ -299,6 +336,8 @@ public final class DeskPageView extends View {
     private void enterWallpaper() {
         final String m = billSection.shownMode();
         final long s = billSection.shownStart();
+        // 🆕 2026-10-10 第四轮 ①：**在哪个菜单类别点生成，就出哪个类别的海报**
+        final int v = billSection.view();
         if (m == null || s <= 0L) {
             toast(getContext().getString(R.string.desk_wallpaper_none));
             return;
@@ -316,7 +355,7 @@ public final class DeskPageView extends View {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                final BillWallpaper.Poster r = BillWallpaper.render(app, m, s);
+                final BillWallpaper.Poster r = BillWallpaper.render(app, m, s, v);
                 post(new Runnable() {
                     @Override
                     public void run() {
@@ -327,7 +366,9 @@ public final class DeskPageView extends View {
                         previewBusy = false;
                         preview = r.bmp;
                         previewErr = (r.err == null) ? "" : r.err;
-                        CardDebug.note(getContext(), "墨单壁纸渲染：" + (preview == null ? previewErr
+                        CardDebug.note(getContext(), "墨单壁纸渲染(" + MenuPrefs.VIEW_LABELS[
+                                (v >= 0 && v < MenuPrefs.VIEW_LABELS.length) ? v : 0] + ")："
+                                + (preview == null ? previewErr
                                 : (r.width + "×" + r.height + " · " + r.itemDrawn + "/" + r.itemTotal + " 本")));
                         invalidate();
                     }
@@ -440,6 +481,8 @@ public final class DeskPageView extends View {
 
     /** 起系统分享面板；本机没有能收图的应用（或起不来）⇒ 如实提示。 */
     private void startShare(Uri uri) {
+        // 🆕 用户 ⑤：先请宿主**摘掉墨台覆盖窗** —— 它层级高于 Activity，不让位则面板看不见。
+        if (listener != null) listener.onShareRequested();
         try {
             Intent send = new Intent(Intent.ACTION_SEND);
             send.setType("image/png");
@@ -498,6 +541,31 @@ public final class DeskPageView extends View {
             c.drawRect(l + 0.5f, t + 0.5f, l + dw - 0.5f, t + dh - 0.5f, wp);
             wp.setStyle(Paint.Style.FILL);
         }
+
+        // ①′ 🆕 2026-10-10 第五轮（诉求 1 · 用户真机实测反馈）：**分享小字提示**。
+        //    为什么必须提前摆：蓝牙接收方的提示**只躺在它自己的通知栏里**，不点就"看着像失败"
+        //    —— 用户上一次就是这么判成"分享失败"的（实测：连着蓝牙 + 去通知栏点接收 = 成功）。
+        final String btTip = ctx.getString(R.string.desk_wallpaper_bt_tip);
+        wp.setStyle(Paint.Style.FILL);
+        wp.setTypeface(null);
+        wp.setFakeBoldText(false);
+        wp.setColor(0xFF3C3C3C);
+        wp.setTextAlign(Paint.Align.LEFT);
+        float tipSz = 11.5f * unit;
+        wp.setTextSize(tipSz);
+        while (wp.measureText(btTip) > w - pad * 2f && tipSz > 9f * unit) {
+            tipSz -= 0.3f;
+            wp.setTextSize(tipSz);
+        }
+        String tipShow = btTip;
+        if (wp.measureText(tipShow) > w - pad * 2f) {                 // 极小屏兜底：截断加省略号
+            int n = tipShow.length();
+            while (n > 4 && wp.measureText(tipShow.substring(0, n) + "…") > w - pad * 2f) n--;
+            tipShow = tipShow.substring(0, n) + "…";
+        }
+        Paint.FontMetrics tfm = wp.getFontMetrics();
+        c.drawText(tipShow, pad, btnY - unit * 6f - tfm.descent, wp);
+        wp.setTextAlign(Paint.Align.LEFT);
 
         // ② 底部三个按钮（矩形每帧重算；触摸判定就吃这一份 ⇒ 画与命中一致）
         //    🆕 2026-10-10 用户 ⑤：「保存到相册 / 分享 / 关闭」—— 分享 = 先落盘再 ACTION_SEND
@@ -647,6 +715,19 @@ public final class DeskPageView extends View {
                 axis = AXIS_NONE;
                 // 🔴 命中判定**只在按下那一刻做一次** —— 之后整段滑动都归它，避免半途改判导致跳变。
                 dragRank = (mode == MODE_LIST) && rankScrollable() && hitRank(downY);
+                // 🆕 TASK-086：数字键盘是**模态** —— 开着时整段按下只归键盘（不滚、不点、不返回）
+                padModal = (mode == MODE_LIST) && billSection.padOpen();
+                if (padModal) return true;
+                // 🆕 TASK-086：长按无价书目行 ⇒ 自绘数字键盘（从按下这一刻起算）
+                pendingPriceIdx = -1;
+                longFired = false;
+                if (mode == MODE_LIST) {
+                    final float bt = billTop();
+                    if (bt >= 0f) {
+                        pendingPriceIdx = billSection.hitPriceRow(downX, downY, getWidth(), unit, bt);
+                        if (pendingPriceIdx >= 0) postDelayed(longPressRun, LONG_PRESS_MS);
+                    }
+                }
                 // 🆕 设置态：按住白纱滑条 ⇒ 本次手势只拖动滑条（不走滚动）
                 if (mode == MODE_SETTINGS) {
                     DeskSettings.Item it = settings.hitItem(downX,
@@ -666,6 +747,12 @@ public final class DeskPageView extends View {
                 }
                 totDx = e.getX() - downX;
                 totDy = e.getY() - downY;
+                // 🆕 TASK-086：手指一动就不算长按；长按已开键盘 ⇒ 移动也归键盘（吃掉）
+                if (pendingPriceIdx >= 0) {
+                    removeCallbacks(longPressRun);
+                    pendingPriceIdx = -1;
+                }
+                if (longFired) return true;
                 if (mode == MODE_WALLPAPER) return true;      // 预览态不滚
                 if (axis == AXIS_NONE) {
                     if (Math.max(Math.abs(totDx), Math.abs(totDy)) > SLOP_PX) {
@@ -694,6 +781,16 @@ public final class DeskPageView extends View {
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL: {
                 final boolean up = (e.getActionMasked() == MotionEvent.ACTION_UP);
+                // 🆕 TASK-086：长按收尾 —— 已开键盘 ⇒ 这一次抬手不再当"点击"
+                removeCallbacks(longPressRun);
+                if (longFired) {
+                    longFired = false;
+                    pendingPriceIdx = -1;
+                    axis = AXIS_NONE;
+                    dragRank = false;
+                    return true;
+                }
+                pendingPriceIdx = -1;
                 if (dragVeil) {
                     dragVeil = false;
                     return true;
@@ -741,10 +838,47 @@ public final class DeskPageView extends View {
                 }
 
                 // ── 列表态 ──
+                // 🆕 TASK-086：数字键盘**优先级最高**（模态）—— 开着时只有键位/关闭两种结局
+                if (up && billSection.padOpen()) {
+                    int key = billSection.hitPad(e.getX(), e.getY(), getWidth(), getHeight(), unit);
+                    if (key >= 0) {
+                        billSection.padPress(key);
+                        // 🆕 收口 F1（2026-10-10）：键盘**关闭**这一下会真正改到行数据
+                        //   （确定 = 录价/改价/清除；取消 = 无改动）⇒ 必须重排版。
+                        //   🔴 为什么只在这一下做：数字键只改 `padText`，与行文本无关，
+                        //      每键都 remeasure 是白花墨屏重绘（`remeasure` 要重算整篇行高）。
+                        //   🔴 为什么必须调：`BillSection` 的行文本是 `laid()` 期算好并**按 `cw/cu`
+                        //      缓存**的 ⇒ 只 `invalidate()` 会把**旧**行数据重画一遍
+                        //      （审查 `验证记录/202` G1 实测「点确定后当前帧逐字节不变」）。
+                        //      数据侧的 `invalidateRows()` 在 `padPress` 里已调，这里补"高度/可滚"。
+                        if (!billSection.padOpen()) remeasure(getWidth(), getHeight());
+                        invalidate();
+                    }
+                    axis = AXIS_NONE;
+                    dragRank = false;
+                    return true;
+                }
                 if (axis == AXIS_HORIZ
                         && totDx <= -Math.max(SLOP_PX, getWidth() * BACK_RATIO)) {
                     if (listener != null) listener.onDeskClose();       // 左滑返回
                 } else if (up && axis == AXIS_NONE) {
+                    // 🆕 TASK-086：实付算法下拉（**最优先**：弹层开着时它还负责"点外面收起"）
+                    final float bTop = billTop();
+                    int algoHit = (bTop >= 0f)
+                            ? billSection.hitAlgo(e.getX(), e.getY(), getWidth(), unit, bTop)
+                            : BillSection.ALGO_MISS;
+                    if (algoHit >= 0 && algoHit <= 2) {
+                        if (billSection.pickAlgo(algoHit)) {
+                            remeasure(getWidth(), getHeight());     // 列数 / 合计行变了 ⇒ 分会变
+                        }
+                        invalidate();
+                    } else if (algoHit == BillSection.ALGO_TOGGLE) {
+                        billSection.setAlgoOpen(true);
+                        invalidate();
+                    } else if (algoHit == BillSection.ALGO_DISMISS) {
+                        billSection.setAlgoOpen(false);
+                        invalidate();
+                    } else
                     // 顶栏右端「设置」最优先（它最靠边，不与其它命中区重叠）
                     if (renderer.hitAction(e.getX(), e.getY(), getWidth(), unit)) {
                         enterSettings();

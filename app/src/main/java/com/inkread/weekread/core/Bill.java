@@ -10,10 +10,13 @@ import java.util.List;
 /**
  * 🆕 TASK-077：**一期阅读账单**（已完结周期的快照）。
  *
- * <p>口径（`tasks/TASK-077` §关键规则）：
+ * <p>口径（`tasks/TASK-077` §关键规则；🔴 **价格 / 合计口径已于 `TASK-086` 全面改写**）：
  * <ul>
- *   <li>🔴 **价** = {@code clamp(⌈阅读分钟 ÷ 10⌉, 1, 999)} ⇒ {@link #priceOf(int)}（传**秒**）；</li>
- *   <li>🔴 **账单合计** = **各书价之和**（<b>不是</b>总时长折算）⇒ {@link #totalPrice()}；</li>
+ *   <li>🔴 <b>价</b> = **书籍市场价**（{@link Item#marketPriceFen}，单位**分**；生成期解析、渲染只读
+ *       ⇒ {@link BillMoney}）。<b>旧口径</b>「`clamp(⌈分钟÷10⌉)` 虚构价」**已作废**（`priceOf` 已删）；</li>
+ *   <li>🔴 <b>实付</b> = 书价 × 进度（两算法，见 {@link BillMoney#paidFen}）；</li>
+ *   <li>🔴 <b>合计行</b> = `合计   本期阅读 H 小时` + 次行 `读回 ¥X，折合 ¥Y/小时`
+ *       （{@code BillSection#billTotalMain} / {@code #billTotalNote}；两行是上机倒逼，见该方法注释）；</li>
  *   <li>周期起止**必须**由 {@link PeriodRange} 算（周 = 周一 00:00、月 = 1 日 00:00）⇒ {@link #serialOf}/{@link #rangeLabel} 同源。</li>
  * </ul>
  *
@@ -59,11 +62,6 @@ public final class Bill {
         public String author = "";
         /** 本期该书阅读时长（秒）。 */
         public int readTimeSec;
-        /**
-         * 价（¥）—— **生成期**按 {@link #priceOf(int)} 算好落盘。
-         * 🔴 是**造出来的**（分钟÷10）⇒ 文案须像"菜单标价"，不得暗示真收费（风险 R5）。
-         */
-        public int price;
         /** 个人摘录（该书本期一条划线/想法原文；无 ⇒ null）。 */
         public String mineText;
         /**
@@ -73,31 +71,40 @@ public final class Bill {
         public int mineCount;
         /** 微信公开热门划线（后台预热；无 / 未取 ⇒ null）。🔴 不等同本人划线 ⇒ 渲染须标来源。 */
         public String hotText;
-        /** 阅读进度百分比（0~100；-1 = 未知）。 */
+        /** 阅读进度百分比（0~100；-1 = 未知）。 = **期末/当前**进度（实付的两算法都用它）。 */
         public int progressPct = -1;
+
+        // ── 🆕 TASK-086：市场价 + 期初进度（实付两算法的数据基础） ──
+
+        /**
+         * **市场价**（分）——生成期由 {@link BillScheduler} 解析好落盘，渲染期只读。
+         *
+         * <p>三态（🔴 绝不用 0 冒充"未知"，否则合计被 0 拉低 —— huibenlema 的 `resetWereadZeroPrice` 教训）：
+         * <ul>
+         *   <li>{@code > 0} 有价；</li>
+         *   <li>{@link BillMoney#FREE}（0）明确免费；</li>
+         *   <li>{@link BillMoney#UNKNOWN}（-1）未定价（自导入 / 网文 / 接口没给）⇒ 显示 `—`。</li>
+         * </ul>
+         * 🔴 **用户手填价优先级更高**（{@link MenuPrice}）—— 由 {@link BillMoney#effFen} 合成，
+         * 所以本字段只存"接口给的价"。
+         */
+        public int marketPriceFen = BillMoney.UNKNOWN;
+
+        /**
+         * **期初进度**（= 上一期结束时的进度，0~100；-1 = 无基线）。
+         * 🆕 由 {@link ProgressLog} 的期界快照提供；首期 / 补旧期 ⇒ -1 ⇒ 算法 A 该行显示 `—`。
+         */
+        public int progressStartPct = -1;
+
+        /**
+         * 「期末进度」是否**可信**（= 生成时这一期才刚结束）。
+         * 🔴 三周不开 App 后一次补 4 期时，更早那几期抓到的其实是"现在"的进度
+         * ⇒ 置 false ⇒ 算法 A 对这些期显示 `—`（宁可留白，不编假数）。
+         */
+        public boolean progressEndKnown = false;
     }
 
     // ══════════════════════ 口径 ══════════════════════
-
-    /**
-     * 价 = {@code clamp(⌈阅读分钟 ÷ 10⌉, 1, 999)}。
-     *
-     * @param readTimeSec 该书本期阅读时长（秒）
-     */
-    public static int priceOf(int readTimeSec) {
-        int min = (readTimeSec + 59) / 60;          // 向上取整到分钟
-        int p = (min + 9) / 10;                     // ⌈分钟 / 10⌉
-        if (p < 1) p = 1;
-        if (p > 999) p = 999;
-        return p;
-    }
-
-    /** 账单合计 = **各书价之和**（🔴 不是总时长折算）。 */
-    public int totalPrice() {
-        int sum = 0;
-        for (int i = 0; i < items.size(); i++) sum += items.get(i).price;
-        return sum;
-    }
 
     public int bookCount() {
         return items.size();
@@ -174,11 +181,14 @@ public final class Bill {
                 j.put("title", it.title == null ? "" : it.title);
                 j.put("author", it.author == null ? "" : it.author);
                 j.put("readTimeSec", it.readTimeSec);
-                j.put("price", it.price);
                 if (it.mineText != null) j.put("mineText", it.mineText);
                 if (it.mineCount > 0) j.put("mineCount", it.mineCount);
                 if (it.hotText != null) j.put("hotText", it.hotText);
                 if (it.progressPct >= 0) j.put("progressPct", it.progressPct);
+                // 🆕 TASK-086（缺省不写 ⇒ 老账/本例外的行自然回落"未知"，体积极小）
+                if (it.marketPriceFen != BillMoney.UNKNOWN) j.put("marketPriceFen", it.marketPriceFen);
+                if (it.progressStartPct >= 0) j.put("progressStartPct", it.progressStartPct);
+                if (it.progressEndKnown) j.put("progressEndKnown", true);
                 arr.put(j);
             }
             o.put("items", arr);
@@ -219,11 +229,16 @@ public final class Bill {
                     it.title = j.optString("title", "");
                     it.author = j.optString("author", "");
                     it.readTimeSec = j.optInt("readTimeSec", 0);
-                    it.price = j.optInt("price", 0);
                     it.mineText = j.has("mineText") ? j.optString("mineText", "") : null;
                     it.mineCount = j.optInt("mineCount", 0);
                     it.hotText = j.has("hotText") ? j.optString("hotText", "") : null;
                     it.progressPct = j.has("progressPct") ? j.optInt("progressPct", -1) : -1;
+                    // 🆕 TASK-086：缺字段 ⇒ 未知/无基线（**老账一律这样**，A13 老账兼容）
+                    it.marketPriceFen = j.has("marketPriceFen")
+                            ? j.optInt("marketPriceFen", BillMoney.UNKNOWN) : BillMoney.UNKNOWN;
+                    it.progressStartPct = j.has("progressStartPct")
+                            ? j.optInt("progressStartPct", -1) : -1;
+                    it.progressEndKnown = j.optBoolean("progressEndKnown", false);
                     b.items.add(it);
                 }
             }

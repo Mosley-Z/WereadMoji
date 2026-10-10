@@ -150,6 +150,12 @@ public class PeriodStats {
                     l.author = book.optString("author", null);
                     l.cover = book.optString("cover", null);
                     l.deepLink = book.optString("deepLink", null);
+                    // 🆕 TASK-086：书价就在**已经在拿**的回包里（`book.centPrice`，单位**分**）——
+                    // 此前只取 bookId/title/readTime 就把它丢了。🔴 不新增接口、不新增解析成本。
+                    l.centPrice = book.optInt("centPrice", 0);
+                    l.priceYuan = book.optDouble("price", 0.0);
+                    l.origYuan = book.optInt("originalPrice", 0);
+                    l.free = book.optInt("free", 0) == 1;
                 }
                 l.readTime = o.optInt("readTime", 0);
                 JSONArray tags = o.optJSONArray("tags");
@@ -277,6 +283,16 @@ public class PeriodStats {
         public int readTime;
         /** 徽章（如「笔记最多」「单日阅读最久」；可能为空） */
         public List<String> tags = new ArrayList<String>();
+
+        // ── 🆕 TASK-086：回包 `readLongest[].book` 里的定价字段（此前未解析、白丢） ──
+        /** 定价（**分**）；0 = 未给 ⇒ 交由 `BillMoney.fenOf` 与其它两项一起判。 */
+        public int centPrice;
+        /** 售价（**元**，float）。 */
+        public double priceYuan;
+        /** 原价（**元**；实测常为 0 ⇒ 取 max 正是为了兼容）。 */
+        public int origYuan;
+        /** 免费标记（`free == 1`）。 */
+        public boolean free;
     }
 
     /**

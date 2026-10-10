@@ -70,6 +70,16 @@
     <string name="desk_wallpaper_share_title">分享墨单</string>
     <string name="desk_wallpaper_share_none">这台设备上没有可接收图片的应用</string>
     <string name="desk_wallpaper_sharing">正在准备分享…</string>
+    <!-- 🆕 2026-10-10 第五轮（诉求 1 · 用户真机实测反馈）：分享面板起来**之前**就把这句摆出来。
+         🔴 来由（用户原话）：手动蓝牙分享**能成功**，条件是「与手机连着蓝牙 + 去**通知栏**点接收」；
+         之前判"失败"是因为**接收提示不会在桌面弹窗**，只静静躺在通知栏里。 -->
+    <string name="desk_wallpaper_bt_tip">蓝牙分享：接收提示可能不在对方桌面弹窗，请在其通知栏点「接收」</string>
+    <!-- 🆕 2026-10-10 第五轮（TASK-086）：实付算法控件与可录价行入口
+         🔴 `menu_price_manual_hint` 现在是**整张墨单一条独立小字**（表头正下方），不再是逐行尾巴
+         ⇒ 措辞改为独立成行的说法（Lead 定向干预 2026-10-10，理由见 `验证记录/201`）。 -->
+    <string name="menu_paid_prefix">实付算法：</string>
+    <string name="menu_price_manual_hint">长按书目行可录入实际书价</string>
+    <string name="menu_price_manual_title">录入价格（元）</string>
     <string name="desk_wallpaper_close">关闭</string>
     <string name="desk_wallpaper_saving">正在保存…</string>
     <string name="desk_wallpaper_saved">已保存到相册 Pictures/微读墨记</string>

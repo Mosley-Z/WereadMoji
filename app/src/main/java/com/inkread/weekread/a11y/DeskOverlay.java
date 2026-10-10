@@ -73,6 +73,17 @@ final class DeskOverlay {
                             }
                         });
                     }
+
+                    @Override
+                    public void onShareRequested() {
+                        // 同上：此刻很可能正处在触摸派发当口（用户点「分享」）⇒ 也走主线程 post 摘窗
+                        ui.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                hideForExternalUi();
+                            }
+                        });
+                    }
                 });
             }
             view.reset();
@@ -101,6 +112,44 @@ final class DeskOverlay {
         //    否则卡片会卡在"让位"状态不回来。
         if (!prevOwnUi) CardA11yService.recomputeVisibilityNow();
         CardDebug.note(ctx, "墨台关闭");
+    }
+
+    /**
+     * 🆕 2026-10-10 用户 ⑤：为**外部界面**（系统分享面板 `ChooserActivity`）让位。
+     *
+     * <p>墨台走 {@code TYPE_ACCESSIBILITY_OVERLAY}，窗口层级**高于普通 Activity** ⇒ 不让位则
+     * 分享面板被整个盖住（真机实测：`logcat` 里 `Displayed ChooserActivity +473ms` 确实发生，
+     * 但屏上仍是墨台、`dumpsys window` 见墨台窗 `mViewVisibility=0x0 isOnScreen=true`）。
+     * 故起面板前必须先摘窗。
+     *
+     * <p>🔴 与 {@link #hide()} 的差别 —— **不立刻**还原"自家 UI 前台"：
+     * 摘窗（本方法）与 chooser 真正显示之间有 ~0.5s（墨水屏更久），此刻若还原成 {@code false}，
+     * 卡片会在"桌面仍在台前"的旧状态下来一次 `applyVisibility()` ⇒ **闪回一帧**再被 chooser 的
+     * 窗口事件按下去（墨水屏上一次无谓刷新很显眼）。故延迟 {@value #EXT_UI_RESTORE_MS}ms 再交接：
+     * 那时 chooser 已在前台，还原成 {@code false} 也不会把卡片画出来。
+     *
+     * <p>交接完成后：用户从分享面板回桌面 ⇒ 桌面窗口事件照常把卡片显示出来（无需额外代码）。
+     */
+    private static final long EXT_UI_RESTORE_MS = 1_500L;
+
+    void hideForExternalUi() {
+        if (!added) return;
+        try {
+            if (wm != null && view != null) wm.removeView(view);
+        } catch (Throwable ignored) {
+        }
+        added = false;
+        final boolean restore = prevOwnUi;
+        CardDebug.note(ctx, "墨台让位外部界面（先摘窗，延迟还原 ownUi=" + restore + "）");
+        ui.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (added) return;      // 期间用户又呼出了墨台 ⇒ 本次交接作废，别把它的状态改坏
+                CardA11yService.noteOwnUiForeground(restore);
+                if (!restore) CardA11yService.recomputeVisibilityNow();
+                CardDebug.note(ctx, "墨台让位交接完成 ownUi=" + restore);
+            }
+        }, EXT_UI_RESTORE_MS);
     }
 
     /** 服务 unbind / destroy：摘窗口并放掉视图引用。 */
