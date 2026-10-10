@@ -35,11 +35,10 @@ import java.util.List;
  * ⇒ 这里按 {@code SegTabView} 的视觉语言（居中双段 / 选中加粗 + 底部黑条 / 段间竖分隔线 /
  * 整条下边框）**用 Canvas 重画一份**，字号与字族仍走 {@code InkTheme}（墨水屏端衬线）。
  *
- * <h3>排版（定稿设计 §6.3 / §6.4；🆕 2026-10-10 改头部）</h3>
+ * <h3>排版（定稿设计 §6.3 / §6.4；🆕 2026-10-10 三改头部 · 诉求 ①）</h3>
  * <pre>
- * 墨单                                        生成壁纸        ← 分区抬头（⑤）
- * [ 周 | 月 ]                        ‹  2026-W40  ›          ← 周期条（⑥）
- * [摘录菜单 | 读书菜单 | 月历]                                 ← 票据页签
+ * 墨单                        [摘录菜单 | 读书菜单]  生成壁纸    ← 分区抬头（⑤；① 页签上提、去框）
+ * [ 周 | 月 ]                        ‹  2026-W40  ›            ← 周期条（⑥；① 降到第二行）
  * 2026-W40                                    墨单            ← 票据头（⑤ 对调：左=单号、右=墨单）
  * 周结 · 09.28–10.04 · 5 本 · 16h53m
  * ────────────────────────────
@@ -78,9 +77,13 @@ final class BillSection implements InsightRenderer.Section {
     /** 占位文案（Q10：本期无阅读记录 —— 🔴 绝不产 0 值空白账单）。 */
     private static final String PLACEHOLDER = "本期无阅读记录";
 
-    /** 顶部页签条占分区宽的比例（2 项 / 3 项）。 */
+    /** 顶部页签条占分区宽的比例（2 项 / 3 项）。🔴 3 项由 `0.62 → 0.56`：🆕 诉求 ① 把页签与
+     *  「生成壁纸」并到同一行后，右簇整体变宽 —— 0.62 会把页签左端推到标题「墨单」右侧仅 ~12px
+     *  处（480px 屏实算），挤成一团；0.56 后余量回到 ~38px。 */
     private static final float TAB_W_RATIO   = 0.44f;
-    private static final float TAB_W_RATIO_3 = 0.62f;
+    private static final float TAB_W_RATIO_3 = 0.56f;
+    /** 页签条与右端「生成壁纸」之间的间隔（×unit）。 */
+    private static final float HEAD_TAB_GAP_UNITS = 8f;
 
     // ── 🆕 2026-10-10：头部第二行「周期条」的尺（画与命中共用同一批常量）──
     /** 周期条占高（×unit）。 */
@@ -93,10 +96,9 @@ final class BillSection implements InsightRenderer.Section {
     private static final float NAV_W_UNITS      = 112f;
     /** `◀` / `▶` 各自的可点宽（×unit）。 */
     private static final float ARROW_W_UNITS    = 26f;
-    /** 页签条自己那一行的高（×unit）。 */
-    private static final float TAB_BAR_UNITS    = 3.15f;
-    /** 「生成壁纸」按钮宽 / 高（×unit）。 */
-    private static final float WP_W_UNITS       = 80f;
+    /** 「生成壁纸」标签宽 / 高（×unit）—— 🆕 诉求 ① 起**无按键框**，与页签同行、同字族同字号。
+     *  宽度从 80 收窄到 62：字被「去掉内衬」后不需要原来的框内留白（4 字 × 12.5unit ≈ 74px @S4）。 */
+    private static final float WP_W_UNITS       = 62f;
     private static final float WP_H_UNITS       = 1.85f;
 
     // ── 月历（🆕 TASK-077b；尺全部按 unit 标度，网格高度**只依赖 unit**）──
@@ -317,33 +319,41 @@ final class BillSection implements InsightRenderer.Section {
     /**
      * 顶部页签条的几何（画与命中共用同一份 ⇒ 不会"看起来能点、其实点不中"）。
      *
-     * <p>🆕 2026-10-10：页签条从"分区标题那一行"下移到**头部第三行**（标题行让给了「生成壁纸」、
-     * 第二行给了周期条）—— 它属于**票据本身**，与"看哪一期"的周期条分开。
-     * 🔴 上机实测（第一版）踩过：只补 `periodBarH` 会让页签条落在**标题行与周期条之间**，
-     * 与周期条的 `‹ 单号 ›` 直接叠字 ⇒ 现在补的是完整的 {@link #headArea}。
+     * <p>🆕 <b>诉求 ①（2026-10-10 第三轮）</b>：页签条上提到**分区标题那一行**，并整体左移，
+     * 给右端**无边框**的「生成壁纸」让出位置（两者同一行、同一垂直中心）。
+     * 层级上「看哪个菜单」高于「看哪一期」⇒ 页签在周期条**之上**。
+     * <p>🔴 历史：旧版页签独占第三行，是因为"周月 + 页签 + 单号导航"三簇在 480px 上塞不下；
+     * 现在页签与「生成壁纸」都成了纯文字（去掉了 1px 框与框内留白）⇒ 一行放得下。
      */
     RectF tabStrip(float w, float unit, float top) {
-        float head = InsightRenderer.secHeadH(unit);
-        float right = w - w * InsightRenderer.PAD_X_RATIO;
+        float right = w - w * InsightRenderer.PAD_X_RATIO
+                - WP_W_UNITS * unit - HEAD_TAB_GAP_UNITS * unit;
         float ratio = (visibleViews().length > 2) ? TAB_W_RATIO_3 : TAB_W_RATIO;
         float sw = w * ratio;
-        float sh = head * 0.80f;
-        float barTop = top + InsightRenderer.secHeadH(unit) + periodBarH(unit);
-        float cy = barTop + tabBarH(unit) * 0.5f;
+        float sh = headRowH(unit);
+        float cy = headRowCy(unit, top);
         return new RectF(right - sw, cy - sh / 2f, right, cy + sh / 2f);
     }
 
     // ══════════════════════ 🆕 2026-10-10：头部几何（第 1 行 + 周期条） ══════════════════════
 
+    /** 头部第一行（标题行）的**垂直中心** —— 标题 / 页签 / 「生成壁纸」三者共用它 ⇒ 严格同一行。 */
+    private static float headRowCy(float unit, float top) {
+        return top + InsightRenderer.secHeadH(unit) * 0.52f;
+    }
+
+    /** 页签条高（= 标题行高 × 0.80，留在标题行内，不会蹭到第二行的周期条）。 */
+    private static float headRowH(float unit) {
+        return InsightRenderer.secHeadH(unit) * 0.80f;
+    }
+
     /** 周期条占高（px）。 */
     private float periodBarH(float unit) { return SZ_SMALL * unit * PERIOD_BAR_UNITS; }
 
-    /** 页签条自己占的一行高（px）。 */
-    private float tabBarH(float unit) { return SZ_SMALL * unit * TAB_BAR_UNITS; }
-
-    /** 头部总高（px）= 分区标题行 + 周期条 + 页签行 —— 正文从它之下起画。 */
+    /** 头部总高（px）= 分区标题行 + 周期条 —— 正文从它之下起画。
+     *  🔴 页签条**不再独占一行**（🆕 诉求 ① 已并入标题行）⇒ 比旧版少 ≈45px（@S4，unit=1.2）。 */
     private float headArea(float unit) {
-        return InsightRenderer.secHeadH(unit) + periodBarH(unit) + tabBarH(unit);
+        return InsightRenderer.secHeadH(unit) + periodBarH(unit);
     }
 
     /** 周期条内小控件的顶边 y。 */
@@ -368,11 +378,17 @@ final class BillSection implements InsightRenderer.Section {
         return new RectF(right - NAV_W_UNITS * unit, y0, right, y0 + h);
     }
 
-    /** 「生成壁纸」按钮（在分区标题那一行的右端）。 */
+    /**
+     * 「生成壁纸」标签（在**分区标题那一行的最右端**）。
+     *
+     * <p>🆕 <b>诉求 ①</b>：删掉 1px 按键框、与页签同字族同字号 ⇒ 它读起来就是与
+     * 「摘录菜单 / 读书菜单」同层级的**第四个文字项**（而不是一个"按钮"）。
+     * 名字保留 `wallpaperBtn`：命中的仍是同一块区域（{@link #hitWallpaper} 吃它）。
+     */
     private RectF wallpaperBtn(float w, float unit, float top) {
         float right = w - w * InsightRenderer.PAD_X_RATIO;
         float h = SZ_SMALL * unit * WP_H_UNITS;
-        float cy = top + InsightRenderer.secHeadH(unit) * 0.52f;
+        float cy = headRowCy(unit, top);
         return new RectF(right - WP_W_UNITS * unit, cy - h / 2f, right, cy + h / 2f);
     }
 
@@ -446,10 +462,8 @@ final class BillSection implements InsightRenderer.Section {
     }
 
     public void draw(Canvas c, float w, float vh, float top, float unit, Paint p) {
-        // ── 头部第 1 行：分区标题（「墨单」）+ 右端「生成壁纸」；第 2 行：周期条 ──
+        // ── 头部第 1 行：分区标题（「墨单」）+ 右端「页签 + 生成壁纸」；第 2 行：周期条 ──
         drawHeadArea(c, w, unit, top, p);
-        // 页签条（摘录菜单 / 读书菜单 / 月历）—— 头部第三行（tabStrip 内部已补标题行 + 周期条高）
-        drawTabs(c, w, unit, top, p);
 
         float y = top + headArea(unit);
         float left = w * InsightRenderer.PAD_X_RATIO;
@@ -474,43 +488,21 @@ final class BillSection implements InsightRenderer.Section {
     // ══════════════════════ 🆕 2026-10-10：头部绘制 ══════════════════════
 
     /**
-     * 头部三行的绘制（用户诉求 ⑤ + ⑥ 的"A 头部两行"骨架 + 页签自己一行）：
+     * 头部**两行**的绘制（🆕 诉求 ① 重新分层：菜单页签高于周/月）：
      * <pre>
-     *   墨单                                        生成壁纸     ← ① 分区标题行
-     *   [ 周 | 月 ]                        ‹  2026-W40  ›        ← ② 周期条（⑥ 的周/月 + 选周期）
-     *   [摘录菜单 | 读书菜单]                                     ← ③ 票据页签（属于票据本身）
+     *   墨单                            [摘录菜单 | 读书菜单]  生成壁纸   ← ① 标题行（三者同行）
+     *   [ 周 | 月 ]                            ‹  2026-W40  ›             ← ② 周期条
      * </pre>
-     * 🔴 页签条被独立成第三行不是"多一排"的任性：上机实测把页签并进周期条会与 `‹ 单号 ›`
-     * **直接叠字**（480px 宽装不下「周月 + 页签 + 单号导航」三簇）。
+     * 三者在 480px 屏上的横向占位（unit = 1.2）：
+     * <pre>
+     *   标题 [24, 65]   页签 [103, 372]（3 项）/ [161, 372]（2 项）   生成壁纸 [382, 456]
+     * </pre>
+     * 🔴 旧版页签独占第三行（"周月 + 页签 + 单号导航"三簇塞不下）；诉求 ① 把页签提到标题行、
+     * 与去框后的「生成壁纸」并排 ⇒ 头部由三行降为两行，且**消除了"菜单在周月之下"的层级错位**。
      */
     private void drawHeadArea(Canvas c, float w, float unit, float top, Paint p) {
         InsightRenderer.drawSectionHead(c, w, top, unit, p, title());
-
-        // 右端「生成壁纸」（无账可生成 ⇒ 不画、也不命中）
-        if (ctx != null && bill != null) {
-            RectF b = wallpaperBtn(w, unit, top);
-            p.setStyle(Paint.Style.STROKE);
-            p.setStrokeWidth(1f);
-            p.setColor(INK);
-            c.drawRect(b.left + 0.5f, b.top + 0.5f, b.right - 0.5f, b.bottom - 0.5f, p);
-            p.setStyle(Paint.Style.FILL);
-            p.setColor(INK);
-            p.setTypeface(null);
-            p.setFakeBoldText(false);
-            p.setTextAlign(Paint.Align.CENTER);
-            // 字装不下就缩（下限 0.7×）—— 与卡片「打开墨台」同一个兜底
-            float sz = SZ_SMALL * unit;
-            p.setTextSize(sz);
-            String lab = ctx.getString(R.string.menu_gen_wallpaper);
-            while (p.measureText(lab) > b.width() - unit * 8f && sz > SZ_SMALL * unit * 0.7f) {
-                sz -= 0.4f;
-                p.setTextSize(sz);
-            }
-            Paint.FontMetrics fm = p.getFontMetrics();
-            c.drawText(lab, b.centerX(), b.centerY() - (fm.ascent + fm.descent) / 2f, p);
-            p.setTextAlign(Paint.Align.LEFT);
-        }
-
+        drawTabs(c, w, unit, top, p);        // 页签条 + 右端「生成壁纸」（同一行）
         drawPeriodBar(c, w, unit, top, p);
     }
 
@@ -592,7 +584,16 @@ final class BillSection implements InsightRenderer.Section {
 
     // ══════════════════════ 页签条 ══════════════════════
 
+    /**
+     * 页签条（`摘录菜单 / 读书菜单(/ 月历)`）+ 右端**无边框**的「生成壁纸」。
+     *
+     * <p>🆕 诉求 ①：① 页签上提到标题行（`tabStrip` 已把中心对齐到 {@code headRowCy}）；
+     * ② 「生成壁纸」删掉按键框，改用**页签同一套**字族 / 字号 / 颜色（非选中色 = INK，
+     * 因为它是可点动作、不是"未选中的状态"），紧贴页签条右侧
+     * （间隔 {@link #HEAD_TAB_GAP_UNITS}）⇒ 三/四个文字项读起来同层级。
+     */
     private void drawTabs(Canvas c, float w, float unit, float top, Paint p) {
+        if (ctx == null) return;                       // 防御：refresh 之前绝不画
         RectF r = tabStrip(w, unit, top);
         final int[] vis = visibleViews();
         final String[] labels = MenuPrefs.VIEW_LABELS;
@@ -628,8 +629,27 @@ final class BillSection implements InsightRenderer.Section {
         p.setStyle(Paint.Style.FILL);
         p.setColor(LINE);
         c.drawRect(r.left, r.bottom - 1f, r.right, r.bottom, p);
-
         p.setTextAlign(Paint.Align.LEFT);
+
+        // ── 右端「生成壁纸」：🆕 诉求 ① **无边框** + 页签同字族同字号（无账 ⇒ 不画、也不命中）──
+        if (bill != null) {
+            RectF wb = wallpaperBtn(w, unit, top);
+            p.setStyle(Paint.Style.FILL);
+            p.setFakeBoldText(false);
+            p.setColor(INK);
+            p.setTextSize(sz);
+            // 字装不下就缩（下限 0.7×）—— 与卡片「打开墨台」同一个兜底
+            String lab = ctx.getString(R.string.menu_gen_wallpaper);
+            while (p.measureText(lab) > wb.width() && sz > 12.5f * unit * 0.7f) {
+                sz -= 0.4f;
+                p.setTextSize(sz);
+            }
+            Paint.FontMetrics wf = p.getFontMetrics();
+            p.setTextAlign(Paint.Align.CENTER);
+            c.drawText(lab, wb.centerX(), wb.centerY() - (wf.ascent + wf.descent) / 2f, p);
+            p.setTextAlign(Paint.Align.LEFT);
+        }
+
         p.setFakeBoldText(false);
         p.setTypeface(null);
     }

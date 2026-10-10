@@ -47,8 +47,11 @@
          与锁屏壁纸同款心智；固定路径常量在 core/PagePrefs.DESK_BG_REL）-->
     <string name="desk_bg_none">纯白（不使用图片）</string>
     <string name="desk_bg_custom">自定义</string>
-    <string name="desk_bg_custom_found">已找到 %1$s</string>
-    <string name="desk_bg_custom_missing">没找到 %1$s —— 把想要的图片改名为「墨台背景.jpg」放进 Pictures 文件夹即可；没放图（或没给存储读权限）时「自定义」不可选。</string>
+    <string name="desk_bg_apply">应用</string>
+    <string name="desk_bg_apply_hint">选好后点「应用」；点它时才去读 %1$s。</string>
+    <string name="desk_bg_applied_ok">已应用：%1$s</string>
+    <string name="desk_bg_applied_none">已应用：纯白（不使用图片）</string>
+    <string name="desk_bg_applied_fail">应用失败：没找到 %1$s —— 把想要的图片改名为「墨台背景.jpg」放进 Pictures 文件夹即可（也可能没给存储读权限）。</string>
     <string name="label_desk_enabled">启用墨台</string>
     <string name="label_desk_modules">内容模块</string>
     <string name="label_desk_modules_tip">勾选决定是否显示；↑ ↓ 调整顺序。顺序即墨台自上而下的顺序，关掉的模块不占高度。</string>
@@ -251,16 +254,10 @@
     <string name="lab_shake_sens_high">高</string>
     <!-- 🆕 2026-10-10 用户 ②：原来的「左右晃方向反转 / 上下晃方向反转」两个勾选
          已换成下面的「四动作方向 3 选 1」（见 lab_shake_peer_dir_label）；这两条文案已无消费方。 -->
-    <!-- 🆕 TASK-042（V1.1.1-beta）：晃动方向自选（响应哪几组轴）。
-         🔴 「响应」与「方向」是两回事：本组管"晃它响不响应"（检测层弃权），
-             下面四个动作的「方向（上/下/关）」管"翻哪一页 / 发不发"（投递层）。
-         默认双勾 = 现模式；禁止双不勾（UI 弹回 + Preferences 联合兜底）。 -->
-    <string name="lab_shake_axis_label">响应方向：</string>
-    <string name="lab_shake_axis_lr">左右晃</string>
-    <string name="lab_shake_axis_ud">上下晃</string>
-    <string name="lab_shake_axis_need_one">至少保留一组：左右晃 / 上下晃，不能都关。</string>
+    <!-- 🆕 2026-10-10 第三轮 用户 ③：TASK-042 的「响应方向」两条勾选（lab_shake_axis_lr / _ud）
+         连同标签、禁止双不勾提示、自证行的「（左右晃不响应）」一并删除 ——
+         逐动作「关」（lab_shake_page_off）已完整覆盖"这方向不响应"的语义。 -->
     <string name="lab_shake_map_now">当前映射：左晃→%1$s · 右晃→%2$s · 上晃→%3$s · 下晃→%4$s</string>
-    <string name="lab_shake_map_axis_off">（%1$s晃不响应）</string>
     <string name="lab_shake_hint">开启后晃动本机即可翻页。与音量键可同时使用。灵敏度分低/中/高三档（默认中）：太容易误触就调低，要甩很用力才响应就调高。⚠ 本应用需停在最前，切走后不生效。</string>
     <string name="lab_shake_page_prev">上一页</string>
     <string name="lab_shake_page_next">下一页</string>

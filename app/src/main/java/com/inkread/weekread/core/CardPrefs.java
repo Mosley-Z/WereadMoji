@@ -265,48 +265,16 @@ public final class CardPrefs {
         return sp(c).getBoolean("remote_shake_ud_rev", DEFAULT_SHAKE_UD_REV);
     }
 
-    // ── 🆕 TASK-042：晃动方向「通道使能」（V1.1.1-beta）──
+    // ── 🆕 TASK-042 的「通道使能」已删除（🆕 2026-10-10 第三轮 · 用户诉求 ③）──
     //
-    // 🔴 与上面的两个**反转**开关**正交**：反转控"翻哪边"，本组控"响不响应"。
-    //    · 只勾左右 ⇒ 上下晃**不进判决**（检测层直接弃权，非"翻错方向"）；
-    //    · 只勾上下 ⇒ 左右晃不响应；
-    //    · 双勾（默认） ⇒ 现模式（左右/上下都可翻）—— 升级后与现状零差异。
-    // 🔴 轴分组（按 ShakeDetector 现行结构）：`lr` = x 轴；`ud` = y + z 两条通道。
-    // 🔴 越界/缺失一律回落 true（与 note_card_size 同一套安全读出纪律）。
-    // 🔴 **双不勾非法** ⇒ 读取层兜底回 true（UI 侧也拦截，这里是防脏值的第二道保险）——
-    //    否则晃动会静默失效，用户会以为 App 坏了。
-
-    /** 左右晃（x 轴）是否响应（默认 true）。 */
-    public static final boolean DEFAULT_SHAKE_AXIS_LR = true;
-    /** 上下晃（y / z 轴）是否响应（默认 true）。 */
-    public static final boolean DEFAULT_SHAKE_AXIS_UD = true;
-
-    /**
-     * 左右轴是否使能。🔴 与 {@link #isShakeAxisUdEnabled} **联合兜底**：
-     * 两个都读到 false（含手改 prefs 的脏值）⇒ 返回 true（至少留一组），避免"全不响应"死角。
-     */
-    public static boolean isShakeAxisLrEnabled(Context c) {
-        boolean lr = sp(c).getBoolean("shake_axis_lr_enabled", DEFAULT_SHAKE_AXIS_LR);
-        boolean ud = sp(c).getBoolean("shake_axis_ud_enabled", DEFAULT_SHAKE_AXIS_UD);
-        if (!lr && !ud) return true;      // 双不勾 ⇒ 兜底为"左右使能"
-        return lr;
-    }
-
-    public static void setShakeAxisLrEnabled(Context c, boolean v) {
-        sp(c).edit().putBoolean("shake_axis_lr_enabled", v).commit();
-    }
-
-    /** 上下轴（y + z）是否使能。兜底口径同 {@link #isShakeAxisLrEnabled}。 */
-    public static boolean isShakeAxisUdEnabled(Context c) {
-        boolean lr = sp(c).getBoolean("shake_axis_lr_enabled", DEFAULT_SHAKE_AXIS_LR);
-        boolean ud = sp(c).getBoolean("shake_axis_ud_enabled", DEFAULT_SHAKE_AXIS_UD);
-        if (!lr && !ud) return true;      // 双不勾 ⇒ 兜底为"左右使能"（此时上下不使能）
-        return ud;
-    }
-
-    public static void setShakeAxisUdEnabled(Context c, boolean v) {
-        sp(c).edit().putBoolean("shake_axis_ud_enabled", v).commit();
-    }
+    // 原 API：`isShakeAxisLrEnabled` / `isShakeAxisUdEnabled` / `setShakeAxisLrEnabled` /
+    //        `setShakeAxisUdEnabled`（键 `shake_axis_lr_enabled` / `shake_axis_ud_enabled`）。
+    // 🔴 删除理由：四动作方向已升级为**三值**（上一页 / 下一页 / **关**，见
+    //    {@link #SHAKE_DIR_NONE} 与 {@link #getShakeLocalActDir}）⇒ 「让某个方向不响应」这件事
+    //    已经由**逐动作的「关」**直接表达，轴使能是重复的一层，且两层叠加时用户说不清
+    //    （"我明明把左晃设成上一页，为什么没反应？"—— 其实是轴被关了）。
+    // 🔴 读取层不再做门控 ⇒ ShakeDetector 的三轴一律参与判轴（即两轮之前的默认行为）。
+    // ⚠️ 旧键仍可能留在 prefs 里，但已无任何读取方 ⇒ 天然失效，无需迁移。
 
     // ── 🆕 TASK-073：本机晃动翻页（V1.2.2-beta）──
     //

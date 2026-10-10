@@ -725,7 +725,11 @@ public final class DeskPageView extends View {
                         } else {
                             DeskSettings.Item it = settings.hitItem(e.getX(),
                                     e.getY() - renderer.headerHeight(unit) + scrollY, getWidth(), unit);
-                            if (settings.activate(it)) {
+                            final boolean changed = settings.activate(it);
+                            // 🆕 诉求 ②：「应用」的结果立刻弹一条（墨屏重绘慢，光靠面板里的状态行太迟）
+                            final String tip = settings.consumeToast();
+                            if (tip != null) toast(tip);
+                            if (changed) {
                                 remeasure(getWidth(), getHeight());
                                 invalidate();
                             }

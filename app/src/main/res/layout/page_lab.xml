@@ -282,44 +282,9 @@
                         </RadioGroup>
                     </LinearLayout>
 
-                    <!-- 🆕 TASK-042：晃动方向「响应哪几组轴」多选（左右 / 上下）——
-                         🔴 与下方两个「反转」开关**语义正交**：本组管"响应不响应"，反转管"翻页方向"。
-                         两组都勾 = 现模式（默认）；禁止双不勾（UI 层挡 + CardPrefs 联合兜底）。
-                         ⚠ 不用 Material accent 填充（墨水屏近黑会糊），沿用黑 buttonTint。 -->
-                    <LinearLayout
-                        android:id="@+id/ll_shake_axis"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/lab_shake_axis_label"
-                            android:textColor="#FF000000"
-                            android:textSize="13sp" />
-
-                        <CheckBox
-                            android:id="@+id/cb_shake_axis_lr"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="6dp"
-                            android:buttonTint="#FF000000"
-                            android:text="@string/lab_shake_axis_lr"
-                            android:textColor="#FF000000"
-                            android:textSize="13sp" />
-
-                        <CheckBox
-                            android:id="@+id/cb_shake_axis_ud"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="10dp"
-                            android:buttonTint="#FF000000"
-                            android:text="@string/lab_shake_axis_ud"
-                            android:textColor="#FF000000"
-                            android:textSize="13sp" />
-                    </LinearLayout>
+                    <!-- 🆕 2026-10-10 第三轮（用户诉求 ③）：**删除「响应方向」两个轴勾选** ——
+                         四动作「上一页 / 下一页 / 关」已能逐动作关掉，轴使能是重复的一层；
+                         用户原话：有了 4×3 单选，可以删除响应方向的两个勾选。 -->
 
                     <!-- 🆕 2026-10-10 用户 ②：四动作方向（左/右/上/下晃）各**三选一** ——
                          取代原来的「左右晃方向反转 / 上下晃方向反转」两个勾选。

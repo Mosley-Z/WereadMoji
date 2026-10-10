@@ -121,9 +121,8 @@ public class LabPageController {
     private RadioGroup rgShakePeerDirRight;
     private RadioGroup rgShakePeerDirUp;
     private RadioGroup rgShakePeerDirDown;
-    private View llShakeAxis;            // 🆕 TASK-042：响应方向行（左右 / 上下 多选）
-    private CheckBox cbShakeAxisLr;      //   左右晃是否响应
-    private CheckBox cbShakeAxisUd;      //   上下晃是否响应
+    // 🆕 2026-10-10 第三轮（用户诉求 ③）：原 `llShakeAxis` / `cbShakeAxisLr` / `cbShakeAxisUd`
+    //   三个「响应方向」多选控件**已整块删除** —— 逐动作「关」已覆盖其语义（见 CardPrefs 顶部注）。
     private TextView tvShakeMap;         // ⑤ 动态「当前映射」自证行
     /** 防回环：refreshShakeUi() 回填控件时会触发监听，置位期间忽略回调。 */
     private boolean mShakeUiSyncing;
@@ -234,9 +233,7 @@ public class LabPageController {
         rgShakePeerDirRight = (RadioGroup) host.findViewById(R.id.rg_shake_peer_dir_right);
         rgShakePeerDirUp = (RadioGroup) host.findViewById(R.id.rg_shake_peer_dir_up);
         rgShakePeerDirDown = (RadioGroup) host.findViewById(R.id.rg_shake_peer_dir_down);
-        llShakeAxis = host.findViewById(R.id.ll_shake_axis);               // 🆕 TASK-042
-        cbShakeAxisLr = (CheckBox) host.findViewById(R.id.cb_shake_axis_lr);
-        cbShakeAxisUd = (CheckBox) host.findViewById(R.id.cb_shake_axis_ud);
+        // 🆕 2026-10-10 第三轮（诉求 ③）：不再 findViewById 「响应方向」两个勾选（布局里已删除）
         tvShakeMap = (TextView) host.findViewById(R.id.tv_shake_map);
 
         // ── 🆕 TASK-073：「本机晃动」（与 role / 连接方式**都无关** ⇒ 不随 role 显隐）──
@@ -514,33 +511,16 @@ public class LabPageController {
                 int id = b.getId();
                 if (id == R.id.cb_shake_enabled) {
                     CardPrefs.setShakeEnabled(host, checked);
-                } else if (id == R.id.cb_shake_axis_lr) {
-                    // 🆕 TASK-042：禁止双不勾 —— 若这次取消会同时关掉两组，则弹回。
-                    if (!checked && !CardPrefs.isShakeAxisUdEnabled(host)) {
-                        mShakeUiSyncing = true;
-                        try { cbShakeAxisLr.setChecked(true); } finally { mShakeUiSyncing = false; }
-                        toast(host.getString(R.string.lab_shake_axis_need_one));
-                        return;
-                    }
-                    CardPrefs.setShakeAxisLrEnabled(host, checked);
-                } else if (id == R.id.cb_shake_axis_ud) {
-                    if (!checked && !CardPrefs.isShakeAxisLrEnabled(host)) {
-                        mShakeUiSyncing = true;
-                        try { cbShakeAxisUd.setChecked(true); } finally { mShakeUiSyncing = false; }
-                        toast(host.getString(R.string.lab_shake_axis_need_one));
-                        return;
-                    }
-                    CardPrefs.setShakeAxisUdEnabled(host, checked);
                 }
                 // 🆕 2026-10-10 用户 ②：方向不再走这里 —— 已换成「四动作方向 3 选 1」
                 //   （遥控侧 dirP 监听器落 setShakePeerActDir，本机侧 dirL 落 setShakeLocalActDir）。
+                // 🆕 2026-10-10 第三轮 用户 ③：`cb_shake_axis_lr/ud` 两个分支**整块删除**
+                //   （控件已从两份镜像布局移除；轴使能这一层与逐动作「关」重复）。
                 refreshShakeUi();
                 ShakeDetector.sync(host);   // G2 即时生效
             }
         };
         cbShakeEnabled.setOnCheckedChangeListener(shakeL);
-        cbShakeAxisLr.setOnCheckedChangeListener(shakeL);   // 🆕 TASK-042
-        cbShakeAxisUd.setOnCheckedChangeListener(shakeL);
 
         // ── 🆕 TASK-073：本机晃动总开关（与上方对端晃动**各自独立**，可同时开）──
         //   写偏好 ⇒ 刷自证行 ⇒ sync 让捕获层即时启停本机采样（关掉要 ≤1s 停）。
@@ -1280,24 +1260,22 @@ public class LabPageController {
     /**
      * 🆕 TASK-029：刷新「晃动翻页」区块（bind / onResume / 角色切换 / 任一开关变更后调用）。
      *
-     * <p>① 回填总开关 / 灵敏度 / 响应方向 / 四动作方向（期间置 {@link #mShakeUiSyncing} 防回环）；
+     * <p>① 回填总开关 / 灵敏度 / 四动作方向（期间置 {@link #mShakeUiSyncing} 防回环）；
      * ② **总开关关时把方向相关控件整块置灰**（保留可见，避免布局跳动）；
      * ③ 拼出「当前映射」自证行：用户不必靠"开关名 + 记忆"反推映射，**映射永远以屏幕上的字为准**。
      *
      * <p>🆕 2026-10-10 用户 ②：方向由「两个反转勾选」换成「四动作 × 三值（上一页/下一页/关）」，
      * 映射行也随之直读三值（选「关」的动作在自证行里显示「关」）。
+     * <p>🆕 2026-10-10 用户 ③：**「响应方向」两个轴勾选已删除** ⇒ 自证行不再有"某轴不响应"
+     * 这种半开状态；每个动作要么上一页 / 要么下一页 / 要么关，语义只剩一维。
      */
     public void refreshShakeUi() {
         if (cbShakeEnabled == null) return;
         boolean on = CardPrefs.isShakeEnabled(host);
-        boolean axLr = CardPrefs.isShakeAxisLrEnabled(host);   // 🆕 TASK-042
-        boolean axUd = CardPrefs.isShakeAxisUdEnabled(host);
         int sens = CardPrefs.getShakeSens(host);
         mShakeUiSyncing = true;
         try {
             cbShakeEnabled.setChecked(on);
-            cbShakeAxisLr.setChecked(axLr);
-            cbShakeAxisUd.setChecked(axUd);
             rgShakeSens.check(sens == CardPrefs.SHAKE_SENS_LOW ? R.id.rb_shake_sens_low
                     : sens == CardPrefs.SHAKE_SENS_HIGH ? R.id.rb_shake_sens_high
                     : R.id.rb_shake_sens_mid);
@@ -1317,9 +1295,7 @@ public class LabPageController {
         } finally {
             mShakeUiSyncing = false;
         }
-        // 🆕 TASK-042：响应方向多选同样随总开关置灰
-        cbShakeAxisLr.setEnabled(on);
-        cbShakeAxisUd.setEnabled(on);
+        // 🆕 2026-10-10 第三轮（诉求 ③）：不再有「响应方向」勾选 ⇒ 也无需随总开关置灰
         // 🆕 2026-10-10：四动作方向整块（标签 + 四个组）随总开关置灰（可见即可灰）
         setEnabledDeep(llShakePeerDir, on);
         // 🆕 灵敏度三档：总开关关时置灰
@@ -1334,18 +1310,8 @@ public class LabPageController {
             String rrCol = dirLabel(CardPrefs.getShakePeerActDir(host, CardPrefs.SHAKE_ACT_RIGHT), prev, next, off);
             String udCol = dirLabel(CardPrefs.getShakePeerActDir(host, CardPrefs.SHAKE_ACT_UP), prev, next, off);
             String ddCol = dirLabel(CardPrefs.getShakePeerActDir(host, CardPrefs.SHAKE_ACT_DOWN), prev, next, off);
-            // 🆕 TASK-042：未使能的组在映射行里显式标注「不响应」，用户一眼看出为何甩了没反应
-            //   🔴 优先于「关」：轴没响应时，方向设置根本轮不到 —— 显示"不响应"信息量更大。
-            if (!axLr) {
-                String axOff = host.getString(R.string.lab_shake_map_axis_off,
-                        host.getString(R.string.lab_shake_axis_lr));
-                lrCol = axOff; rrCol = axOff;
-            }
-            if (!axUd) {
-                String axOff = host.getString(R.string.lab_shake_map_axis_off,
-                        host.getString(R.string.lab_shake_axis_ud));
-                udCol = axOff; ddCol = axOff;
-            }
+            // 🔴 旧版这里还会把"未使能轴"的两个动作标成「不响应」；诉求 ③ 删除轴勾选后，
+            //    每个动作只有 上一页/下一页/关 三种取值 ⇒ 直读即可，不再有第二种覆盖来源。
             tvShakeMap.setText(host.getString(R.string.lab_shake_map_now, lrCol, rrCol, udCol, ddCol));
         }
     }
@@ -1423,18 +1389,7 @@ public class LabPageController {
         String rrCol = dirLabel(CardPrefs.getShakeLocalActDir(host, CardPrefs.SHAKE_ACT_RIGHT), prev, next, off);
         String udCol = dirLabel(CardPrefs.getShakeLocalActDir(host, CardPrefs.SHAKE_ACT_UP), prev, next, off);
         String ddCol = dirLabel(CardPrefs.getShakeLocalActDir(host, CardPrefs.SHAKE_ACT_DOWN), prev, next, off);
-        if (!CardPrefs.isShakeAxisLrEnabled(host)) {
-            String axOff = host.getString(R.string.lab_shake_map_axis_off,
-                    host.getString(R.string.lab_shake_axis_lr));
-            lrCol = axOff;
-            rrCol = axOff;
-        }
-        if (!CardPrefs.isShakeAxisUdEnabled(host)) {
-            String axOff = host.getString(R.string.lab_shake_map_axis_off,
-                    host.getString(R.string.lab_shake_axis_ud));
-            udCol = axOff;
-            ddCol = axOff;
-        }
+        // 🆕 2026-10-10 第三轮（诉求 ③）：轴勾选已删 ⇒ 不再有"某轴不响应"的覆盖分支
         tvShakeLocalNote.setText(host.getString(R.string.lab_shake_local_note_on,
                 host.getString(R.string.lab_shake_map_now, lrCol, rrCol, udCol, ddCol)));
     }
