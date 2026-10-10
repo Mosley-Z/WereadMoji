@@ -31,6 +31,8 @@
     <string name="nav_insight">洞察</string>
     <!-- 🆕 TASK-075：「墨台」桌面呼出页（第三全屏覆盖窗）-->
     <string name="desk_title">墨台</string>
+    <!-- 🆕 TASK-080：卡片左上角呼出入口（抬头行最左的小按钮）-->
+    <string name="desk_open_btn">打开墨台</string>
     <string name="desk_back">‹ 返回</string>
     <string name="desk_empty">暂无内容</string>
     <!-- 🆕 TASK-076：设置页「墨台」分区（总开关 / 内容模块开关+调序 / 背景）-->

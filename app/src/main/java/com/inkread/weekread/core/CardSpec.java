@@ -103,6 +103,50 @@ public final class CardSpec {
     //   · 其余 —— 卡片 View **内部**坐标（左上角为 0,0，尺寸 368×346）。
     // ─────────────────────────────────────────────────────────────
 
+    // ── 🆕 TASK-080「打开墨台」按钮（卡片左上角、抬头行最左）──
+    //
+    // 用户 2026-10-09 第二轮拍板（Q2）：触发方式 = 「放在卡片左上角，一个小按钮『打开墨台』；
+    // 卡片形态的切换并列在其右边；卡片形态的标题简化，和二字形态名一致」。
+    //
+    // 与前两个按钮位（右下 openBox / 左下 prevBox）的关键区别：**它不随卡片高度变化**
+    // —— 抬头行永远在卡片上沿，所以位置是**固定值**，不像 openBoxTop(h) 那样要跟展开态下移。
+    //
+    // 尺寸：字号 = 抬头字号 × 0.66（19 × 1.2 × 0.66 ≈ 15px），四字「打开墨台」≈ 60px
+    // + 左右各 ≈8px 内衬 ⇒ **76**。高度 24，与图标行（icon ≈ 14px）**垂直居中**
+    //（见 CardRenderer#drawHeader：`iconTop + (icon − DESK_BOX_H)/2`，两边同源）。
+    //
+    // 🔴 触摸窗比画出来的框**大一圈**（见下面的 DESK_TOUCH_*）—— 与右上「更新于」那一块
+    //    （文字 ≈20px 却开 34px 高的窗）同一条理由：墨水屏上手指按得准。
+
+    /** 「打开墨台」按钮宽度（绘制与触摸窗共用） */
+    public static final int DESK_BOX_W = 76;
+    /** 「打开墨台」按钮高度 */
+    public static final int DESK_BOX_H = 24;
+    /** 按钮左沿距卡片左沿的内缩（与抬头左端同一条竖线 ⇒ 0） */
+    public static final int DESK_BOX_MARGIN_L = 0;
+    /** 按钮右沿到「⇄」切换图标左沿的间隙 */
+    public static final int DESK_BOX_GAP = 6;
+
+    /** 触摸窗宽度（比画出来的框 +4，手指按得准） */
+    public static final int DESK_TOUCH_W = DESK_BOX_W + 4;
+    /** 触摸窗高度（同上，比 24 高的画框大一圈） */
+    public static final int DESK_TOUCH_H = 30;
+    /**
+     * 触摸窗顶边相对卡片顶边的偏移 —— 罩住画出来的框（view 坐标 [20.6, 44.6] ⇒ 窗 [18, 48]）。
+     * 与 {@link #TITLE_TAP_TOP_OFFSET}（14）同量级；两窗**只要求横向不重叠**，纵向可以嵌套。
+     */
+    public static final int DESK_TOUCH_TOP_OFFSET = 18;
+
+    /** 按钮左边界（**屏幕**坐标，给 WindowManager 用） */
+    public static int deskBoxLeft() {
+        return CARD_LEFT + DESK_BOX_MARGIN_L;
+    }
+
+    /** 按钮触摸窗上边界（**屏幕**坐标，给 WindowManager 用） */
+    public static int deskTouchTop() {
+        return CARD_TOP + DESK_TOUCH_TOP_OFFSET;
+    }
+
     /**
      * 卡片左上角「抬头」触摸窗：点它 = 切换形态（本周 → 本月 → 本书）。
      *
@@ -114,14 +158,30 @@ public final class CardSpec {
      * 文字一直画到屏幕 x≈214 —— 旧值 120 只盖到 x=176，**"时长"两字的点击会穿透**
      * 给图墨桌面的小组件容器（FrameLayout），触发 iconGate 让位且在图墨上没有可靠恢复，
      * 表现为"点几下卡片就消失"。170 盖到 x=226，把三个形态的标题全罩住并留余量。
+     *
+     * 🔴 🆕 TASK-080：抬头最左让出「打开墨台」按钮位（{@link #DESK_BOX_W}），
+     * 且标题**二字化**（`nav_*`）⇒ 本窗**左移到按钮右侧、并缩到 124**：
+     *   · 左沿 = {@link #titleTapLeft()} = CARD_LEFT + 82 = 138（= 按钮右沿 + 6px 间隙）；
+     *   · 右沿 = 138 + 124 = 262 < 右上「更新于」触摸窗左沿 264（{@link #TAP_W} = 160）
+     *     ⇒ **两窗不重叠**（重叠会让后 add 的窗盖住「更新于」文字、点刷新失灵）；
+     *   · 覆盖范围：⇄ 图标 [138,152] + 二字标题 [156,202] ⇒ 262 仍留 60px 余量，
+     *     那个"点击穿透给桌面容器"的教训值依然满足（窗必须罩住全部"有可点感"的区域）。
+     * 按钮触摸窗 [56,136] 与本窗 [138,262] 之间留 2px 空档 ⇒ 三者（按钮/抬头/刷新）**互不重叠**。
      */
-    public static final int TITLE_TAP_W = 170;
+    public static final int TITLE_TAP_W = 124;
     public static final int TITLE_TAP_H = 34;
     /** 触摸窗顶边相对卡片顶边的偏移（窗口内坐标） */
     public static final int TITLE_TAP_TOP_OFFSET = 14;
+    /** 触摸窗左沿相对卡片左沿的偏移（= 按钮宽 + 间隙，见 {@link #DESK_BOX_GAP}） */
+    public static final int TITLE_TAP_LEFT_OFFSET = DESK_BOX_W + DESK_BOX_GAP;
 
     public static int titleTapTop() {
         return CARD_TOP + TITLE_TAP_TOP_OFFSET;
+    }
+
+    /** 触摸窗左边界（**屏幕**坐标，给 WindowManager 用）—— 让出左侧按钮位 */
+    public static int titleTapLeft() {
+        return CARD_LEFT + TITLE_TAP_LEFT_OFFSET;
     }
 
     // ── 本月版式：右侧日历打卡网格 ──

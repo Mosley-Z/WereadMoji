@@ -1,5 +1,6 @@
 package com.inkread.weekread.feature;
 
+import com.inkread.weekread.R;
 import com.inkread.weekread.core.CardSpec;
 import com.inkread.weekread.core.NoteStore;
 import com.inkread.weekread.core.PeriodRange;
@@ -323,6 +324,16 @@ final class CardRenderer {
      *
      * 抬头文字随形态变化（拍板 A）：`本周阅读时长` / `9月阅读` / `本书阅读进度`。
      *
+     * 🆕 TASK-080 起抬头行的排布是（用户 2026-10-09 拍板 Q2）：
+     * <pre>
+     * [ 打开墨台 ]  ⇄  本周                              更新于 14:32  ⟳
+     *  └─小按钮─┘   └切换┘└二字标题┘
+     * </pre>
+     * 最左那个「打开墨台」是墨台的**唯一常驻入口**（四种形态都在）；标题取 `nav_*` 二字名；
+     * 最右的「更新于 + ⟳」一个字没动。
+     * 🔴 改本方法时**只动抬头行**：`padY` / `titleY` / `iconTop` / `ruleY` 的算式一律不动，
+     * 正文才能保持逐像素不变（`TASK-080` 验收 A7）。
+     *
      * v0.3.4 起两头各多一个小图标（拍板⑤）：
      * · **左**：两个反向小箭头 —— 表示"抬头这里点一下可以切换形态"；
      * · **右**：一段带箭头的圆弧 —— 表示"点这里刷新"。
@@ -358,12 +369,20 @@ final class CardRenderer {
         host.p.setTextSize(titleSize);
         float titleW = host.p.measureText(title);
 
+        // 🆕 TASK-080：抬头行最左是「打开墨台」小按钮，其右才是「⇄ + 二字标题」。
+        // 几何一律取 CardSpec（那边同时给桌面那个透明触摸窗定坐标 ⇒ 两边天然重合）。
+        float deskW = CardSpec.DESK_BOX_W;
+        float deskH = CardSpec.DESK_BOX_H;
+        float deskLeft = left + CardSpec.DESK_BOX_MARGIN_L;
+        float switchX = deskLeft + deskW + CardSpec.DESK_BOX_GAP;
+
         float upW = 0f;
-        // 抬头与右上时间不许打架：宽度不够就把时间字缩小（要扣掉两个图标占的位置）
+        // 抬头与右上时间不许打架：宽度不够就把时间字缩小（要扣掉按钮 + 两个图标占的位置）
         if (up.length() > 0) {
             host.p.setTextSize(upSize);
             upW = host.p.measureText(up);
-            float avail = (right - left) - (icon + gapI) - titleW - (icon + gapI * 2f) - 10f;
+            float avail = (right - left) - (deskW + CardSpec.DESK_BOX_GAP)
+                    - (icon + gapI) - titleW - (icon + gapI * 2f) - 10f;
             if (avail > 0 && upW > avail) {
                 upSize = Math.max(SZ_UPDATED * host.unit * 0.62f, upSize * avail / upW);
                 host.p.setTextSize(upSize);
@@ -374,10 +393,17 @@ final class CardRenderer {
         float titleY = padY + titleSize;
         float iconTop = titleY - titleSize * 0.36f - icon / 2f;
 
-        // 左：切换图标 + 抬头文字
-        drawSwitchIcon(c, left, iconTop, icon);
+        // 最左：「打开墨台」小按钮（1px 直角描边框，与图标行垂直居中）
+        drawDeskButton(c, deskLeft, iconTop + (icon - deskH) / 2f, deskW, deskH, titleSize);
+
+        // 其右并列：「⇄」切换图标 + 二字标题（TASK-080：标题已收敛为 nav_* 二字名）
+        drawSwitchIcon(c, switchX, iconTop, icon);
+        host.p.setStyle(Paint.Style.FILL);
+        host.p.setColor(INK);
+        host.p.setTextAlign(Paint.Align.LEFT);
+        host.p.setFakeBoldText(true);
         host.p.setTextSize(titleSize);
-        c.drawText(title, left + icon + gapI, titleY, host.p);
+        c.drawText(title, switchX + icon + gapI, titleY, host.p);
         host.p.setFakeBoldText(false);
 
         // 右：更新时间（贴右沿）+ 刷新图标（在它左边）
@@ -400,6 +426,43 @@ final class CardRenderer {
         c.drawLine(left, ruleY, right, ruleY, host.p);
         host.p.setStyle(Paint.Style.FILL);
         return ruleY;
+    }
+
+    /**
+     * 🆕 TASK-080：抬头最左的「打开墨台」小按钮 —— 描边框 + 居中文字。
+     *
+     * <p>⚠️ 框**不是**圆角胶囊：墨水屏铁律（`docs/03` §1.3）禁圆角 / 阴影 / 渐变。
+     * 描边 **1px**（用户拍板「1px 描边直角胶囊」；比页内大按钮的 2px 细一档 —— 它更小、
+     * 描边再粗字就压没了）；路径内缩 0.5px 使 1px 笔画正好压在框沿上。
+     * 字号 = 抬头字号 × 0.66（与两侧小图标同比例）；框高由调用方给（与图标行垂直居中）。
+     * 文字超宽自动缩字号（下限 0.7×）—— **宁小不裁**：它是墨台的唯一常驻入口。
+     *
+     * <p>顺带把矩形回写进 {@code host.deskBox}（**View 内坐标**）：App 全屏档没有透明窗，
+     * 点击靠 {@code CardInteraction.touch()} 的画布命中，命中区必须与画出来的框严格一致。
+     * 桌面档那份屏幕坐标由 {@link CardSpec#deskBoxLeft()} 给，两边共用同一组常量 ⇒ 天然重合。
+     */
+    private void drawDeskButton(Canvas c, float x, float y, float w, float h, float titleSize) {
+        host.deskBox.set(x, y, x + w, y + h);
+
+        host.p.setStyle(Paint.Style.STROKE);
+        host.p.setStrokeWidth(1f);
+        host.p.setColor(INK);
+        c.drawRect(x + 0.5f, y + 0.5f, x + w - 0.5f, y + h - 0.5f, host.p);
+        host.p.setStyle(Paint.Style.FILL);
+
+        String label = host.getContext().getString(R.string.desk_open_btn);
+        float size = titleSize * 0.66f;
+        float minSize = size * 0.7f;
+        host.p.setColor(INK);
+        host.p.setTextAlign(Paint.Align.CENTER);
+        host.p.setTextSize(size);
+        while (host.p.measureText(label) > w - 8f && size > minSize) {
+            size -= 0.5f;
+            host.p.setTextSize(size);
+        }
+        Paint.FontMetrics fm = host.p.getFontMetrics();
+        c.drawText(label, x + w / 2f, y + h / 2f - (fm.descent + fm.ascent) / 2f, host.p);
+        host.p.setTextAlign(Paint.Align.LEFT);
     }
 
     // ══════════════════════ 抬头两侧的小图标（v0.3.4） ══════════════════════

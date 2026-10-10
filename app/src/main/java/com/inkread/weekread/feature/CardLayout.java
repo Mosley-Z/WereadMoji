@@ -1,5 +1,6 @@
 package com.inkread.weekread.feature;
 
+import com.inkread.weekread.R;
 import com.inkread.weekread.core.PeriodRange;
 
 import android.graphics.Paint;
@@ -87,11 +88,34 @@ final class CardLayout {
 
     // ── 抬头 ──
 
-    /** 抬头文字（拍板 A）：本周阅读时长 / 9月阅读 / 2026年3月阅读 */
+    /**
+     * 抬头文字。
+     *
+     * <p>🆕 TASK-080（用户 2026-10-09 第二轮拍板 Q2）：「卡片形态的标题简化，
+     * **和二字形态名一致**」⇒ 四种"有卡面"的形态改取 {@code nav_*} 二字名
+     * （`本周 / 本月 / 本书 / 本记`），替代原先的长名（如「本书阅读进度」）。
+     *
+     * <p>🔴 **只在抬头绘制处换** —— {@link PeriodRange#title} 本身一个字没动
+     * （它还有别的消费方，如导出与设置页）。
+     *
+     * <p>其余形态（待办 / 洞察 / 年 / 全时段）**没有**二字名 ⇒ 原样沿用长名，
+     * 既不新增文案、也不改既有呈现。
+     */
     String titleText() {
+        int nav = navRes(host.mode);
+        if (nav != 0) return host.getContext().getString(nav);
         long start = (host.stats != null && host.stats.baseTime > 0)
                 ? host.stats.baseTime : PeriodRange.startOf(host.mode, 0);
         return PeriodRange.title(host.mode, start, PeriodRange.isCurrent(host.mode, start));
+    }
+
+    /** 形态 → 二字名资源（只有四种"有卡面"的形态有；其余返 0 = 沿用长名） */
+    private static int navRes(String mode) {
+        if (PeriodRange.WEEKLY.equals(mode)) return R.string.nav_week;
+        if (PeriodRange.MONTHLY.equals(mode)) return R.string.nav_month;
+        if (PeriodRange.BOOK.equals(mode)) return R.string.nav_book;
+        if (PeriodRange.NOTE.equals(mode)) return R.string.nav_note;
+        return 0;
     }
 
     String updatedLabel() {

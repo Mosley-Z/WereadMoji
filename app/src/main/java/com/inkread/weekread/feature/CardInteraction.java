@@ -9,10 +9,12 @@ import android.view.MotionEvent;
  * · 只有「本书」/「本记」形态需要接收触摸 —— 本书 = 左下「选书」（🆕 TASK-071）+ 右下「打开」；
  *   本记 = 左下「上一条」+ 右下「换一条」（App 全屏档另有「导出」「筛选」与
  *   🆕 TASK-057 的「选书」格），且 v0.4.4 起本记态还要区分**滑动**（滚正文）与**点击**（按按钮）。
+ * · 🆕 TASK-080 起，**四种形态**的左上角都有「打开墨台」⇒ 周/月形态也不再是"完全不处理触摸"，
+ *   而是**只接住落在那个小按钮上的手势**（其余位置照旧放行给宿主/桌面）。
  * · v0.4.1 修的正是这里：原来开头一句 `if (!isBook()) return false;` 把本记态的
  *   触摸全放掉了，App 内的「换一条」因此是个**画上去的假按钮**（点它没有任何反应）。
- * · 周/月形态保持原样（不处理触摸）—— 桌面卡片那边整张卡是 NOT_TOUCHABLE，
- *   App 里也用不到卡片自身的点击。
+ * · 周/月形态保持原样（不处理滚动）—— 桌面卡片那边整张卡是 NOT_TOUCHABLE，
+ *   点按钮靠 `OverlayController` 另开的透明小窗；周/月在 App 里除「打开墨台」外无可点目标。
  *
  * 🔴 手法与 TASK-006 一致：**字段全部留在壳里**，本类持 {@link #host} 引用按包级可见访问；
  * 代码逐行平移，除 `host.` 前缀外零改动 —— 拆分前后触摸行为必须完全一致。
@@ -27,6 +29,25 @@ final class CardInteraction {
     private static final float NOTE_SCROLL_SLOP = 12f;
 
     boolean touch(MotionEvent e) {
+        // 🆕 TASK-080：左上角「打开墨台」（**四种形态都有** —— 它是墨台的常驻入口）。
+        // 它落在抬头行，与状态栏 / 正文 / 其余按钮矩形都不重叠，先后判都不抢。
+        boolean deskHit = hit(host.deskBox, e.getX(), e.getY());
+
+        // 🔴🔴 **必须先接住 ACTION_DOWN** —— 周/月形态原先对触摸"一律 return false"（不吃、不挡），
+        // 而 `View` 只有在 **DOWN 被消费**时才会收到后续的 UP ⇒ 只判 UP 的话这一下永远收不到。
+        // 真机实测（TASK-080 A2）：App 全屏档周形态点按钮**毫无反应、日志全空**，根因就在这里。
+        // 书/记两形态不必在此处理 —— 下面各分支本来就接住 DOWN。
+        if (deskHit && e.getActionMasked() == MotionEvent.ACTION_DOWN
+                && !host.isBook() && !host.isNote()) {
+            return true;
+        }
+        // 🔴 `!host.noteDrag`：本记态的触摸在 {@link #noteTouch} 里"先判滑动、再判点击"，
+        //    若这一下手势是**拖动正文**（手指起点恰好压在抬头行上），松手时不算点击。
+        //    非本记形态 noteDrag 恒为 false，不影响。
+        if (deskHit && e.getAction() == MotionEvent.ACTION_UP && !host.noteDrag) {
+            if (host.openListener != null) host.openListener.onOpenDesk();
+            return true;
+        }
         if (!host.isBook() && !host.isNote()) {
             // 🆕 TASK-054（K9）：本月全屏页「整页可滑」—— 只有**真的溢出**（monthScrollMax > 0）
             // 才吃手势；装得下时返回 false，行为与加本卡之前**完全一致**（不吃、不挡、不位移）。

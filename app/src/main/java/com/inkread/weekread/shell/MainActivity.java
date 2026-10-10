@@ -589,6 +589,14 @@ public class MainActivity extends Activity {
                 //（TASK-069 的 {@link BookPickView} 弹层原样复用，只是换了触发点）。
                 showBookPick();
             }
+
+            @Override
+            public void onOpenDesk() {
+                // 🆕 TASK-080：卡片**左上角**「打开墨台」⇒ 呼出墨台（TASK-075 的第三覆盖窗）。
+                // 🔴 App 档**走这条**（App 内的卡片本体可触摸、没有透明窗）；桌面档由
+                //    OverlayController 的 deskView 那个小窗承接，两条路最终都归 showDesk()。
+                CardA11yService.showDesk();
+            }
         });
 
         // 本记页的两个页内按钮（v0.4.1）：

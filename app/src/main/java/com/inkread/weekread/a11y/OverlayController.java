@@ -38,6 +38,15 @@ final class OverlayController {
     private WeekCardView view;
     /** 右上角「更新于…」的透明触摸区（手动刷新） */
     private View hitView;
+    /**
+     * 🆕 TASK-080：左上角「打开墨台」小按钮的透明触摸区 —— **四种形态都可见**
+     * （它是墨台的唯一常驻入口，见 `tasks/TASK-080` §关键约束 1）。
+     *
+     * <p>位置是**固定值**（抬头行永远在卡片上沿，不随展开态下移）⇒ 与
+     * {@link #titleView} / {@link #hitView} 同款"开一次窗、定死坐标"；
+     * 🔴 **不承载长按**（长按 = 隐藏时长菜单仍只归 {@code titleView}）。
+     */
+    private View deskView;
     /** 左上角「抬头」的透明触摸区（短按切形态、长按弹菜单） */
     private View titleView;
     /** 右下角「打开」按钮的透明触摸区（只在本书形态出现） */
@@ -276,6 +285,13 @@ final class OverlayController {
                     //   这一支是给"卡片本体可触摸"的宿主（App / 预览）兜底的，与那个小窗同归。
                     showBookPickMenu();
                 }
+
+                @Override
+                public void onOpenDesk() {
+                    // 🆕 TASK-080：左上角「打开墨台」。同上——桌面档由 deskView 那个小窗承接，
+                    //   这一支给"卡片本体可触摸"的宿主兜底。
+                    CardA11yService.showDesk();
+                }
             });
             wm.addView(view, OverlayWindow.params(OverlayWindow.typeAccessibility()));
 
@@ -290,6 +306,18 @@ final class OverlayController {
                 }
             });
             wm.addView(hitView, OverlayWindow.paramsTouch(OverlayWindow.typeAccessibility()));
+
+            // 🆕 TASK-080：左上角最左「打开墨台」—— 四种形态都可见（墨台的唯一常驻入口）。
+            // 与其余小窗同款：只圈住那个小按钮，卡片其它区域照旧穿透给桌面。
+            // 坐标固定（抬头行不随展开态位移）⇒ 开一次窗即可，不必回写。
+            deskView = new View(ctx);
+            deskView.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    CardA11yService.showDesk();
+                }
+            });
+            wm.addView(deskView, OverlayWindow.paramsDeskTouch(OverlayWindow.typeAccessibility()));
 
             // 左上角「抬头」那一小块：**短按**切形态（本周→本月→本书→本记，见 StatsStore.toggleCardPeriod）、**长按**弹隐藏菜单。
             // 同样是独立小窗 —— 切换只是"换一帧内容"，不碰任何显隐状态。
@@ -425,6 +453,7 @@ final class OverlayController {
             removeSafely(view);
             removeSafely(hitView);
             removeSafely(titleView);
+            removeSafely(deskView);
             removeSafely(openView);
             removeSafely(prevView);
             removeSafely(expandView);
@@ -437,6 +466,7 @@ final class OverlayController {
             view = null;
             hitView = null;
             titleView = null;
+            deskView = null;
             openView = null;
             prevView = null;
             expandView = null;
@@ -756,6 +786,8 @@ final class OverlayController {
         // 否则会在看不见的地方继续吃掉桌面的点击
         if (hitView != null) hitView.setVisibility(show ? View.VISIBLE : View.GONE);
         if (titleView != null) titleView.setVisibility(show ? View.VISIBLE : View.GONE);
+        // 🆕 TASK-080：「打开墨台」四种形态都可见（它是墨台的常驻入口）⇒ 只跟卡片显隐走。
+        if (deskView != null) deskView.setVisibility(show ? View.VISIBLE : View.GONE);
         // 「打开」只在本书形态存在：周/月形态下它要完全让开，不然会吃掉右下角的桌面手势
         String cardMode = StatsStore.getCardPeriod(ctx);
         boolean bookMode = PeriodRange.BOOK.equals(cardMode);
@@ -812,6 +844,7 @@ final class OverlayController {
         removeSafely(view);
         removeSafely(hitView);
         removeSafely(titleView);
+        removeSafely(deskView);
         removeSafely(openView);
         removeSafely(prevView);
         removeSafely(expandView);
@@ -825,6 +858,7 @@ final class OverlayController {
         view = null;
         hitView = null;
         titleView = null;
+        deskView = null;
         openView = null;
         prevView = null;
         expandView = null;

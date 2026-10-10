@@ -167,6 +167,14 @@ public class WeekCardView extends View {
     final RectF bmpDst = new RectF();
     /** 右下角「打开」按钮的矩形（**本 View 内部坐标**），供命中测试用 */
     final RectF openBox = new RectF();
+    /**
+     * 🆕 TASK-080：抬头行**最左**「打开墨台」小按钮的矩形（**本 View 内部坐标**）。
+     *
+     * <p>四种形态都有（它是墨台的唯一常驻入口），由 {@code CardRenderer#drawHeader}
+     * 每帧回写：桌面档与那一小片透明触摸窗同源（几何取 {@code CardSpec}），
+     * App 全屏档则靠它做画布命中（见 {@code CardInteraction.touch}）。
+     */
+    final RectF deskBox = new RectF();
     /** 本记形态「导出」按钮的矩形（只在 App 全屏档有效；卡片档恒为空） */
     final RectF exportBox = new RectF();
     /**
@@ -298,6 +306,15 @@ public class WeekCardView extends View {
          * 与 {@link NoteListener#onPickNote()} 的分工完全一样。
          */
         void onPickBook();
+
+        /**
+         * 🆕 TASK-080：点了左上角「打开墨台」—— 呼出墨台（第三覆盖窗，`TASK-075` 产出）。
+         *
+         * <p>与 {@link #onOpen()} 同款：**桌面卡片走不到这里**（卡主体 `FLAG_NOT_TOUCHABLE`，
+         * 点击由 `OverlayController#deskView` 那个透明小窗承接）；本回调是给"卡片本体可触摸"
+         * 的宿主（App 全屏档）兜底的。
+         */
+        void onOpenDesk();
     }
 
     /**

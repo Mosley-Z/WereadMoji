@@ -71,10 +71,36 @@ public final class OverlayWindow {
     }
 
     /**
+     * 🆕 TASK-080：左上角「打开墨台」按钮的触摸区 —— **四种形态都有**（它是墨台的唯一常驻入口）。
+     *
+     * 与 {@link #paramsTitleTouch} 并列在抬头行：按钮在最左、抬头窗在其右。
+     * 位置由 {@link CardSpec#deskBoxLeft()} / {@link CardSpec#deskTouchTop()} 给，
+     * 与 {@link WeekCardView} 画出来的那个小框同源（改几何只改 `CardSpec`）。
+     *
+     * 🔴 **不承载长按** —— 「长按 = 隐藏时长菜单」仍然只归 `titleView`（见 `OverlayController`）。
+     */
+    public static WindowManager.LayoutParams paramsDeskTouch(int type) {
+        int flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
+
+        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                CardSpec.DESK_TOUCH_W, CardSpec.DESK_TOUCH_H, type, flags, PixelFormat.TRANSLUCENT);
+        lp.gravity = Gravity.TOP | Gravity.LEFT;
+        lp.x = CardSpec.deskBoxLeft();
+        lp.y = CardSpec.deskTouchTop();
+        lp.setTitle("微读墨记·打开墨台");
+        return lp;
+    }
+
+    /**
      * 左上角「抬头」触摸区：点它切换卡片周期（本周 ↔ 本月，① 的第二个入口）。
      *
      * 与刷新触摸区同样的取舍 —— 只圈住标题那一小块，**不**把整张卡片变成可触摸，
      * 否则桌面在 368×346 这一大片里的手势（滑动翻页、长按）就全废了。
+     *
+     * 🔴 🆕 TASK-080：抬头窗**左沿右移**到「打开墨台」按钮的右侧（{@link CardSpec#titleTapLeft()}），
+     * 宽度随之收到 {@link CardSpec#TITLE_TAP_W} = 124 —— 两个窗（按钮 / 抬头）**不许重叠**，
+     * 否则点按钮会误触切形态、点切换会误触呼出墨台。
      */
     public static WindowManager.LayoutParams paramsTitleTouch(int type) {
         int flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
@@ -83,7 +109,7 @@ public final class OverlayWindow {
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
                 CardSpec.TITLE_TAP_W, CardSpec.TITLE_TAP_H, type, flags, PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | Gravity.LEFT;
-        lp.x = CardSpec.CARD_LEFT;
+        lp.x = CardSpec.titleTapLeft();
         lp.y = CardSpec.titleTapTop();
         lp.setTitle("微读墨记·切周期");
         return lp;
