@@ -148,8 +148,8 @@
         android:textColor="#FF000000"
         android:textSize="15sp" />
 
-    <!-- 🆕 TASK-079 · A7：「屏保（Daydream）」未验证 ⇒ 该项与「两者」**置灰**（代码里 setEnabled(false)
-         + 转灰字），并配下面那行如实提示；⛔ 绝不写成"已支持屏保"。 -->
+    <!-- 🆕 TASK-081：屏保（Daydream）S0 已实测可行（验证记录/194）⇒ **解除置灰**，
+         两项恢复正常可选；触发条件（仅屏幕超时熄灭会进屏保）由下面那行如实提示交代。 -->
     <RadioGroup
         android:id="@+id/rg_wall_scope"
         android:layout_width="match_parent"
@@ -171,9 +171,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:buttonTint="#FF000000"
-            android:enabled="false"
             android:text="@string/wall_scope_dream"
-            android:textColor="#FFA8A8A8"
+            android:textColor="#FF000000"
             android:textSize="15sp" />
 
         <RadioButton
@@ -181,9 +180,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:buttonTint="#FF000000"
-            android:enabled="false"
             android:text="@string/wall_scope_both"
-            android:textColor="#FFA8A8A8"
+            android:textColor="#FF000000"
             android:textSize="15sp" />
     </RadioGroup>
 
@@ -194,6 +192,48 @@
         android:layout_marginTop="2dp"
         android:lineSpacingExtra="3dp"
         android:text="@string/wall_scope_tip"
+        android:textColor="#FF6A6A6A"
+        android:textSize="12sp" />
+
+    <!-- ══════════════ ③b 屏保开关（🆕 TASK-081） ══════════════ -->
+    <!-- 开关 = 写/还原 3 个 Secure 键（components / activate_on_sleep / enabled）；
+         原值在首次开启时留档 ⇒「还原系统屏保设置」逐键写回（A3）。 -->
+    <CheckBox
+        android:id="@+id/cb_wall_dream"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:buttonTint="#FF000000"
+        android:text="@string/dream_enable"
+        android:textColor="#FF000000"
+        android:textSize="15sp" />
+
+    <Button
+        android:id="@+id/btn_wall_dream_restore"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:layout_marginTop="6dp"
+        android:background="@drawable/btn_ink"
+        android:minWidth="0dp"
+        android:minHeight="0dp"
+        android:stateListAnimator="@null"
+        android:text="@string/dream_restore" />
+
+    <TextView
+        android:id="@+id/tv_wall_dream_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:textColor="#FF3C3C3C"
+        android:textSize="13sp" />
+
+    <TextView
+        android:id="@+id/tv_wall_dream_tip"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:lineSpacingExtra="3dp"
+        android:text="@string/dream_tip"
         android:textColor="#FF6A6A6A"
         android:textSize="12sp" />
 

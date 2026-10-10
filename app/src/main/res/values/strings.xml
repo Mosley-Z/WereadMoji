@@ -409,7 +409,7 @@
     <string name="wall_scope_soft">仅软锁</string>
     <string name="wall_scope_dream">仅屏保</string>
     <string name="wall_scope_both">两者</string>
-    <string name="wall_scope_tip">「屏保（Daydream）」还没验证，本版只有「仅软锁」真的生效 —— 另两项先置灰，免得以为是已经在屏保上生效了。</string>
+    <string name="wall_scope_tip">选「仅屏保」或「两者」时，图片池会喂给屏保（Daydream）—— 但屏保只在屏幕【自己超时熄灭】时出现；按电源键 / 休眠键不会进屏保（本机实测结论，见验证记录/194）。</string>
 
     <!-- ④ 生成账单壁纸 -->
     <string name="wall_bill_label">生成账单壁纸</string>
@@ -432,7 +432,24 @@
     <string name="wall_btn_apply">把当前壁纸设为软锁背景</string>
     <string name="wall_apply_none">图片池是空的，先收一张图或生成一张账单壁纸</string>
     <string name="wall_apply_ok">已设为软锁背景（下一次唤醒软锁时生效）</string>
-    <string name="wall_note">如实说明：这里改的是「应用级软锁」的底图，不是系统壁纸 / 待机图。系统级屏保（Daydream）还没做，见后续版本。</string>
+    <string name="wall_note">如实说明：这里改的是「应用级软锁」的底图，不是系统壁纸 / 待机图。屏保（Daydream）只在屏幕自己超时熄灭时出现，按休眠键不会进屏保。</string>
+
+    <!-- ══════════ TASK-081：屏保（Daydream）V1.3.0-Beta ══════════ -->
+    <string name="dream_svc_label">微读墨记 · 屏保</string>
+    <string name="dream_label">屏保（Daydream）</string>
+    <string name="dream_enable">用图片池当屏保</string>
+    <string name="dream_restore">还原系统屏保设置</string>
+    <!-- 🔴 触发条件如实写：只在"屏幕自己超时熄灭"时生效（S0 实测，显式休眠键不触发） -->
+    <string name="dream_tip">开启后，屏幕【自己超时熄灭】时会显示图片池里的图（按上面的间隔换）。⚠ 按电源键 / 休眠键熄灭不会进屏保 —— 本机实测如此（验证记录/194）。另：开启会顶掉系统原有的屏保（本机原为时钟屏保），点「还原系统屏保设置」可退回原样。</string>
+    <string name="dream_status_off">屏保：关（系统屏保保持原样）</string>
+    <string name="dream_status_on">屏保：已开启 · 用图片池</string>
+    <string name="dream_status_partial">屏保：设置不完整（建议点「还原」后重开一次）</string>
+    <string name="dream_status_noperm">屏保：缺「修改系统设置」权限，无法开启（见「续航」页的授权命令）</string>
+    <string name="dream_status_nopool">屏保：图片池是空的，开启也不会有图</string>
+    <string name="dream_on_ok">已开启屏保：屏幕超时熄灭时会显示图片池的图</string>
+    <string name="dream_off_ok">已还原：系统屏保设置回到开启前的原值</string>
+    <string name="dream_fail_perm">开启失败：缺少「修改系统设置」权限（WRITE_SECURE_SETTINGS）</string>
+    <string name="dream_fail_nobackup">还没开启过屏保，没有可还原的原值</string>
 
     <!-- ══════════ TASK-024：待办（APP 页 + 桌面卡片）V1.0.3-beta ══════════ -->
     <string name="todo_tab_pending">待办列表</string>

@@ -278,6 +278,35 @@ public final class WallpaperPrefs {
     }
 
     /**
+     * 🆕 TASK-081：**轮换与屏保的唯一接缝** —— 屏保绘背景时问它"这一帧该显示哪张"。
+     *
+     * <p>与 {@link #effectiveSoftLockPath} **完全对称**，只是作用面换成屏保：
+     * <ul>
+     *   <li>范围 **不含屏保**（{@code scope == soft-lock}）⇒ 返回 {@code null}（屏保用纯白底，不显示池图）；</li>
+     *   <li>池**空** ⇒ 返回 {@code null}；</li>
+     *   <li>其余 ⇒ **复用同一个** {@link #rotateIfDue} 幂等引擎（🔴 不另起一套轮换口径，
+     *       见 `TASK-081` 关键约束 5），再返回池中当前那张。</li>
+     * </ul>
+     *
+     * <p>⚠️ 与软锁侧的差别：**间隔关（{@code <= 0}）时不推进、但仍返回当前那张** ——
+     * 屏保是"呈现面"，关掉轮换只意味着"不换"，不代表"不显示"。
+     */
+    public static String effectiveDreamPath(Context c) {
+        if (SCOPE_SOFT.equals(scope(c))) return null;          // 范围不含屏保
+        List<String> p = pool(c);
+        if (p.isEmpty()) return null;                          // 池空 ⇒ 屏保无图
+        if (intervalDays(c) > 0) rotateIfDue(c, p.size());     // 顺带幂等推进（同一引擎）
+        int i = index(c);
+        if (i < 0 || i >= p.size()) i = 0;
+        return p.get(i);
+    }
+
+    /** 轮换**是否真的作用于屏保**（= 范围含屏保 **且** 池非空）。供 UI 如实提示用。 */
+    public static boolean rotatesDream(Context c) {
+        return !SCOPE_SOFT.equals(scope(c)) && !pool(c).isEmpty();
+    }
+
+    /**
      * **到期才推进**（幂等）：首见只记日期；同日不换；跨 ≥N 天则按 `days / N` 一次补多期。
      */
     private static void rotateIfDue(Context c, int size) {
