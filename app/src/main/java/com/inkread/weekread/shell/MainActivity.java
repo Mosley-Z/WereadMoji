@@ -12,14 +12,12 @@ import com.inkread.weekread.core.CoverStore;
 import com.inkread.weekread.core.FeatureGate;
 import com.inkread.weekread.core.LockPrefs;
 import com.inkread.weekread.core.MenuPrefs;
-import com.inkread.weekread.core.NavExtra;
 import com.inkread.weekread.core.NoteStats;
 import com.inkread.weekread.core.NoteStore;
 import com.inkread.weekread.core.PagePrefs;
 import com.inkread.weekread.core.PeriodRange;
 import com.inkread.weekread.core.PeriodStats;
 import com.inkread.weekread.core.StatsStore;
-import com.inkread.weekread.core.WallpaperPrefs;
 import com.inkread.weekread.feature.BookPickView;
 import com.inkread.weekread.feature.InsightPageView;
 import com.inkread.weekread.feature.NoteExport;
@@ -213,7 +211,6 @@ public class MainActivity extends Activity {
             return;
         }
         enterApp();
-        applyNavExtra(getIntent());  // 🆕 TASK-079：跨包深链（须在临时调试钩子之前，深链优先）
         maybeDeskForDebug();         // 🔴 TASK-075 临时入口（TASK-080 落真触发端后回收）
     }
 
@@ -225,31 +222,7 @@ public class MainActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        applyNavExtra(intent);       // 🆕 TASK-079：深链（同一 Activity 复用时走这条）
         maybeDeskForDebug();
-    }
-
-    /**
-     * 🆕 TASK-079：处理**跨包深链** —— 目前只有一条：墨台「壁纸管家 → 管理」，
-     * 期望「打开大标签③ 实验室 + 切到壁纸管家子标签」（定稿设计 §5.5）。
-     *
-     * <p>🔴 键名走 {@link NavExtra}（{@code core}）：发起方在 {@code a11y}，本类在 {@code shell}，
-     * 两边都只依赖 {@code core} ⇒ 不会形成反向依赖。未知 {@code lab_sub} 值**静默忽略**
-     * （只定位到实验室页，不乱跳）。
-     */
-    private void applyNavExtra(Intent it) {
-        if (it == null) return;
-        String sub = it.getStringExtra(NavExtra.LAB_SUB);
-        if (sub == null || sub.length() == 0) return;
-        if (!FeatureGate.labVisible(this) || labCtrl == null) {
-            CardDebug.note(this, "深链实验室被拒：本形态实验室不可见（sub=" + sub + "）");
-            return;
-        }
-        showMainPage(MP_LAB);
-        if (NavExtra.LAB_SUB_WALLPAPER.equals(sub)) {
-            boolean ok = labCtrl.selectLabPage(R.id.page_lab_wallpaper);
-            CardDebug.note(this, "深链实验室·壁纸管家 " + (ok ? "OK" : "FAIL(子标签未装配)"));
-        }
     }
 
     /**
@@ -297,10 +270,6 @@ public class MainActivity extends Activity {
             BillStore.clear(this);                     // 只清账单段（不动 api_key / 统计缓存）
             BillScheduler.ensureBills(this);           // 立刻按当前配置重建
         }
-        // 🔴 TASK-078 临时：壁纸管家的**夹具 + 状态探针**（TASK-080 回收临时钩子时一并删除）。
-        //    理由：壁纸池的"收图"入口在 TASK-079（实验室子标签）；本卡验 A1/A2/A3/A5 只能从这里驱动。
-        //    收图源必须是**本进程可读**的路径（推荐先 run-as 推到自己 files/ 下再传绝对路径）。
-        applyWallDebug(it);
         // 🔴 TASK-075 临时：模拟"从桌面呼出"——先 finish 本页（ownUi→false），再延后呼出墨台；
         //    TASK-080 落真触发端后连同本整段一并回收。
         if (it.getBooleanExtra("wb_desk_late", false)) {
@@ -369,95 +338,6 @@ public class MainActivity extends Activity {
     }
     private static boolean dBool(String s) {
         return "1".equals(s) || "true".equalsIgnoreCase(s) || "on".equalsIgnoreCase(s);
-    }
-
-    /**
-     * 🔴 **TASK-078 临时钩子**（TASK-080 回收）—— 壁纸管家的夹具 + 状态探针。
-     *
-     * <p>支持键（全部可选）：
-     * <ul>
-     *   <li>{@code --es wb_wall_add <绝对路径>} ⇒ 收图进池（源须本进程可读；重复调用同一源**不会重复收**）</li>
-     *   <li>{@code --ei wb_wall_interval <天>} ⇒ 轮换间隔（&le;0 = 关）</li>
-     *   <li>{@code --es wb_wall_scope <soft-lock|dream|both>} ⇒ 应用范围</li>
-     *   <li>{@code --ei wb_wall_index <n>} ⇒ 当前序号</li>
-     *   <li>{@code --es wb_wall_last <yyyy-MM-dd>} ⇒ 上次轮换日期（验幂等时把日期改成"昨天"）</li>
-     *   <li>{@code --ez wb_wall_rotate true} ⇒ 立即换一张</li>
-     *   <li>{@code --ez wb_wall_clear true} ⇒ 清空池（不动间隔 / 范围）</li>
-     *   <li>{@code --ez wb_wall_dump true} ⇒ 把当前状态写进 {@code card_debug.log}（免 run-as）</li>
-     *   <li>{@code --ez wb_wall_effective true} ⇒ **显式触发一次** {@code effectiveSoftLockPath}
-     *       （= 软锁取背景时的同一入口）并把返回值写进日志 —— 用于验 A2 幂等 / A3 循环而不必真出软锁</li>
-     *   <li>{@code --es wb_lock_bg <路径>} ⇒ 落盘软锁背景路径（A4 像素对照的"底图"）</li>
-     *   <li>{@code --es wb_lock_pin <4位>} ⇒ 启用软锁并设密码（**亮屏才会弹软锁** ⇒ A4 对照用）；
-     *       {@code --ez wb_lock_off true} ⇒ 关软锁并清密码（**收尾必调**）</li>
-     * </ul>
-     */
-    private void applyWallDebug(Intent it) {
-        try {
-            if (it.hasExtra("wb_lock_pin")) {
-                String pin = it.getStringExtra("wb_lock_pin");
-                boolean ok = LockPrefs.setPin(this, pin);
-                LockPrefs.setEnabled(this, true);
-                CardDebug.note(this, "wall: lock enable pin set=" + ok + " active=" + LockPrefs.isActive(this));
-            }
-            if (it.hasExtra("wb_lock_off") && it.getBooleanExtra("wb_lock_off", false)) {
-                LockPrefs.setEnabled(this, false);
-                LockPrefs.clearPin(this);
-                LockPrefs.clearBg(this);            // 连背景路径一并清 ⇒ 键都不留（收尾还原用）
-                CardDebug.note(this, "wall: lock disabled active=" + LockPrefs.isActive(this)
-                        + " bg=" + LockPrefs.getBgPath(this));
-            }
-            if (it.hasExtra("wb_lock_bg")) {
-                LockPrefs.setBgPath(this, it.getStringExtra("wb_lock_bg"));
-                CardDebug.note(this, "wall: lock bg=" + it.getStringExtra("wb_lock_bg"));
-            }
-            if (it.hasExtra("wb_wall_clear") && it.getBooleanExtra("wb_wall_clear", false)) {
-                int n = WallpaperPrefs.clear(this);
-                CardDebug.note(this, "wall: clear 删除 " + n + " 张");
-            }
-            if (it.hasExtra("wb_wall_add")) {
-                String p = it.getStringExtra("wb_wall_add");
-                boolean ok = WallpaperPrefs.add(this, p);
-                CardDebug.note(this, "wall: add " + (ok ? "OK" : "FAIL") + " src=" + p);
-            }
-            if (it.hasExtra("wb_wall_interval")) {
-                WallpaperPrefs.setIntervalDays(this, it.getIntExtra("wb_wall_interval", WallpaperPrefs.DEFAULT_INTERVAL));
-            }
-            if (it.hasExtra("wb_wall_scope")) {
-                WallpaperPrefs.setScope(this, it.getStringExtra("wb_wall_scope"));
-            }
-            if (it.hasExtra("wb_wall_index")) {
-                WallpaperPrefs.setIndex(this, it.getIntExtra("wb_wall_index", 0));
-            }
-            if (it.hasExtra("wb_wall_last")) {
-                WallpaperPrefs.setLastDate(this, it.getStringExtra("wb_wall_last"));
-            }
-            if (it.hasExtra("wb_wall_rotate") && it.getBooleanExtra("wb_wall_rotate", false)) {
-                WallpaperPrefs.rotateNow(this);
-            }
-            if (it.hasExtra("wb_wall_dump") && it.getBooleanExtra("wb_wall_dump", false)) {
-                java.util.List<String> p = WallpaperPrefs.pool(this);
-                CardDebug.note(this, "wall: dump n=" + p.size()
-                        + " index=" + WallpaperPrefs.index(this)
-                        + " interval=" + WallpaperPrefs.intervalDays(this)
-                        + " scope=" + WallpaperPrefs.scope(this)
-                        + " last=" + WallpaperPrefs.lastDate(this));
-                for (int i = 0; i < p.size(); i++) {
-                    File f = new File(p.get(i));
-                    CardDebug.note(this, "wall:   [" + i + "] " + p.get(i) + " bytes=" + f.length());
-                }
-            }
-            if (it.hasExtra("wb_wall_effective") && it.getBooleanExtra("wb_wall_effective", false)) {
-                String eff = WallpaperPrefs.effectiveSoftLockPath(this);
-                String base = LockPrefs.getBgPath(this);
-                CardDebug.note(this, "wall: effective=" + eff
-                        + "  base=" + base
-                        + "  same=" + (eff == null ? base == null : eff.equals(base))
-                        + "  index=" + WallpaperPrefs.index(this)
-                        + "  last=" + WallpaperPrefs.lastDate(this));
-            }
-        } catch (Throwable t) {
-            CardDebug.note(this, "wall: debug 钩子异常 " + t);
-        }
     }
 
     /**

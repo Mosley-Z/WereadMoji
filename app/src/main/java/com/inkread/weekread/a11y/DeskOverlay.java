@@ -1,11 +1,9 @@
 package com.inkread.weekread.a11y;
 
 import com.inkread.weekread.core.CardDebug;
-import com.inkread.weekread.core.NavExtra;
 import com.inkread.weekread.feature.DeskPageView;
 
 import android.content.Context;
-import android.content.Intent;
 import android.graphics.PixelFormat;
 import android.os.Handler;
 import android.view.Gravity;
@@ -75,24 +73,6 @@ final class DeskOverlay {
                             }
                         });
                     }
-
-                    /**
-                     * 🆕 TASK-079：「壁纸管家 → 管理」的宿主落点 ——
-                     * **隐藏墨台 + 打开实验室「壁纸管家」子标签**（定稿设计 §5.5）。
-                     *
-                     * <p>用主线程 post：别在触摸事件派发的当口把本视图从 WindowManager 拆掉。
-                     */
-                    @Override
-                    public void onWallManage() {
-                        ui.post(new Runnable() {
-                            @Override
-                            public void run() {
-                                CardDebug.note(ctx, "墨台：点「管理」→ 深链实验室·壁纸管家");
-                                hide();
-                                openWallLab();
-                            }
-                        });
-                    }
                 });
             }
             view.reset();
@@ -127,30 +107,6 @@ final class DeskOverlay {
     void remove() {
         hide();
         view = null;
-    }
-
-    /**
-     * 🆕 TASK-079：「管理」⇒ 打开实验室「壁纸管家」子标签（定稿设计 §5.5）。
-     *
-     * <p>🔴 跨包纪律：本类在 {@code a11y} 包，宿主 Activity 在 {@code shell} 包
-     * （{@code a11y} **不依赖** {@code shell}）⇒ 用**类名字符串**建 Intent、键名走
-     * {@link NavExtra}，两处都不 import {@code shell}。
-     *
-     * <p>🔴 启动 Act. 的背景限制：墨台窗是**可见窗口**（{@code TYPE_ACCESSIBILITY_OVERLAY}）
-     * ⇒ 命中「有可见窗口」豁免；真机实测见 {@code 验证记录/192}（若被系统拦下，
-     * 现象 = 点了「管理」墨台消失但没跳转 ⇒ 有留痕可查）。
-     */
-    private void openWallLab() {
-        try {
-            Intent it = new Intent();
-            it.setClassName(ctx, "com.inkread.weekread.shell.MainActivity");
-            it.putExtra(NavExtra.LAB_SUB, NavExtra.LAB_SUB_WALLPAPER);
-            it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-                    | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-            ctx.startActivity(it);
-        } catch (Throwable t) {
-            CardDebug.note(ctx, "墨台：深链实验室·壁纸管家失败 " + t);
-        }
     }
 
     private WindowManager.LayoutParams params() {

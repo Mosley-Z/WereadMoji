@@ -162,25 +162,5 @@
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
 
-        <!-- 🆕 TASK-081（V1.3.0-Beta）：Daydream 屏保 —— 把「壁纸池」当屏保轮换呈现。
-             🔴 这是本项目**第四次**打破「清单零改动」（前三次 = READ_EXTERNAL_STORAGE /
-             WRITE_SECURE_SETTINGS / 蓝牙 HID 组；经用户 2026-10-10 单独拍板）。
-             🔴 **零新增 uses-permission**：
-               · `android:permission="android.permission.BIND_DREAM_SERVICE"` 是**本服务向调用方
-                 索要**的权限（只有系统持有），不是我们要申请的权限 ⇒ 不写 <uses-permission>；
-               · 写 `screensaver_*` 三个 Secure 键用的 WRITE_SECURE_SETTINGS **早已在册**（见上）。
-             ⚠️ exported="true" + 声明 DREAM intent-filter 是系统发现屏保的**唯一**方式（必需）。
-             ⛔ 不碰 res/xml/a11y_*.xml（A5 零侵入）。 -->
-        <service
-            android:name=".feature.DreamWallpaperService"
-            android:exported="true"
-            android:label="@string/dream_svc_label"
-            android:permission="android.permission.BIND_DREAM_SERVICE">
-            <intent-filter>
-                <action android:name="android.service.dreams.DreamService" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-        </service>
-
     </application>
 </manifest>

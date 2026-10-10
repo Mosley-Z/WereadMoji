@@ -1,15 +1,9 @@
 package com.inkread.weekread.shell;
 
 import com.inkread.weekread.R;
-import com.inkread.weekread.core.Bill;
-import com.inkread.weekread.core.BillStore;
 import com.inkread.weekread.core.CardPrefs;
 import com.inkread.weekread.core.LockPrefs;
-import com.inkread.weekread.core.PeriodRange;
 import com.inkread.weekread.core.PowerSettingsManager;
-import com.inkread.weekread.core.WallpaperPrefs;
-import com.inkread.weekread.feature.BillWallpaper;
-import com.inkread.weekread.feature.DreamPrefs;
 import com.inkread.weekread.remote.HidKeepAliveService;
 import com.inkread.weekread.remote.HidLink;
 import com.inkread.weekread.remote.RemoteKeyService;
@@ -183,38 +177,7 @@ public class LabPageController {
     /** 同步续航勾选态时抑制监听递归 */
     private boolean powerUiSyncing;
 
-    // ── 🆕 TASK-079 实验室 · 壁纸管家（数据层 = TASK-078 / 渲染 = feature.BillWallpaper）──
-    private EditText etWallSrc;              // 收图源路径（照锁屏背景那套：可编辑路径，不走 SAF）
-    private TextView tvWallPool;             // 图片池状态 + 已收列表
-    private CheckBox cbWallRot;              // 轮换开关
-    private EditText etWallInterval;         // 轮换间隔（天）
-    private TextView tvWallRotStatus;        // 轮换自证行
-    private RadioGroup rgWallScope;          // 应用范围（三项；TASK-081 起 Daydream 两项解禁可选）
-    private RadioButton rbWallScopeSoft;
-    private RadioButton rbWallScopeDream;
-    private RadioButton rbWallScopeBoth;
-    private CheckBox cbWallDream;            // 🆕 TASK-081 屏保开关（写 / 还原 3 个 Secure 键）
-    private Button btnWallDreamRestore;      // 🆕 TASK-081 一键还原（A3 判据点）
-    private TextView tvWallDreamStatus;      // 🆕 TASK-081 屏保自证行
-    private RadioGroup rgBillwMode;          // 生成账单壁纸：周期（周 / 月）
-    private RadioButton rbBillwWeek;
-    private RadioButton rbBillwMonth;
-    private TextView tvBillwSerial;          // 待生成的那一期（单号 · 区间）
-    private Button btnBillwOlder;
-    private Button btnBillwNewer;
-    private Button btnBillwGen;
-    private TextView tvBillwStatus;          // 生成进度 / 结果
-    private TextView tvWallEffective;        // 当前生效（同软锁口径）
-    private Button btnWallApply;
-    /** 防回环：轮换开关 / 间隔回填时置位（与锁屏、续航同款）。 */
-    private boolean mWallUiSyncing;
-    /** 🆕 生成中标记：防重复点「生成」（生成走后台线程，不阻塞 UI）。 */
-    private boolean mBillwBusy;
-    /** 当前选中的账单期（秒）；≤0 = 未选 / 该周期无账单。 */
-    private long mBillwStart;
-
     // ── 🆕 TASK-079：实验室子页装配结果（供「深链到指定子页」用）──
-    private SegTabView labSeg;               // seg_lab
     private View[] labPage;                  // 逻辑子页容器（下标 = 原页下标）
     private int[] labKeep;                   // 可见表：UI 下标 → 原页下标
     private int labCount;                    // 可见子页数
@@ -224,8 +187,6 @@ public class LabPageController {
     private static final int REQ_PERM_BG = 3302;
     /** 🆕 TASK-035：ACTION_REQUEST_DISCOVERABLE 的请求码。 */
     private static final int REQ_BT_DISCOVERABLE = 3501;
-    /** 🆕 TASK-079：收图读共享存储的权限请求码（与锁屏背景分开，避免回调串台）。 */
-    private static final int REQ_PERM_WALL = 3303;
 
     public LabPageController(Activity host) {
         this.host = host;
@@ -402,156 +363,6 @@ public class LabPageController {
             }
         });
         refreshPowerUi();
-
-        // ── 🆕 TASK-079 壁纸管家子页（数据层 = TASK-078；渲染 = feature/BillWallpaper）──
-        //   ① 图片池（可编辑路径 + 收图 + 已收列表 + 清空） ② 轮换（开关 + 间隔天）
-        //   ③ 应用范围（Daydream 两项**置灰**） ④ 生成账单壁纸（后台线程） ⑤ 当前生效
-        etWallSrc = (EditText) host.findViewById(R.id.et_wall_src);
-        tvWallPool = (TextView) host.findViewById(R.id.tv_wall_pool);
-        cbWallRot = (CheckBox) host.findViewById(R.id.cb_wall_rot);
-        etWallInterval = (EditText) host.findViewById(R.id.et_wall_interval);
-        tvWallRotStatus = (TextView) host.findViewById(R.id.tv_wall_rot_status);
-        rgWallScope = (RadioGroup) host.findViewById(R.id.rg_wall_scope);
-        rbWallScopeSoft = (RadioButton) host.findViewById(R.id.rb_wall_scope_soft);
-        rbWallScopeDream = (RadioButton) host.findViewById(R.id.rb_wall_scope_dream);
-        rbWallScopeBoth = (RadioButton) host.findViewById(R.id.rb_wall_scope_both);
-        rgBillwMode = (RadioGroup) host.findViewById(R.id.rg_billw_mode);
-        rbBillwWeek = (RadioButton) host.findViewById(R.id.rb_billw_week);
-        rbBillwMonth = (RadioButton) host.findViewById(R.id.rb_billw_month);
-        tvBillwSerial = (TextView) host.findViewById(R.id.tv_billw_serial);
-        btnBillwOlder = (Button) host.findViewById(R.id.btn_billw_older);
-        btnBillwNewer = (Button) host.findViewById(R.id.btn_billw_newer);
-        btnBillwGen = (Button) host.findViewById(R.id.btn_billw_gen);
-        tvBillwStatus = (TextView) host.findViewById(R.id.tv_billw_status);
-        tvWallEffective = (TextView) host.findViewById(R.id.tv_wall_effective);
-        btnWallApply = (Button) host.findViewById(R.id.btn_wall_apply);
-        // 🆕 TASK-081 屏保（Daydream）
-        cbWallDream = (CheckBox) host.findViewById(R.id.cb_wall_dream);
-        btnWallDreamRestore = (Button) host.findViewById(R.id.btn_wall_dream_restore);
-        tvWallDreamStatus = (TextView) host.findViewById(R.id.tv_wall_dream_status);
-        // 收图源默认给锁屏那套相对路径的示范（**不预填**：空着更不容易误收无关文件）
-        etWallSrc.setText("");
-
-        host.findViewById(R.id.btn_wall_add).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                collectWallImage();
-            }
-        });
-        host.findViewById(R.id.btn_wall_clear).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                clearWallPool();
-            }
-        });
-        cbWallRot.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(CompoundButton b, boolean checked) {
-                if (mWallUiSyncing) return;
-                WallpaperPrefs.setRotationOn(host, checked);
-                refreshWallUi();
-            }
-        });
-        // 间隔：逐字符解析，但只在"落在合法区间且值真变了"才落盘（照 etRemoteIdle 的做法）
-        etWallInterval.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
-            @Override public void onTextChanged(CharSequence s, int a, int b, int c) { }
-            @Override public void afterTextChanged(Editable s) {
-                if (mWallUiSyncing) return;
-                String t = (s == null) ? "" : s.toString().trim();
-                if (t.length() == 0) return;                 // 清空中间态：不落盘、不回填
-                int v;
-                try {
-                    v = Integer.parseInt(t);
-                } catch (NumberFormatException e) {
-                    return;
-                }
-                if (v < 1 || v > 365) return;                // 越界中间态
-                if (v != WallpaperPrefs.intervalDays(host)) {
-                    WallpaperPrefs.setIntervalDays(host, v);
-                    // 🔴 只回填勾选 + 自证行，**不重设输入框**（否则会把光标顶走）
-                    syncWallRotUi();
-                }
-            }
-        });
-        etWallInterval.setOnFocusChangeListener(new View.OnFocusChangeListener() {
-            @Override
-            public void onFocusChange(View v, boolean hasFocus) {
-                if (!hasFocus) refreshWallUi();              // 失焦回填成合法值
-            }
-        });
-        rgWallScope.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(RadioGroup g, int checkedId) {
-                if (mWallUiSyncing) return;
-                // TASK-081 起三项都可点（S0 已实测屏保可行 ⇒ 解除置灰）
-                if (checkedId == R.id.rb_wall_scope_soft) {
-                    WallpaperPrefs.setScope(host, WallpaperPrefs.SCOPE_SOFT);
-                } else if (checkedId == R.id.rb_wall_scope_dream) {
-                    WallpaperPrefs.setScope(host, WallpaperPrefs.SCOPE_DREAM);
-                } else if (checkedId == R.id.rb_wall_scope_both) {
-                    WallpaperPrefs.setScope(host, WallpaperPrefs.SCOPE_BOTH);
-                }
-                refreshWallUi();
-            }
-        });
-        rgBillwMode.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(RadioGroup g, int checkedId) {
-                mBillwStart = -1;                            // 换周期 ⇒ 回到该周期最新一期
-                refreshBillwPick();
-            }
-        });
-        btnBillwOlder.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                stepBillw(+1);
-            }
-        });
-        btnBillwNewer.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                stepBillw(-1);
-            }
-        });
-        btnBillwGen.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                generateBillWallpaper();
-            }
-        });
-        btnWallApply.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                applyWallToLock();
-            }
-        });
-        // ── 🆕 TASK-081 屏保（Daydream）：开关 + 一键还原 ──
-        // 🔴 勾选态一律由 refreshWallUi() 按**设备真值**回填 ⇒ 写入失败（无权限）时
-        //    开关会自己弹回去，不会出现"界面显示已开、实际没开"。
-        cbWallDream.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(CompoundButton b, boolean checked) {
-                if (mWallUiSyncing) return;
-                boolean ok = checked ? DreamPrefs.enable(host) : DreamPrefs.restore(host);
-                if (!ok) {
-                    Toast.makeText(host,
-                            checked ? R.string.dream_fail_perm : R.string.dream_fail_nobackup,
-                            Toast.LENGTH_LONG).show();
-                }
-                refreshWallUi();
-            }
-        });
-        btnWallDreamRestore.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                boolean ok = DreamPrefs.restore(host);
-                Toast.makeText(host, ok ? R.string.dream_off_ok : R.string.dream_fail_nobackup,
-                        Toast.LENGTH_LONG).show();
-                refreshWallUi();
-            }
-        });
-        refreshWallUi();
 
         // ── V1.0 Beta（TASK-018）：实验室 · 遥控翻页 ──
         //
@@ -891,19 +702,16 @@ public class LabPageController {
 
         // ── 可扩展表：新增手机端子标签，在下面追加一行并把 phoneRelevant 置 true 即可 ──
         // 🆕 TASK-072：「热点翻页」+「蓝牙控制」两页合并为「翻页」⇒ 子标签 **4 → 3**（072 验收 A1）。
-        // 🆕 TASK-079：追加「壁纸管家」⇒ 子标签 **3 → 4**（翻页 / 锁屏密码 / 续航优化 / 壁纸管家）。
         final int[] labelRes = {
                 R.string.lab_tab_remote,       // 翻页（原「热点翻页」+「蓝牙控制」合并）
                 R.string.lab_tab_lockscreen,   // 锁屏密码
-                R.string.lab_tab_power,        // 续航优化
-                R.string.lab_tab_wallpaper };  // 🆕 TASK-079 壁纸管家
+                R.string.lab_tab_power };      // 续航优化
         final View[] page = {
                 host.findViewById(R.id.page_lab_remote),
                 host.findViewById(R.id.page_lab_lockscreen),
-                host.findViewById(R.id.page_lab_power),
-                host.findViewById(R.id.page_lab_wallpaper) };
-        // 🔴 壁纸管家属**墨水屏端**功能 ⇒ 手机端不装配（与锁屏 / 续航一致；卡面 A3）
-        final boolean[] phoneRelevant = { true, false, false, false };
+                host.findViewById(R.id.page_lab_power) };
+        // 🔴 锁屏 / 续航均属**墨水屏端**功能 ⇒ 手机端不装配
+        final boolean[] phoneRelevant = { true, false, false };
 
         // 按角色过滤出"保留的下标"
         final int[] keep = new int[labelRes.length];
@@ -917,8 +725,6 @@ public class LabPageController {
 
         final SegTabView segLab = (SegTabView) host.findViewById(R.id.seg_lab);
         segLab.setLabels(labels);
-        // 🔴 装配结果存字段：🆕 TASK-079 的「深链到指定子页」（selectLabPage）要用
-        labSeg = segLab;
         labPage = page;
         labKeep = keep;
         labCount = n;
@@ -936,29 +742,7 @@ public class LabPageController {
         applyLabTab(0);
     }
 
-    /**
-     * 🆕 TASK-079：把实验室切到**指定子页**（按子页容器 id）—— 供墨台「壁纸管家 · 管理」深链用。
-     *
-     * <p>🔴 为什么要显式走一次可见性：{@code SegTabView.setSelected} **同值早退、不回调 listener**
-     * （与 {@code SettingsActivity.showTopPage} 同款坑）⇒ 必须自己走 {@link #applyLabTab}。
-     *
-     * @param pageId 子页容器的资源 id（如 {@code R.id.page_lab_wallpaper}）
-     * @return true = 找到并切过去了；false = 该子页在本机形态下**不可见**（如手机端）
-     */
-    public boolean selectLabPage(int pageId) {
-        if (labSeg == null || labKeep == null || labCount <= 0) return false;
-        for (int i = 0; i < labCount; i++) {
-            View v = labPage[labKeep[i]];
-            if (v != null && v.getId() == pageId) {
-                labSeg.setSelected(i);
-                applyLabTab(i);
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** 切实验室子页：可见性 + 回页顶 + 按子页复核状态（listener 与 {@link #selectLabPage} 共用）。 */
+    /** 切实验室子页：可见性 + 回页顶 + 按子页复核状态。 */
     private void applyLabTab(int uiIndex) {
         if (labKeep == null || labCount <= 0) return;
         final int idx = (uiIndex < 0 || uiIndex >= labCount) ? 0 : uiIndex;
@@ -973,8 +757,6 @@ public class LabPageController {
         if (orig == 1) refreshLockUi();
         // TASK-023：进续航页复核一次 —— 勾选态一律读设备真值（不读偏好，防「显示已开/实际已关」）
         if (orig == 2) refreshPowerUi();
-        // 🆕 TASK-079：进壁纸页复核一次（池 / 开关 / 待生成那一期都可能在别处被改）
-        if (orig == 3) refreshWallUi();
     }
 
     /** 从 {@code start} 向上找最近的 ScrollView；找不到返回 null。 */
@@ -1009,7 +791,6 @@ public class LabPageController {
     public void refreshAll() {
         refreshLockUi();
         refreshPowerUi();
-        refreshWallUi();
     }
 
     /**
@@ -1032,17 +813,6 @@ public class LabPageController {
      * 宿主转发 {@code onRequestPermissionsResult}。@return true = 本控制器已消费该请求码。
      */
     public boolean onRequestPermissionsResult(int req, String[] perms, int[] results) {
-        // 🆕 TASK-079：收图（壁纸图片池）的读存储权限 —— 与锁屏背景**分开**，避免回调串台
-        if (req == REQ_PERM_WALL) {
-            boolean granted = results != null && results.length > 0
-                    && results[0] == PackageManager.PERMISSION_GRANTED;
-            if (!granted) {
-                Toast.makeText(host, R.string.lock_bg_perm_needed, Toast.LENGTH_LONG).show();
-            }
-            String p = (etWallSrc == null) ? "" : etWallSrc.getText().toString().trim();
-            if (p.length() > 0) applyCollect(p);   // 无论给不给权限都试一次：私有目录兜底不依赖权限
-            return true;
-        }
         if (req != REQ_PERM_BG) return false;
         boolean ok = results != null && results.length > 0
                 && results[0] == PackageManager.PERMISSION_GRANTED;
@@ -1336,232 +1106,6 @@ public class LabPageController {
         } catch (Throwable t) {
             toast(host.getString(R.string.power_battery_opt_failed));
         }
-    }
-
-    // ══════════════════════ 🆕 TASK-079 壁纸管家（图片池 · 轮换 · 生成账单壁纸） ══════════════════════
-
-    /**
-     * 刷新壁纸管家子页：① 图片池 ② 轮换（开关 + 间隔 + 自证行） ③ 应用范围 ④ 待生成那一期 ⑤ 当前生效。
-     *
-     * <p>🔴 「当前生效」直接问 {@link WallpaperPrefs#effectiveSoftLockPath} ——
-     * 那是**软锁绘背景时的同一个入口**（TASK-078 的唯一接缝）⇒ 页面上写的就是实际会加载的那张，
-     * 不自造第二套口径。
-     */
-    public void refreshWallUi() {
-        if (tvWallPool == null) return;
-
-        // ① 图片池：张数 + 前几项文件名（够辨识即可）
-        List<String> pool = WallpaperPrefs.pool(host);
-        StringBuilder sb = new StringBuilder(host.getString(R.string.wall_pool_fmt, pool.size()));
-        if (!pool.isEmpty()) {
-            sb.append('\n').append(host.getString(R.string.wall_pool_list_prefix));
-            int show = Math.min(3, pool.size());
-            for (int i = 0; i < show; i++) {
-                if (i > 0) sb.append('、');
-                sb.append(new File(pool.get(i)).getName());
-            }
-            if (pool.size() > show) {
-                sb.append(host.getString(R.string.wall_pool_more_fmt, pool.size() - show));
-            }
-        }
-        tvWallPool.setText(sb.toString());
-
-        // ② 轮换 + ③ 范围：回填（置位期间不写盘）
-        mWallUiSyncing = true;
-        cbWallRot.setChecked(WallpaperPrefs.isRotationOn(host));
-        int iv = WallpaperPrefs.intervalDays(host);
-        etWallInterval.setText(String.valueOf(iv > 0 ? iv : WallpaperPrefs.DEFAULT_INTERVAL));
-        String sc = WallpaperPrefs.scope(host);
-        rbWallScopeSoft.setChecked(WallpaperPrefs.SCOPE_SOFT.equals(sc));
-        rbWallScopeDream.setChecked(WallpaperPrefs.SCOPE_DREAM.equals(sc));
-        rbWallScopeBoth.setChecked(WallpaperPrefs.SCOPE_BOTH.equals(sc));
-        mWallUiSyncing = false;
-        tvWallRotStatus.setText(wallRotText());
-
-        // 🆕 TASK-081：屏保开关 + 自证行（回填**设备真值**；置位期间不写盘）
-        mWallUiSyncing = true;
-        cbWallDream.setChecked(DreamPrefs.isOn(host));
-        mWallUiSyncing = false;
-        tvWallDreamStatus.setText(wallDreamText());
-
-        // ④ 待生成的账单期
-        refreshBillwPick();
-
-        // ⑤ 当前生效（= 软锁那一帧会加载的图；空 ⇒ 浅色网点）
-        String eff = WallpaperPrefs.effectiveSoftLockPath(host);
-        tvWallEffective.setText((eff == null || eff.length() == 0)
-                ? host.getString(R.string.wall_eff_none)
-                : host.getString(R.string.wall_eff_fmt, new File(eff).getName()));
-    }
-
-    /** 只回填「轮换开关 + 自证行」（间隔输入框正在被输入时不重设，免得把光标顶走）。 */
-    private void syncWallRotUi() {
-        mWallUiSyncing = true;
-        cbWallRot.setChecked(WallpaperPrefs.isRotationOn(host));
-        mWallUiSyncing = false;
-        tvWallRotStatus.setText(wallRotText());
-    }
-
-    /**
-     * 轮换自证行 —— **如实**：关就是关；开着但**范围不含软锁**、或**池不足 2 张**时，
-     * 都把"现在其实不会换"写出来（对应卡面 R4 与 TASK-078 的 {@code rotatesSoftLock}）。
-     */
-    private String wallRotText() {
-        int iv = WallpaperPrefs.intervalDays(host);
-        if (iv <= 0) return host.getString(R.string.wall_rot_status_off);
-        StringBuilder sb = new StringBuilder(host.getString(
-                R.string.wall_rot_status_on, iv, WallpaperPrefs.scopeLabel(host)));
-        if (!WallpaperPrefs.rotatesSoftLock(host)) {
-            sb.append(host.getString(R.string.wall_rot_not_softlock));
-        } else if (WallpaperPrefs.pool(host).size() < 2) {
-            sb.append(host.getString(R.string.wall_rot_need_pool));
-        }
-        return sb.toString();
-    }
-
-    /**
-     * 🆕 TASK-081 屏保自证行 —— **如实**区分五种态。
-     * 🔴 缺权限时**不置灰控件**（用户定则 2026-10-09：能力缺失只挂提醒），只把实情写出来。
-     */
-    private String wallDreamText() {
-        if (!DreamPrefs.canWrite(host)) return host.getString(R.string.dream_status_noperm);
-        if (DreamPrefs.isPartial(host)) return host.getString(R.string.dream_status_partial);
-        if (!DreamPrefs.isOn(host)) return host.getString(R.string.dream_status_off);
-        if (!WallpaperPrefs.rotatesDream(host)) return host.getString(R.string.dream_status_nopool);
-        return host.getString(R.string.dream_status_on);
-    }
-
-    /** 当前「生成账单壁纸」用的周期（周 / 月）。 */
-    private String billwMode() {
-        return (rbBillwMonth != null && rbBillwMonth.isChecked())
-                ? PeriodRange.MONTHLY : PeriodRange.WEEKLY;
-    }
-
-    /** 刷新「待生成的那一期」——把已生成的账单按期起点降序排，默认取最新一期。 */
-    private void refreshBillwPick() {
-        if (tvBillwSerial == null) return;
-        List<Long> starts = BillStore.startsOf(host, billwMode());
-        if (starts.isEmpty()) {
-            mBillwStart = -1;
-            tvBillwSerial.setText(R.string.wall_bill_none);
-            tvBillwStatus.setText(R.string.wall_bill_hint_none);
-            btnBillwGen.setEnabled(false);
-            btnBillwOlder.setEnabled(false);
-            btnBillwNewer.setEnabled(false);
-            return;
-        }
-        int idx = starts.indexOf(mBillwStart);
-        if (idx < 0) idx = 0;
-        mBillwStart = starts.get(idx);
-        tvBillwSerial.setText(host.getString(R.string.wall_bill_pick_fmt,
-                Bill.serialOf(billwMode(), mBillwStart), Bill.rangeLabel(billwMode(), mBillwStart)));
-        btnBillwGen.setEnabled(!mBillwBusy);
-        btnBillwOlder.setEnabled(idx + 1 < starts.size());
-        btnBillwNewer.setEnabled(idx > 0);
-    }
-
-    /** 「‹ 更早」（+1）/「更晚 ›」（-1）：在已生成的期里挪一格。 */
-    private void stepBillw(int delta) {
-        List<Long> starts = BillStore.startsOf(host, billwMode());
-        int idx = starts.indexOf(mBillwStart);
-        if (idx < 0) idx = 0;
-        int ni = idx + delta;
-        if (ni < 0 || ni >= starts.size()) return;
-        mBillwStart = starts.get(ni);
-        refreshBillwPick();
-    }
-
-    /**
-     * 生成「账单壁纸」→ 存进图片池。
-     *
-     * <p>🔴 480×800 + PNG 压缩很耗时 ⇒ **纯后台线程**（照 {@code NoteExport} 的 C2 阶段做法），
-     * 主线程只做落盘入库 + 刷新 UI ⇒ 生成期间界面不卡、不会 ANR（卡面 A4）。
-     */
-    private void generateBillWallpaper() {
-        if (mBillwBusy) return;
-        final String mode = billwMode();
-        final long start = mBillwStart;
-        if (start <= 0) return;
-        mBillwBusy = true;
-        btnBillwGen.setEnabled(false);
-        tvBillwStatus.setText(R.string.wall_gen_running);
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                final BillWallpaper.Result res = BillWallpaper.generate(host, mode, start);
-                host.runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        postGenerate(res);
-                    }
-                });
-            }
-        }, "wallbill-gen").start();
-    }
-
-    /** 生成收尾（**主线程**）：入库 + 文案反馈 + 刷新。 */
-    private void postGenerate(BillWallpaper.Result res) {
-        if (host.isFinishing() || host.isDestroyed()) return;
-        mBillwBusy = false;
-        if (res != null && res.path != null) {
-            // 🔴 用 replace 而非 add：重新生成同一期 ⇒ **同一路径、内容变了**，
-            //    只走 add 会被"同一源去重"命中，池里留下旧画面（TASK-079 补的语义）
-            boolean ok = WallpaperPrefs.replace(host, res.path);
-            tvBillwStatus.setText(ok
-                    ? host.getString(R.string.wall_gen_ok_fmt, new File(res.path).getName())
-                    : host.getString(R.string.wall_gen_fail));
-        } else {
-            tvBillwStatus.setText(R.string.wall_gen_fail);
-        }
-        refreshWallUi();
-    }
-
-    /**
-     * 「收图」入口：先要读共享存储的权限（照 {@code loadLockBg}），拿到就收，
-     * 拿不到也**不拦** —— 私有目录里的图不依赖权限，仍试一次。
-     */
-    private void collectWallImage() {
-        String p = etWallSrc.getText().toString().trim();
-        if (p.length() == 0) {
-            toast(host.getString(R.string.wall_add_need_path));
-            return;
-        }
-        if (hasStorageReadPermission()) {
-            applyCollect(p);
-            return;
-        }
-        try {
-            host.requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, REQ_PERM_WALL);
-        } catch (Throwable t) {
-            applyCollect(p);
-        }
-    }
-
-    /** 真正收图：copy 进私有目录 + 入池（同一源天然去重）+ 如实反馈。 */
-    private void applyCollect(String path) {
-        boolean ok = WallpaperPrefs.add(host, path);
-        toast(host.getString(ok ? R.string.wall_add_ok : R.string.wall_add_fail));
-        if (ok) etWallSrc.setText("");
-        refreshWallUi();
-    }
-
-    /** 清空图片池（只清池内容；轮换开关与范围不动 —— 那是用户偏好）。 */
-    private void clearWallPool() {
-        int n = WallpaperPrefs.clear(host);
-        toast(host.getString(R.string.wall_clear_done_fmt, n));
-        refreshWallUi();
-    }
-
-    /** 把池里当前那张设为**软锁背景**（写 {@code LockPrefs.bg_path}，与手填路径同一条落盘）。 */
-    private void applyWallToLock() {
-        String p = WallpaperPrefs.currentPath(host);
-        if (p == null) {
-            toast(host.getString(R.string.wall_apply_none));
-            return;
-        }
-        LockPrefs.setBgPath(host, p);
-        toast(host.getString(R.string.wall_apply_ok));
-        refreshWallUi();
     }
 
     // ────────────────────── 🆕 TASK-072：连接方式（三选一）──────────────────────

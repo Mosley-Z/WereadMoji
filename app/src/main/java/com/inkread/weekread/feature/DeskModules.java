@@ -19,7 +19,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * 🆕 TASK-076：**墨台模块注册表** —— 7 个模块的**唯一登记处**（定稿设计 §3.1）。
+ * 🆕 TASK-076：**墨台模块注册表** —— 6 个模块的**唯一登记处**（定稿设计 §3.1）。
  *
  * <p>注册表与本包内的渲染器/容器一起构成"加模块只改一处"的闭环：
  * <pre>
@@ -32,7 +32,7 @@ import java.util.List;
  * 缓存为空时画**各自的空态**（不是崩、不是白屏）。
  *
  * <p>🆕 本卡（076）已落地 5 个真实模块（`rank` / `todo` / `profile` / `note` / `annual`）；
- * `bill`（TASK-077）与 `wall`（TASK-078）暂给**诚实空态占位**，由那两张卡把 {@code build()} 换掉。
+ * `bill`（TASK-077）已换成真账单。共 **6 个**模块。
  */
 final class DeskModules {
 
@@ -53,7 +53,6 @@ final class DeskModules {
             new BillModule(),
             new RankModule(),
             new TodoModule(),
-            new WallModule(),
             new ProfileModule(),
             new NoteModule(),
             new AnnualModule());
@@ -87,14 +86,6 @@ final class DeskModules {
      * 实例里也留一份，免得每帧读盘）。
      */
     static BillSection billSection() { return BillModule.SECTION; }
-
-    /**
-     * 🆕 TASK-078：「壁纸管家」分区的**常驻实例**。
-     *
-     * <p>容器（{@link DeskPageView}）要用它做「换一张 / 管理 / 切换轮换」的命中判定
-     * —— 判定几何要与绘制几何同源，所以必须是同一个实例（与 {@link #billSection()} 同理）。
-     */
-    static WallSection wallSection() { return WallModule.SECTION; }
 
     /** 注册年数（`registTime` 手算；-1 = 未知）—— 口径与 `MainActivity.yearsOf` **一致**。 */
     private static int yearsOf(PeriodStats st) {
@@ -157,23 +148,7 @@ final class DeskModules {
         }
     }
 
-    // ══════════════════════ ④ 壁纸管家（TASK-078）══════════════════════
-
-    private static final class WallModule implements DeskModule {
-        /** 常驻分区实例（命中判定与"当前状态"跨帧保留都靠它）。 */
-        static final WallSection SECTION = new WallSection();
-
-        public String id() { return PagePrefs.MOD_WALL; }
-
-        public InsightRenderer.Section build(Context c) {
-            // 🔴 只读本地（`WallpaperPrefs`）⇒ 零网络 / 零后台。
-            //    轮换的推进**不在这里**（唯一时机 = 软锁绘背景，见 `WallpaperPrefs.effectiveSoftLockPath`）。
-            SECTION.refresh(c);
-            return SECTION;
-        }
-    }
-
-    // ══════════════════════ ⑤ 阅读画像（♻️ 复用 profileSection）══════════════════════
+    // ══════════════════════ ④ 阅读画像（♻️ 复用 profileSection）══════════════════════
 
     private static final class ProfileModule implements DeskModule {
         public String id() { return PagePrefs.MOD_PROFILE; }
@@ -195,7 +170,7 @@ final class DeskModules {
         }
     }
 
-    // ══════════════════════ ⑥ 今日一签（读 NoteStore）══════════════════════
+    // ══════════════════════ ⑤ 今日一签（读 NoteStore）══════════════════════
 
     private static final class NoteModule implements DeskModule {
         public String id() { return PagePrefs.MOD_NOTE; }
@@ -217,7 +192,7 @@ final class DeskModules {
         }
     }
 
-    // ══════════════════════ ⑦ 年度视图（♻️ 复用 annualSection）══════════════════════
+    // ══════════════════════ ⑥ 年度视图（♻️ 复用 annualSection）══════════════════════
 
     private static final class AnnualModule implements DeskModule {
         public String id() { return PagePrefs.MOD_ANNUAL; }

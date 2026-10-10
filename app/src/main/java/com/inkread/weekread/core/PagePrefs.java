@@ -18,8 +18,8 @@ import java.util.List;
  * <p>**TASK-076** 追加**模块系统**三项（定稿设计 §3.2 / §10）：
  * <ul>
  *   <li>{@code desk_enabled} —— 墨台总开关（默认 true）</li>
- *   <li>{@code desk_order} —— 7 个模块的**有序全表**（CSV；🔴 顺序即渲染顺序）</li>
- *   <li>{@code desk_on_mask} —— 开启模块的**位掩码**（默认 = 账单 | 排行 | 待办 | 壁纸）</li>
+ *   <li>{@code desk_order} —— 6 个模块的**有序全表**（CSV；🔴 顺序即渲染顺序）</li>
+ *   <li>{@code desk_on_mask} —— 开启模块的**位掩码**（默认 = 账单 | 排行 | 待办）</li>
  * </ul>
  * 口径照抄现有习惯（{@code StatsStore.CARD_ORDER} + {@code CardPrefs.getCardPoolMask} /
  * {@code CARD._ORDER}）：**键值是 CSV / 掩码、读出来一律做一遍"认不认识 / 越界"的净化**，
@@ -38,11 +38,10 @@ public final class PagePrefs {
 
     // ══════════════════════ 🆕 TASK-076：模块系统 ══════════════════════
     //
-    // 模块目录（定稿设计 §3.1 · v1 全集 = 7 个）：
+    // 模块目录（定稿设计 §3.1 · 全集 = 6 个）：
     //   bill    阅读账单   ✅ 默认开   （内容卡：TASK-077）
     //   rank    读书排行   ✅ 默认开   （复 InsightRenderer.RankSection）
     //   todo    待办摘要   ✅ 默认开   （读 TodoStore）
-    //   wall    壁纸管家   ✅ 默认开   （内容卡：TASK-078）
     //   profile 阅读画像   ⬜ 默认关   （复 InsightRenderer.profileSection）
     //   note    今日一签   ⬜ 默认关   （读 NoteStore）
     //   annual  年度视图   ⬜ 默认关   （复 InsightRenderer.annualSection）
@@ -52,29 +51,27 @@ public final class PagePrefs {
     public static final String MOD_BILL    = "bill";
     public static final String MOD_RANK    = "rank";
     public static final String MOD_TODO    = "todo";
-    public static final String MOD_WALL    = "wall";
     public static final String MOD_PROFILE = "profile";
     public static final String MOD_NOTE    = "note";
     public static final String MOD_ANNUAL  = "annual";
 
     /** 模块全集（**新增模块只管往这里加** —— 顺序 = 出厂默认顺序 = 设置页行序的兜底）。 */
     public static final String[] MODULE_ORDER = {
-            MOD_BILL, MOD_RANK, MOD_TODO, MOD_WALL, MOD_PROFILE, MOD_NOTE, MOD_ANNUAL };
+            MOD_BILL, MOD_RANK, MOD_TODO, MOD_PROFILE, MOD_NOTE, MOD_ANNUAL };
 
     public static final int BIT_BILL    = 1;
     public static final int BIT_RANK    = 2;
     public static final int BIT_TODO    = 4;
-    public static final int BIT_WALL    = 8;
     public static final int BIT_PROFILE = 16;
     public static final int BIT_NOTE    = 32;
     public static final int BIT_ANNUAL  = 64;
 
     /** 本版认识的位全集（未知位一律丢弃）。 */
-    public static final int MODULE_ALL = BIT_BILL | BIT_RANK | BIT_TODO | BIT_WALL
+    public static final int MODULE_ALL = BIT_BILL | BIT_RANK | BIT_TODO
             | BIT_PROFILE | BIT_NOTE | BIT_ANNUAL;
 
-    /** 出厂默认开启集 = 「账单 | 排行 | 待办 | 壁纸」（定稿设计 §3.1）。 */
-    public static final int DEFAULT_ON_MASK = BIT_BILL | BIT_RANK | BIT_TODO | BIT_WALL;
+    /** 出厂默认开启集 = 「账单 | 排行 | 待办」（定稿设计 §3.1）。 */
+    public static final int DEFAULT_ON_MASK = BIT_BILL | BIT_RANK | BIT_TODO;
 
     private static final String K_ENABLED = "desk_enabled";
     private static final String K_ORDER   = "desk_order";
@@ -94,7 +91,6 @@ public final class PagePrefs {
         if (MOD_BILL.equals(id))    return BIT_BILL;
         if (MOD_RANK.equals(id))    return BIT_RANK;
         if (MOD_TODO.equals(id))    return BIT_TODO;
-        if (MOD_WALL.equals(id))    return BIT_WALL;
         if (MOD_PROFILE.equals(id)) return BIT_PROFILE;
         if (MOD_NOTE.equals(id))    return BIT_NOTE;
         if (MOD_ANNUAL.equals(id))  return BIT_ANNUAL;
@@ -109,7 +105,7 @@ public final class PagePrefs {
     /**
      * 模块显示名（设置页行标签 + 分区标题的**唯一来源**）。
      *
-     * <p>为什么不放 `strings.xml`：设置页的 7 行是**按注册表动态装配**的，名字必须与
+     * <p>为什么不放 `strings.xml`：设置页的 6 行是**按注册表动态装配**的，名字必须与
      * {@link #MODULE_ORDER} 同源；放资源里就得再维护一张 id→资源 的映射表（多一处会漂的地方）。
      * 本项目 `StatsStore.modeShortLabel` / `CardLayout` 等已有"渲染/标签文案硬编码"的先例。
      */
@@ -117,7 +113,6 @@ public final class PagePrefs {
         if (MOD_BILL.equals(id))    return "阅读账单";
         if (MOD_RANK.equals(id))    return "读书排行";
         if (MOD_TODO.equals(id))    return "待办摘要";
-        if (MOD_WALL.equals(id))    return "壁纸管家";
         if (MOD_PROFILE.equals(id)) return "阅读画像";
         if (MOD_NOTE.equals(id))    return "今日一签";
         if (MOD_ANNUAL.equals(id))  return "年度视图";
@@ -148,7 +143,7 @@ public final class PagePrefs {
      *
      * <p>净化规则（照 `StatsStore.readOrder` 的习惯）：
      * ① 丢弃不认识的 id 与重复项；② 把漏掉的模块**按出厂顺序补到末尾**。
-     * ⇒ 返回值永远是"7 个模块的一个排列"，调用方无需再做防御。
+     * ⇒ 返回值永远是"6 个模块的一个排列"，调用方无需再做防御。
      */
     public static String[] getDeskOrder(Context c) {
         String csv = sp(c).getString(K_ORDER, null);

@@ -47,14 +47,6 @@ public final class DeskPageView extends View {
     /** 关闭回调（左滑 / 点 `‹ 返回` 都走它）。 */
     public interface Listener {
         void onDeskClose();
-
-        /**
-         * 🆕 TASK-078：墨台「壁纸管家」的**「管理」**按钮被点 —— 深链到实验室「壁纸管家」子标签。
-         *
-         * <p>🔴 子标签本体属 {@code TASK-079}；本卡只留这个**宿主回调缝**：宿主负责"关墨台 + 打开
-         * 实验室"。宿主未实现（或子标签尚不存在）时**什么都不做**即可 —— 按钮本身仍可点、有反馈（重绘）。
-         */
-        void onWallManage();
     }
 
     private final DeskRenderer renderer = new DeskRenderer();
@@ -70,12 +62,6 @@ public final class DeskPageView extends View {
      * 与 {@link #rankSection} 同理：装配时复用同一份，不 new。
      */
     private final BillSection billSection = DeskModules.billSection();
-
-    /**
-     * 🆕 TASK-078：「壁纸管家」分区常驻实例 —— 「换一张 / 管理 / 切换轮换」的命中判定要用它
-     * （判定几何与绘制几何同源 ⇒ 必须是同一个实例）。
-     */
-    private final WallSection wallSection = DeskModules.wallSection();
 
     private Listener listener;
 
@@ -260,42 +246,6 @@ public final class DeskPageView extends View {
         return true;
     }
 
-    // ══════════════════════ 🆕 TASK-078：壁纸管家命中 ══════════════════════
-
-    /** 壁纸分区**顶边**的屏幕坐标 y；-1 = 该分区不在分区表里（模块关了）。 */
-    private float wallTop() {
-        int idx = renderer.indexOf(wallSection);
-        if (idx < 0) return -1f;
-        return renderer.sectionTop(idx, getWidth(), getHeight(), unit) - scrollY;
-    }
-
-    /**
-     * 点壁纸区控件 ⇒ 执行动作。
-     *
-     * <ul>
-     *   <li>{@code ACT_ROT} / {@code ACT_SWAP} ⇒ 改 prefs（开关 / 换一张）后重画（🔴 **零额外请求**）；</li>
-     *   <li>{@code ACT_MANAGE} ⇒ 交宿主（{@link Listener#onWallManage()}），本视图不关自己
-     *       —— 关不关墨台由宿主决定（TASK-079 会"关墨台 + 打开实验室"）。</li>
-     * </ul>
-     *
-     * @return true = 这次点击被壁纸区吃掉了（调用方不要再当"返回"处理）
-     */
-    private boolean hitWallAction(float x, float y) {
-        float top = wallTop();
-        if (top < 0f) return false;
-        int act = wallSection.hitAction(x, y, getWidth(), unit, top);
-        if (act == WallSection.ACT_NONE) return false;
-        if (act == WallSection.ACT_MANAGE) {
-            if (listener != null) listener.onWallManage();
-            return true;
-        }
-        wallSection.applyAction(getContext(), act);
-        wallSection.refresh(getContext());        // 状态行随 prefs 变 ⇒ 立即重装料
-        remeasure(getWidth(), getHeight());
-        invalidate();
-        return true;
-    }
-
     // ══════════════════════ 触控：单指纵滚 + 左滑返回（模态，恒吃手势）══════════════════════
 
     @Override
@@ -352,10 +302,6 @@ public final class DeskPageView extends View {
                         && e.getActionMasked() == MotionEvent.ACTION_UP
                         && hitCalCell(e.getX(), e.getY())) {
                     // 🆕 TASK-077b：点月历格子 ⇒ 选中该日（同上，优先于"返回"）
-                } else if (axis == AXIS_NONE
-                        && e.getActionMasked() == MotionEvent.ACTION_UP
-                        && hitWallAction(e.getX(), e.getY())) {
-                    // 🆕 TASK-078：点壁纸区控件 ⇒ 换一张 / 管理 / 切换轮换（同上，优先于"返回"）
                 } else if (axis == AXIS_NONE
                         && e.getActionMasked() == MotionEvent.ACTION_UP
                         && renderer.hitBack(e.getX(), e.getY(), getWidth(), unit)) {

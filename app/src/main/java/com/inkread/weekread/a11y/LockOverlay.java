@@ -2,7 +2,6 @@ package com.inkread.weekread.a11y;
 
 import com.inkread.weekread.R;
 import com.inkread.weekread.core.BgImageUtil;
-import com.inkread.weekread.core.WallpaperPrefs;
 import com.inkread.weekread.core.CardDebug;
 import com.inkread.weekread.core.LockPrefs;
 
@@ -209,10 +208,8 @@ final class LockOverlay {
         }
 
         private void drawBackground(Canvas c, float w, float h) {
-            // 🆕 TASK-078：背景路径改为问「壁纸管家」要 —— **轮换关 / 池 < 2 张 / 范围不含软锁** 时
-            //    它原样返回 `LockPrefs.getBgPath()` ⇒ 本方法与改动前**逐像素一致**（验收 A4）；
-            //    启用轮换时这里就是**唯一**的推进时机（不引入任何后台定时）。
-            String key = WallpaperPrefs.effectiveSoftLockPath(getContext());
+            // 背景路径 = 用户设的「固定路径」（TASK-022-R1 口径）。
+            String key = LockPrefs.getBgPath(getContext());
             if (bgKey == null || !bgKey.equals(key)) {
                 bgKey = key;
                 bg = loadBg((int) w, (int) h);
@@ -244,9 +241,6 @@ final class LockOverlay {
          *
          * <p>🆕 TASK-075：实现已**搬到** {@link BgImageUtil#load}（软锁与墨台共用）；
          * 本方法只做委托，**解码/兜底行为逐字节不变**。
-         *
-         * <p>🆕 TASK-078：路径不再自己读 `LockPrefs`，而是用**上面刚算好的 `bgKey`**
-         * （= `WallpaperPrefs.effectiveSoftLockPath()`）—— 保证"判缓存用的路径"与"真加载的路径"**同一份**。
          */
         private Bitmap loadBg(int w, int h) {
             return BgImageUtil.load(getContext(), bgKey, w, h);
