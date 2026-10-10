@@ -6,6 +6,7 @@ import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 
+import com.inkread.weekread.R;
 import com.inkread.weekread.core.Bill;
 import com.inkread.weekread.core.BillStore;
 import com.inkread.weekread.core.MenuPrefs;
@@ -34,11 +35,15 @@ import java.util.List;
  * ⇒ 这里按 {@code SegTabView} 的视觉语言（居中双段 / 选中加粗 + 底部黑条 / 段间竖分隔线 /
  * 整条下边框）**用 Canvas 重画一份**，字号与字族仍走 {@code InkTheme}（墨水屏端衬线）。
  *
- * <h3>排版（定稿设计 §6.3 / §6.4）</h3>
+ * <h3>排版（定稿设计 §6.3 / §6.4；🆕 2026-10-10 改头部）</h3>
  * <pre>
- * 摘录菜单                                    读书菜单
- *   墨单                          2026-W40      墨单                          2026-09
- *   周结 · 10.05–10.11 · 5 本 · 3h39m          月结 · 09.01–09.30 · 8 本 · 15h47m
+ * 墨单                                        生成壁纸        ← 分区抬头（⑤）
+ * [ 周 | 月 ]                        ‹  2026-W40  ›          ← 周期条（⑥）
+ * [摘录菜单 | 读书菜单 | 月历]                                 ← 票据页签
+ * 2026-W40                                    墨单            ← 票据头（⑤ 对调：左=单号、右=墨单）
+ * 周结 · 09.28–10.04 · 5 本 · 16h53m
+ * ────────────────────────────
+ *  品类      主厨      价格
  *   ────────────────────────────              ────────────────────────────
  *    品类      主厨      价格                   NO.01  《惊悚乐园》
  *   ────────────────────────────                三天两觉 · 7h24m · 15%
@@ -77,6 +82,23 @@ final class BillSection implements InsightRenderer.Section {
     private static final float TAB_W_RATIO   = 0.44f;
     private static final float TAB_W_RATIO_3 = 0.62f;
 
+    // ── 🆕 2026-10-10：头部第二行「周期条」的尺（画与命中共用同一批常量）──
+    /** 周期条占高（×unit）。 */
+    private static final float PERIOD_BAR_UNITS = 2.95f;
+    /** 周期条内小控件高（×unit）。 */
+    private static final float CHIP_H_UNITS     = 1.95f;
+    /** `[周|月]` 双段总宽（×unit）。 */
+    private static final float MODE_W_UNITS     = 78f;
+    /** `◀ … ▶` 导航区总宽（×unit）。 */
+    private static final float NAV_W_UNITS      = 112f;
+    /** `◀` / `▶` 各自的可点宽（×unit）。 */
+    private static final float ARROW_W_UNITS    = 26f;
+    /** 页签条自己那一行的高（×unit）。 */
+    private static final float TAB_BAR_UNITS    = 3.15f;
+    /** 「生成壁纸」按钮宽 / 高（×unit）。 */
+    private static final float WP_W_UNITS       = 80f;
+    private static final float WP_H_UNITS       = 1.85f;
+
     // ── 月历（🆕 TASK-077b；尺全部按 unit 标度，网格高度**只依赖 unit**）──
     private static final int   CAL_COLS   = 7;
     private static final float CAL_HEAD_H = 15f;    // 星期表头高（×unit）
@@ -113,15 +135,144 @@ final class BillSection implements InsightRenderer.Section {
     void refresh(Context c) {
         this.ctx = c.getApplicationContext();
         this.view = MenuPrefs.view(c);
-        this.bill = BillStore.latest(c);
-        // 🔴 TASK-077b B1：月历**只属于月账单** ⇒ 当前账单是周账时不显示第三视图，本次显示回落摘录菜单
+        this.bill = pickBill();
+        normalizeView();
+        this.selDay = maxDayIndex(this.bill);
+        invalidateRows();
+    }
+
+    /**
+     * 决定这次显示哪一期（🆕 2026-10-10 起带"用户选过的周期"）：
+     * <pre>
+     *   用户选过 (mode, start) 且那一期还在库 ⇒ 用它
+     *   否则                                   ⇒ 回落 `BillStore.latest`（= 改动前的老行为）
+     * </pre>
+     * 🔴 **缺省零差异**：没点过周期导航的老用户，走的就是第二条分支 ⇒ 与改造前逐字节一致。
+     */
+    private Bill pickBill() {
+        String m = MenuPrefs.periodMode(ctx);
+        long s = MenuPrefs.periodStart(ctx);
+        if (m.length() > 0 && s > 0L) {
+            Bill b = BillStore.load(ctx, m, s);
+            if (b != null) return b;
+        }
+        return BillStore.latest(ctx);
+    }
+
+    /** 当前账单**可显示**的视图集合：月账单 = 3 项（含月历）、周账单 = 2 项。 */
+    private void normalizeView() {
+        // 🔴 TASK-077b B1：月历**只属于月账单** ⇒ 当前是周账时不显示第三视图，本次显示回落摘录菜单
         //    （**不写回 prefs** —— 切回月账仍记得用户选的月历）
         if (this.view == MenuPrefs.VIEW_CALENDAR
                 && (this.bill == null || !PeriodRange.MONTHLY.equals(this.bill.mode))) {
             this.view = MenuPrefs.VIEW_EXCERPT;
         }
-        this.selDay = maxDayIndex(this.bill);
+    }
+
+    // ══════════════════════ 🆕 2026-10-10：周期切换 / 导航（用户诉求 ⑥） ══════════════════════
+
+    /** 现在显示的是哪一种粒度（无账 ⇒ 按周算，画面与"空态"一致）。 */
+    String shownMode() { return (bill == null) ? null : bill.mode; }
+
+    /** 现在显示的是哪一期起点（秒）；无账 ⇒ 0。 */
+    long shownStart() { return (bill == null) ? 0L : bill.periodStart; }
+
+    /** 该粒度**有没有已生成的期**（决定 `[周|月]` 那一段可不可点）。 */
+    boolean hasMode(String mode) {
+        return ctx != null && !BillStore.startsOf(ctx, mode).isEmpty();
+    }
+
+    /** 当前周期在 `startsOf` 里的序号（0 = 最新）；-1 = 不在列表里（老账被轮转淘汰）。 */
+    private int periodIndex() {
+        if (ctx == null || bill == null) return -1;
+        List<Long> starts = BillStore.startsOf(ctx, bill.mode);
+        for (int i = 0; i < starts.size(); i++) {
+            if (starts.get(i) == bill.periodStart) return i;
+        }
+        return -1;
+    }
+
+    /**
+     * 翻到上一期 / 下一期。
+     *
+     * @param dir {@code -1} = 更老的一期、{@code +1} = 更新的一期
+     * @return 是否真的换了（到边界 / 列表里找不到 ⇒ false，调用方不重画）
+     */
+    boolean shiftPeriod(int dir) {
+        if (ctx == null || bill == null || dir == 0) return false;
+        // 🔴 `starts` 是**降序**（`BillStore.startsOf` 用 `Collections.reverseOrder()`）⇒ 索引 0 = 最新、
+        //    索引越大越老 ⇒「更老的一期」= 索引 **+1**，与 `dir` 的符号**相反**。
+        //    ⚠️ 2026-10-10 上机实测踩到：原写法 `idx + dir` 会让 `‹`（dir=-1）在最前一期上算出
+        //    `to = -1` ⇒ 直接 return false（连点 4 次**毫无反应**），而 `›`（dir=+1）反而翻到**更老**
+        //    的一期（2026-09 → 2026-08）—— 两个箭头方向整体反了。
+        //    端点置灰逻辑（`drawArrow`：左 `idx < n-1`、右 `idx > 0`）本来就按"左=更老 / 右=更新"
+        //    写的 ⇒ 把这里的索引方向翻译对，画与命中语义即一致。
+        List<Long> starts = BillStore.startsOf(ctx, bill.mode);
+        int idx = periodIndex();
+        if (idx < 0) return false;
+        int to = (dir < 0) ? idx + 1 : idx - 1;
+        if (to < 0 || to >= starts.size()) return false;
+        return applySelection(bill.mode, starts.get(to));
+    }
+
+    /**
+     * 切粒度（周 ⇄ 月）。
+     *
+     * <p>🔴 切过去落在**该粒度最新一期**（不是"把当前期起点换算成另一种粒度"）——
+     * 周与月的起点根本不是同一套刻度，硬换会落到一个不存在的期。
+     *
+     * @return 是否真的换了（本来就是该粒度 / 该粒度一期都没有 ⇒ false）
+     */
+    boolean switchMode(String mode) {
+        if (ctx == null || bill == null) return false;
+        final String m = PeriodRange.MONTHLY.equals(mode) ? PeriodRange.MONTHLY : PeriodRange.WEEKLY;
+        if (m.equals(bill.mode)) return false;
+        List<Long> starts = BillStore.startsOf(ctx, m);
+        if (starts.isEmpty()) return false;
+        return applySelection(m, starts.get(0));
+    }
+
+    /** 落盘选择 + 换料 + 归一视图 + 失效折行缓存。 */
+    private boolean applySelection(String mode, long start) {
+        Bill nb = BillStore.load(ctx, mode, start);
+        if (nb == null) return false;                  // 键在但读坏了 ⇒ 当没换（绝不显示半成品）
+        MenuPrefs.setPeriodSel(ctx, mode, start);
+        bill = nb;
+        normalizeView();
+        selDay = maxDayIndex(bill);
         invalidateRows();
+        return true;
+    }
+
+    // ── 命中（画与命中同一份几何）──
+
+    /** 触点是否落在「生成壁纸」上（无账 ⇒ 永远 false —— 那时按钮根本没画）。 */
+    boolean hitWallpaper(float x, float y, float w, float unit, float top) {
+        if (ctx == null || bill == null) return false;
+        RectF r = wallpaperBtn(w, unit, top);
+        float m = unit * 6f;
+        return x >= r.left - m && x <= r.right + m && y >= r.top - m && y <= r.bottom + m;
+    }
+
+    /** 触点落在 `[周|月]` 的哪一段；返回 {@link PeriodRange#WEEKLY}/{@link PeriodRange#MONTHLY}，未命中 ⇒ null。 */
+    String hitMode(float x, float y, float w, float unit, float top) {
+        if (ctx == null) return null;
+        RectF r = modeStrip(w, unit, top);
+        float m = unit * 6f;
+        if (x < r.left - m || x > r.right + m || y < r.top - m || y > r.bottom + m) return null;
+        return (x < r.centerX()) ? PeriodRange.WEEKLY : PeriodRange.MONTHLY;
+    }
+
+    /** 触点落在 `‹` / `›` 上；返回 -1 / +1，未命中 ⇒ 0。 */
+    int hitArrow(float x, float y, float w, float unit, float top) {
+        if (ctx == null || bill == null) return 0;
+        RectF r = navStrip(w, unit, top);
+        float m = unit * 8f;
+        if (y < r.top - m || y > r.bottom + m) return 0;
+        float aw = ARROW_W_UNITS * unit;
+        if (x >= r.left - m && x <= r.left + aw) return -1;
+        if (x >= r.right - aw && x <= r.right + m) return +1;
+        return 0;
     }
 
     /** 本期阅读最久的日（0 基）；全 0 / 无账 ⇒ -1。 */
@@ -163,15 +314,66 @@ final class BillSection implements InsightRenderer.Section {
         cu = -1f;
     }
 
-    /** 顶部页签条的几何（画与命中共用同一份 ⇒ 不会"看起来能点、其实点不中"）。 */
+    /**
+     * 顶部页签条的几何（画与命中共用同一份 ⇒ 不会"看起来能点、其实点不中"）。
+     *
+     * <p>🆕 2026-10-10：页签条从"分区标题那一行"下移到**头部第三行**（标题行让给了「生成壁纸」、
+     * 第二行给了周期条）—— 它属于**票据本身**，与"看哪一期"的周期条分开。
+     * 🔴 上机实测（第一版）踩过：只补 `periodBarH` 会让页签条落在**标题行与周期条之间**，
+     * 与周期条的 `‹ 单号 ›` 直接叠字 ⇒ 现在补的是完整的 {@link #headArea}。
+     */
     RectF tabStrip(float w, float unit, float top) {
         float head = InsightRenderer.secHeadH(unit);
         float right = w - w * InsightRenderer.PAD_X_RATIO;
         float ratio = (visibleViews().length > 2) ? TAB_W_RATIO_3 : TAB_W_RATIO;
         float sw = w * ratio;
         float sh = head * 0.80f;
-        float cy = top + head * 0.52f;
+        float barTop = top + InsightRenderer.secHeadH(unit) + periodBarH(unit);
+        float cy = barTop + tabBarH(unit) * 0.5f;
         return new RectF(right - sw, cy - sh / 2f, right, cy + sh / 2f);
+    }
+
+    // ══════════════════════ 🆕 2026-10-10：头部几何（第 1 行 + 周期条） ══════════════════════
+
+    /** 周期条占高（px）。 */
+    private float periodBarH(float unit) { return SZ_SMALL * unit * PERIOD_BAR_UNITS; }
+
+    /** 页签条自己占的一行高（px）。 */
+    private float tabBarH(float unit) { return SZ_SMALL * unit * TAB_BAR_UNITS; }
+
+    /** 头部总高（px）= 分区标题行 + 周期条 + 页签行 —— 正文从它之下起画。 */
+    private float headArea(float unit) {
+        return InsightRenderer.secHeadH(unit) + periodBarH(unit) + tabBarH(unit);
+    }
+
+    /** 周期条内小控件的顶边 y。 */
+    private float chipTop(float unit, float top) {
+        float barTop = top + InsightRenderer.secHeadH(unit);
+        return barTop + (periodBarH(unit) - SZ_SMALL * unit * CHIP_H_UNITS) / 2f;
+    }
+
+    /** `[周|月]` 双段的外框。 */
+    private RectF modeStrip(float w, float unit, float top) {
+        float left = w * InsightRenderer.PAD_X_RATIO;
+        float h = SZ_SMALL * unit * CHIP_H_UNITS;
+        float y0 = chipTop(unit, top);
+        return new RectF(left, y0, left + MODE_W_UNITS * unit, y0 + h);
+    }
+
+    /** `◀ 单号 ▶` 的外框（右端对齐分区右内边距）。 */
+    private RectF navStrip(float w, float unit, float top) {
+        float right = w - w * InsightRenderer.PAD_X_RATIO;
+        float h = SZ_SMALL * unit * CHIP_H_UNITS;
+        float y0 = chipTop(unit, top);
+        return new RectF(right - NAV_W_UNITS * unit, y0, right, y0 + h);
+    }
+
+    /** 「生成壁纸」按钮（在分区标题那一行的右端）。 */
+    private RectF wallpaperBtn(float w, float unit, float top) {
+        float right = w - w * InsightRenderer.PAD_X_RATIO;
+        float h = SZ_SMALL * unit * WP_H_UNITS;
+        float cy = top + InsightRenderer.secHeadH(unit) * 0.52f;
+        return new RectF(right - WP_W_UNITS * unit, cy - h / 2f, right, cy + h / 2f);
     }
 
     /** 触点是否落在页签条上（命中区上下各放宽一点 —— 字小，手指点不准）。 */
@@ -188,7 +390,7 @@ final class BillSection implements InsightRenderer.Section {
         if (bill == null || view != MenuPrefs.VIEW_CALENDAR) return -1f;
         if (!PeriodRange.MONTHLY.equals(bill.mode)) return -1f;
         List<Row> ls = laid(w, unit);
-        float y = top + InsightRenderer.secHeadH(unit);
+        float y = top + headArea(unit);
         for (int i = 0; i < ls.size(); i++) {
             Row r = ls.get(i);
             if (r.kind == K_CAL) return y;
@@ -235,7 +437,7 @@ final class BillSection implements InsightRenderer.Section {
     // ══════════════════════ 量高 / 画 ══════════════════════
 
     public float height(float w, float vh, float unit) {
-        float head = InsightRenderer.secHeadH(unit);
+        float head = headArea(unit);
         if (bill == null) return head + SZ_BODY * unit * 3.8f;
         List<Row> ls = laid(w, unit);
         float h = head;
@@ -244,11 +446,12 @@ final class BillSection implements InsightRenderer.Section {
     }
 
     public void draw(Canvas c, float w, float vh, float top, float unit, Paint p) {
-        // 分区标题（与其它分区同尺同基）—— 页签条画在同一行右侧
-        InsightRenderer.drawSectionHead(c, w, top, unit, p, title());
+        // ── 头部第 1 行：分区标题（「墨单」）+ 右端「生成壁纸」；第 2 行：周期条 ──
+        drawHeadArea(c, w, unit, top, p);
+        // 页签条（摘录菜单 / 读书菜单 / 月历）—— 头部第三行（tabStrip 内部已补标题行 + 周期条高）
         drawTabs(c, w, unit, top, p);
 
-        float y = top + InsightRenderer.secHeadH(unit);
+        float y = top + headArea(unit);
         float left = w * InsightRenderer.PAD_X_RATIO;
         float right = w - w * InsightRenderer.PAD_X_RATIO;
 
@@ -266,6 +469,125 @@ final class BillSection implements InsightRenderer.Section {
                 y += r.draw(c, left, right, y, unit, p);
             }
         }
+    }
+
+    // ══════════════════════ 🆕 2026-10-10：头部绘制 ══════════════════════
+
+    /**
+     * 头部三行的绘制（用户诉求 ⑤ + ⑥ 的"A 头部两行"骨架 + 页签自己一行）：
+     * <pre>
+     *   墨单                                        生成壁纸     ← ① 分区标题行
+     *   [ 周 | 月 ]                        ‹  2026-W40  ›        ← ② 周期条（⑥ 的周/月 + 选周期）
+     *   [摘录菜单 | 读书菜单]                                     ← ③ 票据页签（属于票据本身）
+     * </pre>
+     * 🔴 页签条被独立成第三行不是"多一排"的任性：上机实测把页签并进周期条会与 `‹ 单号 ›`
+     * **直接叠字**（480px 宽装不下「周月 + 页签 + 单号导航」三簇）。
+     */
+    private void drawHeadArea(Canvas c, float w, float unit, float top, Paint p) {
+        InsightRenderer.drawSectionHead(c, w, top, unit, p, title());
+
+        // 右端「生成壁纸」（无账可生成 ⇒ 不画、也不命中）
+        if (ctx != null && bill != null) {
+            RectF b = wallpaperBtn(w, unit, top);
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeWidth(1f);
+            p.setColor(INK);
+            c.drawRect(b.left + 0.5f, b.top + 0.5f, b.right - 0.5f, b.bottom - 0.5f, p);
+            p.setStyle(Paint.Style.FILL);
+            p.setColor(INK);
+            p.setTypeface(null);
+            p.setFakeBoldText(false);
+            p.setTextAlign(Paint.Align.CENTER);
+            // 字装不下就缩（下限 0.7×）—— 与卡片「打开墨台」同一个兜底
+            float sz = SZ_SMALL * unit;
+            p.setTextSize(sz);
+            String lab = ctx.getString(R.string.menu_gen_wallpaper);
+            while (p.measureText(lab) > b.width() - unit * 8f && sz > SZ_SMALL * unit * 0.7f) {
+                sz -= 0.4f;
+                p.setTextSize(sz);
+            }
+            Paint.FontMetrics fm = p.getFontMetrics();
+            c.drawText(lab, b.centerX(), b.centerY() - (fm.ascent + fm.descent) / 2f, p);
+            p.setTextAlign(Paint.Align.LEFT);
+        }
+
+        drawPeriodBar(c, w, unit, top, p);
+    }
+
+    /** 周期条：左 `[周|月]`、右 `‹ 单号 ›`（🔴 与 {@link #hitMode}/{@link #hitArrow} 共用同一份几何）。 */
+    private void drawPeriodBar(Canvas c, float w, float unit, float top, Paint p) {
+        if (ctx == null) return;                          // 防御：refresh 之前绝不画
+        final String curMode = (bill == null) ? PeriodRange.WEEKLY : bill.mode;
+        final String[] modes = { PeriodRange.WEEKLY, PeriodRange.MONTHLY };
+        final String[] labs = { ctx.getString(R.string.menu_mode_week), ctx.getString(R.string.menu_mode_month) };
+
+        // ① 左：[周|月] 双段（照 SegTabView 的语言：选中加粗 + 底部黑条；无饼圆角）
+        RectF ms = modeStrip(w, unit, top);
+        float slot = ms.width() / 2f;
+        p.setStyle(Paint.Style.FILL);
+        p.setTypeface(InkTheme.serif());
+        p.setFakeBoldText(false);
+        p.setTextSize(SZ_SMALL * unit * 1.02f);
+        Paint.FontMetrics fm = p.getFontMetrics();
+        float base = ms.centerY() - (fm.ascent + fm.descent) / 2f;
+        p.setTextAlign(Paint.Align.CENTER);
+        for (int i = 0; i < 2; i++) {
+            boolean on = modes[i].equals(curMode);
+            boolean avail = hasMode(modes[i]);
+            float cx = ms.left + slot * i + slot / 2f;
+            p.setFakeBoldText(on);
+            p.setColor(on ? INK : (avail ? GRAY : LIGHT));
+            c.drawText(labs[i], cx, base, p);
+            if (on) {
+                p.setColor(INK);
+                float bw = slot * 0.48f;
+                c.drawRect(cx - bw / 2f, ms.bottom - Math.max(1.5f, unit * 1.7f),
+                        cx + bw / 2f, ms.bottom, p);
+            }
+        }
+        p.setFakeBoldText(false);
+        p.setTypeface(null);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(1f);
+        p.setColor(LINE);
+        c.drawRect(ms.left + 0.5f, ms.top + 0.5f, ms.right - 0.5f, ms.bottom - 0.5f, p);
+        c.drawLine(ms.left + slot, ms.top + ms.height() * 0.24f,
+                ms.left + slot, ms.bottom - ms.height() * 0.24f, p);
+        p.setStyle(Paint.Style.FILL);
+
+        // ② 右：‹ 单号 ›（没有账单 ⇒ 整条不画）
+        if (bill == null) {
+            p.setTextAlign(Paint.Align.LEFT);
+            return;
+        }
+        RectF ns = navStrip(w, unit, top);
+        final float aw = ARROW_W_UNITS * unit;
+        int idx = periodIndex();
+        int n = BillStore.startsOf(ctx, bill.mode).size();
+        p.setTypeface(Typeface.MONOSPACE);
+        p.setTextSize(SZ_SMALL * unit * 1.04f);
+        p.setTextAlign(Paint.Align.CENTER);
+        p.setColor(INK);
+        Paint.FontMetrics nf = p.getFontMetrics();
+        c.drawText(Bill.serialOf(bill.mode, bill.periodStart), ns.centerX(),
+                ns.centerY() - (nf.ascent + nf.descent) / 2f, p);
+        p.setTypeface(null);
+        drawArrow(c, ns.left + aw / 2f, ns.centerY(), unit, true, idx >= 0 && idx < n - 1, p);
+        drawArrow(c, ns.right - aw / 2f, ns.centerY(), unit, false, idx > 0, p);
+        p.setTextAlign(Paint.Align.LEFT);
+    }
+
+    /** 周期条两端的小箭头（`‹` / `›`）—— 到边界置灰（浅灰、明显不可点）。 */
+    private void drawArrow(Canvas c, float cx, float cy, float unit, boolean left, boolean on, Paint p) {
+        p.setStyle(Paint.Style.FILL);
+        p.setTypeface(null);
+        p.setFakeBoldText(false);
+        p.setTextAlign(Paint.Align.CENTER);
+        p.setTextSize(SZ_SMALL * unit * 1.5f);
+        p.setColor(on ? INK : LIGHT);
+        Paint.FontMetrics fm = p.getFontMetrics();
+        c.drawText(left ? "‹" : "›", cx, cy - (fm.ascent + fm.descent) / 2f, p);
+        p.setTextAlign(Paint.Align.LEFT);
     }
 
     // ══════════════════════ 页签条 ══════════════════════
@@ -342,9 +664,10 @@ final class BillSection implements InsightRenderer.Section {
         final String billTitle = MenuPrefs.title(ctx);
         final String serial = Bill.serialOf(bill.mode, bill.periodStart);
 
-        // ── ① 票据头：标题 + 单号 / 副行 / 分隔线 / 表头 / 分隔线 ──
+        // ── ① 票据头：**单号（左） + 标题（右）** / 副行 / 分隔线 / 表头 / 分隔线 ──
+        //    🆕 2026-10-10 用户拍板：与改造前**对调**（原为「墨单 … 2026-W40」）。
         if (headOn) {
-            Row t = Row.line(billTitle, serial, SZ_TITLE * scT);
+            Row t = Row.line(serial, billTitle, SZ_TITLE * scT);
             t.bold = true;
             t.serif = tSerif;
             out.add(t);
@@ -562,7 +885,8 @@ final class BillSection implements InsightRenderer.Section {
         final String serial = Bill.serialOf(bill.mode, bill.periodStart);
 
         if ((MenuPrefs.blocks(ctx) & MenuPrefs.BLOCK_HEAD) != 0) {
-            Row t = Row.line(billTitle, serial, SZ_TITLE * scT);
+            // 🆕 2026-10-10：与两菜单同一口径 —— **单号在左、标题在右**
+            Row t = Row.line(serial, billTitle, SZ_TITLE * scT);
             t.bold = true;
             t.serif = tSerif;
             out.add(t);

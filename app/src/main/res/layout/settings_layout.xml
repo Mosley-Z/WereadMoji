@@ -581,9 +581,9 @@
                     android:textColor="#FF000000"
                     android:textSize="14sp" />
 
-                <!-- ── 🆕 TASK-076：「墨台」分区（总开关 / 内容模块开关+调序 / 背景）──
-                     与 page_settings.xml **共用同一 include** ⇒ 两端天然同步、零漂移。 -->
-                <include layout="@layout/inc_desk" />
+                <!-- ── 🆕 TASK-076：「墨台」分区原本在这里（`inc_desk`），
+                     2026-10-10 用户诉求 ① 起**整块搬进墨台页面右上角的自绘设置态**
+                     （`feature/DeskSettings`）⇒ 本页不再有墨台入口。 -->
             </LinearLayout>
 
             <!-- ============================================================
@@ -885,24 +885,227 @@
                             android:textSize="13sp" />
                     </LinearLayout>
 
-                    <CheckBox
-                        android:id="@+id/cb_shake_lr_rev"
-                        android:layout_width="wrap_content"
+                    <!-- 🆕 2026-10-10 用户 ②：四动作方向（左/右/上/下晃）各**三选一** ——
+                         取代原来的「左右晃方向反转 / 上下晃方向反转」两个勾选。
+                         「关」= 该动作命中后**不发任何翻页指令**（判决照走、投递丢弃）。
+                         🔴 默认值与旧勾选**逐位等价**（迁移式见 CardPrefs#getShakePeerActDir）。
+                         ⚠ 一行一个动作：三个单选项并排已 ≈267px，两列（×2）在 480px 屏上会溢出
+                           ⇒ 由「两行两列」改为「四行单列」（与下方「本机晃动」同形）。 -->
+                    <LinearLayout
+                        android:id="@+id/ll_shake_peer_dir"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:buttonTint="#FF000000"
-                        android:text="@string/lab_shake_rev_lr"
-                        android:textColor="#FF000000"
-                        android:textSize="13sp" />
+                        android:layout_marginTop="4dp"
+                        android:orientation="vertical">
 
-                    <CheckBox
-                        android:id="@+id/cb_shake_ud_rev"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:buttonTint="#FF000000"
-                        android:text="@string/lab_shake_rev_ud"
-                        android:textColor="#FF000000"
-                        android:textSize="13sp" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/lab_shake_peer_dir_label"
+                            android:textColor="#FF000000"
+                            android:textSize="13sp" />
 
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="44dp"
+                                android:layout_height="wrap_content"
+                                android:text="@string/lab_shake_local_dir_left"
+                                android:textColor="#FF000000"
+                                android:textSize="12sp" />
+
+                            <RadioGroup
+                                android:id="@+id/rg_shake_peer_dir_left"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal">
+
+                                <RadioButton
+                                    android:id="@+id/rb_shake_peer_dir_left_prev"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_prev"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+
+                                <RadioButton
+                                    android:id="@+id/rb_shake_peer_dir_left_next"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="6dp"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_next"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+
+                                <RadioButton
+                                    android:id="@+id/rb_shake_peer_dir_left_off"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="6dp"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_off"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+                            </RadioGroup>
+                        </LinearLayout>
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="44dp"
+                                android:layout_height="wrap_content"
+                                android:text="@string/lab_shake_local_dir_right"
+                                android:textColor="#FF000000"
+                                android:textSize="12sp" />
+
+                            <RadioGroup
+                                android:id="@+id/rg_shake_peer_dir_right"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal">
+
+                                <RadioButton
+                                    android:id="@+id/rb_shake_peer_dir_right_prev"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_prev"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+
+                                <RadioButton
+                                    android:id="@+id/rb_shake_peer_dir_right_next"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="6dp"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_next"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+
+                                <RadioButton
+                                    android:id="@+id/rb_shake_peer_dir_right_off"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="6dp"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_off"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+                            </RadioGroup>
+                        </LinearLayout>
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="44dp"
+                                android:layout_height="wrap_content"
+                                android:text="@string/lab_shake_local_dir_up"
+                                android:textColor="#FF000000"
+                                android:textSize="12sp" />
+
+                            <RadioGroup
+                                android:id="@+id/rg_shake_peer_dir_up"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal">
+
+                                <RadioButton
+                                    android:id="@+id/rb_shake_peer_dir_up_prev"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_prev"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+
+                                <RadioButton
+                                    android:id="@+id/rb_shake_peer_dir_up_next"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="6dp"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_next"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+
+                                <RadioButton
+                                    android:id="@+id/rb_shake_peer_dir_up_off"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="6dp"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_off"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+                            </RadioGroup>
+                        </LinearLayout>
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="44dp"
+                                android:layout_height="wrap_content"
+                                android:text="@string/lab_shake_local_dir_down"
+                                android:textColor="#FF000000"
+                                android:textSize="12sp" />
+
+                            <RadioGroup
+                                android:id="@+id/rg_shake_peer_dir_down"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal">
+
+                                <RadioButton
+                                    android:id="@+id/rb_shake_peer_dir_down_prev"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_prev"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+
+                                <RadioButton
+                                    android:id="@+id/rb_shake_peer_dir_down_next"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="6dp"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_next"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+
+                                <RadioButton
+                                    android:id="@+id/rb_shake_peer_dir_down_off"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="6dp"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_off"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+                            </RadioGroup>
+                        </LinearLayout>
+                    </LinearLayout>
                     <!-- 动态「当前映射」自证行（refreshShakeUi 实时拼） -->
                     <TextView
                         android:id="@+id/tv_shake_map"
@@ -1390,7 +1593,9 @@
                     </LinearLayout>
 
                     <!-- 🆕 TASK-074：四动作方向自选（左/右/上/下 各一个单选，互不冲突）——
-                         两行 × 两列；默认 左/上→上一页、右/下→下一页。 -->
+                         🆕 2026-10-10 用户 ②：每格由 2 选 1 扩为 **3 选 1**（多一个「关」= 该动作
+                         命中后不发翻页指令）。⚠ 一行一个动作：三个单选项并排已 ≈267px，
+                         两列在 480px 屏上会溢出 ⇒ 由「两行两列」改为「四行单列」。 -->
                     <LinearLayout
                         android:id="@+id/ll_shake_local_dir"
                         android:layout_width="match_parent"
@@ -1409,185 +1614,203 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
+                            android:gravity="center_vertical"
                             android:orientation="horizontal">
 
-                            <LinearLayout
-                                android:layout_width="0dp"
+                            <TextView
+                                android:layout_width="44dp"
                                 android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:gravity="center_vertical"
+                                android:text="@string/lab_shake_local_dir_left"
+                                android:textColor="#FF000000"
+                                android:textSize="12sp" />
+
+                            <RadioGroup
+                                android:id="@+id/rg_shake_dir_left"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
                                 android:orientation="horizontal">
 
-                                <TextView
+                                <RadioButton
+                                    android:id="@+id/rb_shake_dir_left_prev"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:text="@string/lab_shake_local_dir_left"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_prev"
                                     android:textColor="#FF000000"
                                     android:textSize="12sp" />
 
-                                <RadioGroup
-                                    android:id="@+id/rg_shake_dir_left"
+                                <RadioButton
+                                    android:id="@+id/rb_shake_dir_left_next"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:layout_marginStart="4dp"
-                                    android:orientation="horizontal">
-
-                                    <RadioButton
-                                        android:id="@+id/rb_shake_dir_left_prev"
-                                        android:layout_width="wrap_content"
-                                        android:layout_height="wrap_content"
-                                        android:buttonTint="#FF000000"
-                                        android:text="@string/lab_shake_page_prev"
-                                        android:textColor="#FF000000"
-                                        android:textSize="12sp" />
-
-                                    <RadioButton
-                                        android:id="@+id/rb_shake_dir_left_next"
-                                        android:layout_width="wrap_content"
-                                        android:layout_height="wrap_content"
-                                        android:layout_marginStart="6dp"
-                                        android:buttonTint="#FF000000"
-                                        android:text="@string/lab_shake_page_next"
-                                        android:textColor="#FF000000"
-                                        android:textSize="12sp" />
-                                </RadioGroup>
-                            </LinearLayout>
-
-                            <LinearLayout
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:gravity="center_vertical"
-                                android:orientation="horizontal">
-
-                                <TextView
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:text="@string/lab_shake_local_dir_right"
+                                    android:layout_marginStart="6dp"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_next"
                                     android:textColor="#FF000000"
                                     android:textSize="12sp" />
 
-                                <RadioGroup
-                                    android:id="@+id/rg_shake_dir_right"
+                                <RadioButton
+                                    android:id="@+id/rb_shake_dir_left_off"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:layout_marginStart="4dp"
-                                    android:orientation="horizontal">
-
-                                    <RadioButton
-                                        android:id="@+id/rb_shake_dir_right_prev"
-                                        android:layout_width="wrap_content"
-                                        android:layout_height="wrap_content"
-                                        android:buttonTint="#FF000000"
-                                        android:text="@string/lab_shake_page_prev"
-                                        android:textColor="#FF000000"
-                                        android:textSize="12sp" />
-
-                                    <RadioButton
-                                        android:id="@+id/rb_shake_dir_right_next"
-                                        android:layout_width="wrap_content"
-                                        android:layout_height="wrap_content"
-                                        android:layout_marginStart="6dp"
-                                        android:buttonTint="#FF000000"
-                                        android:text="@string/lab_shake_page_next"
-                                        android:textColor="#FF000000"
-                                        android:textSize="12sp" />
-                                </RadioGroup>
-                            </LinearLayout>
+                                    android:layout_marginStart="6dp"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_off"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+                            </RadioGroup>
                         </LinearLayout>
-
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
+                            android:gravity="center_vertical"
                             android:orientation="horizontal">
 
-                            <LinearLayout
-                                android:layout_width="0dp"
+                            <TextView
+                                android:layout_width="44dp"
                                 android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:gravity="center_vertical"
+                                android:text="@string/lab_shake_local_dir_right"
+                                android:textColor="#FF000000"
+                                android:textSize="12sp" />
+
+                            <RadioGroup
+                                android:id="@+id/rg_shake_dir_right"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
                                 android:orientation="horizontal">
 
-                                <TextView
+                                <RadioButton
+                                    android:id="@+id/rb_shake_dir_right_prev"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:text="@string/lab_shake_local_dir_up"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_prev"
                                     android:textColor="#FF000000"
                                     android:textSize="12sp" />
 
-                                <RadioGroup
-                                    android:id="@+id/rg_shake_dir_up"
+                                <RadioButton
+                                    android:id="@+id/rb_shake_dir_right_next"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:layout_marginStart="4dp"
-                                    android:orientation="horizontal">
-
-                                    <RadioButton
-                                        android:id="@+id/rb_shake_dir_up_prev"
-                                        android:layout_width="wrap_content"
-                                        android:layout_height="wrap_content"
-                                        android:buttonTint="#FF000000"
-                                        android:text="@string/lab_shake_page_prev"
-                                        android:textColor="#FF000000"
-                                        android:textSize="12sp" />
-
-                                    <RadioButton
-                                        android:id="@+id/rb_shake_dir_up_next"
-                                        android:layout_width="wrap_content"
-                                        android:layout_height="wrap_content"
-                                        android:layout_marginStart="6dp"
-                                        android:buttonTint="#FF000000"
-                                        android:text="@string/lab_shake_page_next"
-                                        android:textColor="#FF000000"
-                                        android:textSize="12sp" />
-                                </RadioGroup>
-                            </LinearLayout>
-
-                            <LinearLayout
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:gravity="center_vertical"
-                                android:orientation="horizontal">
-
-                                <TextView
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:text="@string/lab_shake_local_dir_down"
+                                    android:layout_marginStart="6dp"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_next"
                                     android:textColor="#FF000000"
                                     android:textSize="12sp" />
 
-                                <RadioGroup
-                                    android:id="@+id/rg_shake_dir_down"
+                                <RadioButton
+                                    android:id="@+id/rb_shake_dir_right_off"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:layout_marginStart="4dp"
-                                    android:orientation="horizontal">
+                                    android:layout_marginStart="6dp"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_off"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+                            </RadioGroup>
+                        </LinearLayout>
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
 
-                                    <RadioButton
-                                        android:id="@+id/rb_shake_dir_down_prev"
-                                        android:layout_width="wrap_content"
-                                        android:layout_height="wrap_content"
-                                        android:buttonTint="#FF000000"
-                                        android:text="@string/lab_shake_page_prev"
-                                        android:textColor="#FF000000"
-                                        android:textSize="12sp" />
+                            <TextView
+                                android:layout_width="44dp"
+                                android:layout_height="wrap_content"
+                                android:text="@string/lab_shake_local_dir_up"
+                                android:textColor="#FF000000"
+                                android:textSize="12sp" />
 
-                                    <RadioButton
-                                        android:id="@+id/rb_shake_dir_down_next"
-                                        android:layout_width="wrap_content"
-                                        android:layout_height="wrap_content"
-                                        android:layout_marginStart="6dp"
-                                        android:buttonTint="#FF000000"
-                                        android:text="@string/lab_shake_page_next"
-                                        android:textColor="#FF000000"
-                                        android:textSize="12sp" />
-                                </RadioGroup>
-                            </LinearLayout>
+                            <RadioGroup
+                                android:id="@+id/rg_shake_dir_up"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal">
+
+                                <RadioButton
+                                    android:id="@+id/rb_shake_dir_up_prev"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_prev"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+
+                                <RadioButton
+                                    android:id="@+id/rb_shake_dir_up_next"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="6dp"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_next"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+
+                                <RadioButton
+                                    android:id="@+id/rb_shake_dir_up_off"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="6dp"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_off"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+                            </RadioGroup>
+                        </LinearLayout>
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="44dp"
+                                android:layout_height="wrap_content"
+                                android:text="@string/lab_shake_local_dir_down"
+                                android:textColor="#FF000000"
+                                android:textSize="12sp" />
+
+                            <RadioGroup
+                                android:id="@+id/rg_shake_dir_down"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal">
+
+                                <RadioButton
+                                    android:id="@+id/rb_shake_dir_down_prev"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_prev"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+
+                                <RadioButton
+                                    android:id="@+id/rb_shake_dir_down_next"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="6dp"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_next"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+
+                                <RadioButton
+                                    android:id="@+id/rb_shake_dir_down_off"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="6dp"
+                                    android:buttonTint="#FF000000"
+                                    android:text="@string/lab_shake_page_off"
+                                    android:textColor="#FF000000"
+                                    android:textSize="12sp" />
+                            </RadioGroup>
                         </LinearLayout>
                     </LinearLayout>
-
                     <!-- 动态自证行（refreshShakeLocalUi 实时拼：当前映射 / 未开启） -->
                     <TextView
                         android:id="@+id/tv_shake_local_note"

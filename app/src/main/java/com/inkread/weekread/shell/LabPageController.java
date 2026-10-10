@@ -32,6 +32,7 @@ import android.text.Editable;
 import android.text.TextWatcher;
 import android.util.Log;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.ViewParent;
 import android.widget.Button;
 import android.widget.CheckBox;
@@ -113,8 +114,13 @@ public class LabPageController {
     private RadioButton rbShakeSensLow;
     private RadioButton rbShakeSensMid;
     private RadioButton rbShakeSensHigh;
-    private CheckBox cbShakeLrRev;       // ③ 左右晃方向反转
-    private CheckBox cbShakeUdRev;       // ④ 上下晃方向反转
+    /** 🆕 2026-10-10 用户 ②：「四动作方向」3 选 1（左/右/上/下 各一组；第三项 = 「关」）。
+     *  🔴 取代原 `cbShakeLrRev` / `cbShakeUdRev` 两个「方向反转」勾选（默认值由旧键迁移）。 */
+    private View llShakePeerDir;
+    private RadioGroup rgShakePeerDirLeft;
+    private RadioGroup rgShakePeerDirRight;
+    private RadioGroup rgShakePeerDirUp;
+    private RadioGroup rgShakePeerDirDown;
     private View llShakeAxis;            // 🆕 TASK-042：响应方向行（左右 / 上下 多选）
     private CheckBox cbShakeAxisLr;      //   左右晃是否响应
     private CheckBox cbShakeAxisUd;      //   上下晃是否响应
@@ -133,7 +139,8 @@ public class LabPageController {
     private RadioButton rbShakeLocalSwipe;
     /** 本机是否具备加速度计（无则整组置灰 + 提示，不假装能用）。bind 时探测一次。 */
     private boolean mHasAccel;
-    /** 🆕 TASK-074 · 「四动作方向」自选（左/右/上/下 各一个单选，两行×两列）：与「翻页方式」同显隐（开关打开才可见）。 */
+    /** 🆕 TASK-074 · 「四动作方向」自选（左/右/上/下 各一个单选，四行单列）：与「翻页方式」同显隐（开关打开才可见）。
+     *  🆕 2026-10-10 用户 ②：每组由 2 选 1 扩为 3 选 1（多一个「关」）。 */
     private View llShakeLocalDir;
     private RadioGroup rgShakeDirLeft;
     private RadioGroup rgShakeDirRight;
@@ -221,8 +228,12 @@ public class LabPageController {
         rbShakeSensLow = (RadioButton) host.findViewById(R.id.rb_shake_sens_low);
         rbShakeSensMid = (RadioButton) host.findViewById(R.id.rb_shake_sens_mid);
         rbShakeSensHigh = (RadioButton) host.findViewById(R.id.rb_shake_sens_high);
-        cbShakeLrRev = (CheckBox) host.findViewById(R.id.cb_shake_lr_rev);
-        cbShakeUdRev = (CheckBox) host.findViewById(R.id.cb_shake_ud_rev);
+        // 🆕 2026-10-10 用户 ②：遥控侧「四动作方向」3 选 1（取代两个「方向反转」勾选）
+        llShakePeerDir = host.findViewById(R.id.ll_shake_peer_dir);
+        rgShakePeerDirLeft = (RadioGroup) host.findViewById(R.id.rg_shake_peer_dir_left);
+        rgShakePeerDirRight = (RadioGroup) host.findViewById(R.id.rg_shake_peer_dir_right);
+        rgShakePeerDirUp = (RadioGroup) host.findViewById(R.id.rg_shake_peer_dir_up);
+        rgShakePeerDirDown = (RadioGroup) host.findViewById(R.id.rg_shake_peer_dir_down);
         llShakeAxis = host.findViewById(R.id.ll_shake_axis);               // 🆕 TASK-042
         cbShakeAxisLr = (CheckBox) host.findViewById(R.id.cb_shake_axis_lr);
         cbShakeAxisUd = (CheckBox) host.findViewById(R.id.cb_shake_axis_ud);
@@ -503,8 +514,6 @@ public class LabPageController {
                 int id = b.getId();
                 if (id == R.id.cb_shake_enabled) {
                     CardPrefs.setShakeEnabled(host, checked);
-                } else if (id == R.id.cb_shake_lr_rev) {
-                    CardPrefs.setShakeLrRev(host, checked);
                 } else if (id == R.id.cb_shake_axis_lr) {
                     // 🆕 TASK-042：禁止双不勾 —— 若这次取消会同时关掉两组，则弹回。
                     if (!checked && !CardPrefs.isShakeAxisUdEnabled(host)) {
@@ -522,17 +531,14 @@ public class LabPageController {
                         return;
                     }
                     CardPrefs.setShakeAxisUdEnabled(host, checked);
-                } else {
-                    CardPrefs.setShakeUdRev(host, checked);
                 }
+                // 🆕 2026-10-10 用户 ②：方向不再走这里 —— 已换成「四动作方向 3 选 1」
+                //   （遥控侧 dirP 监听器落 setShakePeerActDir，本机侧 dirL 落 setShakeLocalActDir）。
                 refreshShakeUi();
-                refreshShakeLocalUi();      // 🆕 TASK-073：本机晃动映射行随同一套反转开关变
                 ShakeDetector.sync(host);   // G2 即时生效
             }
         };
         cbShakeEnabled.setOnCheckedChangeListener(shakeL);
-        cbShakeLrRev.setOnCheckedChangeListener(shakeL);
-        cbShakeUdRev.setOnCheckedChangeListener(shakeL);
         cbShakeAxisLr.setOnCheckedChangeListener(shakeL);   // 🆕 TASK-042
         cbShakeAxisUd.setOnCheckedChangeListener(shakeL);
 
@@ -561,28 +567,19 @@ public class LabPageController {
         });
 
         // 🆕 TASK-074 · 四动作方向自选（左/右/上/下 各一个单选，互不冲突）——
-        //   每格独立落盘（setShakeLocalActNext）⇒ 四个动作互不牵连；
+        //   每格独立落盘（setShakeLocalActDir）⇒ 四个动作互不牵连；
         //   ShakeDetector.fire **每次现读** ⇒ 改完立即生效，无需通知/重建采样。
+        //   🆕 2026-10-10 用户 ②：由 2 选 1 扩为 **3 选 1**（第三项「关」= 该动作命中后不发翻页指令）。
         RadioGroup.OnCheckedChangeListener dirL = new RadioGroup.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(RadioGroup g, int checkedId) {
                 if (mShakeUiSyncing) return;      // 防回环：refreshShakeLocalUi 回填时不落盘
-                int id = g.getId();
-                final int act;
-                if (id == R.id.rg_shake_dir_left) {
-                    act = CardPrefs.SHAKE_ACT_LEFT;
-                } else if (id == R.id.rg_shake_dir_right) {
-                    act = CardPrefs.SHAKE_ACT_RIGHT;
-                } else if (id == R.id.rg_shake_dir_up) {
-                    act = CardPrefs.SHAKE_ACT_UP;
-                } else {
-                    act = CardPrefs.SHAKE_ACT_DOWN;
+                final int act = actOfGroup(g.getId());
+                final int dir = dirOfChecked(checkedId);
+                if (act < 0 || dir < 0) {
+                    return;
                 }
-                boolean next = (checkedId == R.id.rb_shake_dir_left_next
-                        || checkedId == R.id.rb_shake_dir_right_next
-                        || checkedId == R.id.rb_shake_dir_up_next
-                        || checkedId == R.id.rb_shake_dir_down_next);
-                CardPrefs.setShakeLocalActNext(host, act, next);
+                CardPrefs.setShakeLocalActDir(host, act, dir);
                 refreshShakeLocalUi();
             }
         };
@@ -590,6 +587,26 @@ public class LabPageController {
         rgShakeDirRight.setOnCheckedChangeListener(dirL);
         rgShakeDirUp.setOnCheckedChangeListener(dirL);
         rgShakeDirDown.setOnCheckedChangeListener(dirL);
+
+        // 🆕 2026-10-10 用户 ②：遥控（对端）侧同一套 4 动作 × 3 值 ——
+        //   取代原来的两个「方向反转」勾选（默认值由 CardPrefs 从旧键迁移，逐位等价）。
+        RadioGroup.OnCheckedChangeListener dirP = new RadioGroup.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(RadioGroup g, int checkedId) {
+                if (mShakeUiSyncing) return;      // 防回环：refreshShakeUi 回填时不落盘
+                final int act = actOfGroup(g.getId());
+                final int dir = dirOfChecked(checkedId);
+                if (act < 0 || dir < 0) {
+                    return;
+                }
+                CardPrefs.setShakePeerActDir(host, act, dir);
+                refreshShakeUi();
+            }
+        };
+        rgShakePeerDirLeft.setOnCheckedChangeListener(dirP);
+        rgShakePeerDirRight.setOnCheckedChangeListener(dirP);
+        rgShakePeerDirUp.setOnCheckedChangeListener(dirP);
+        rgShakePeerDirDown.setOnCheckedChangeListener(dirP);
 
         // 🆕 TASK-029 手感优化：灵敏度三档（低/中/高，默认中）——
         //   改档立即落盘 + 通知捕获层**用新参数重建采样**（reload：正在跑才重建）。
@@ -1263,36 +1280,48 @@ public class LabPageController {
     /**
      * 🆕 TASK-029：刷新「晃动翻页」区块（bind / onResume / 角色切换 / 任一开关变更后调用）。
      *
-     * <p>① 回填 3 个开关（期间置 {@link #mShakeUiSyncing} 防回环）；
-     * ② **总开关关时把两个反转开关置灰**（保留可见，避免布局跳动）；
+     * <p>① 回填总开关 / 灵敏度 / 响应方向 / 四动作方向（期间置 {@link #mShakeUiSyncing} 防回环）；
+     * ② **总开关关时把方向相关控件整块置灰**（保留可见，避免布局跳动）；
      * ③ 拼出「当前映射」自证行：用户不必靠"开关名 + 记忆"反推映射，**映射永远以屏幕上的字为准**。
+     *
+     * <p>🆕 2026-10-10 用户 ②：方向由「两个反转勾选」换成「四动作 × 三值（上一页/下一页/关）」，
+     * 映射行也随之直读三值（选「关」的动作在自证行里显示「关」）。
      */
     public void refreshShakeUi() {
         if (cbShakeEnabled == null) return;
         boolean on = CardPrefs.isShakeEnabled(host);
-        boolean lrRev = CardPrefs.isShakeLrRev(host);
-        boolean udRev = CardPrefs.isShakeUdRev(host);
         boolean axLr = CardPrefs.isShakeAxisLrEnabled(host);   // 🆕 TASK-042
         boolean axUd = CardPrefs.isShakeAxisUdEnabled(host);
         int sens = CardPrefs.getShakeSens(host);
         mShakeUiSyncing = true;
         try {
             cbShakeEnabled.setChecked(on);
-            cbShakeLrRev.setChecked(lrRev);
-            cbShakeUdRev.setChecked(udRev);
             cbShakeAxisLr.setChecked(axLr);
             cbShakeAxisUd.setChecked(axUd);
             rgShakeSens.check(sens == CardPrefs.SHAKE_SENS_LOW ? R.id.rb_shake_sens_low
                     : sens == CardPrefs.SHAKE_SENS_HIGH ? R.id.rb_shake_sens_high
                     : R.id.rb_shake_sens_mid);
+            // 🆕 2026-10-10 用户 ②：遥控侧四动作方向（3 选 1）
+            checkDir3(rgShakePeerDirLeft, R.id.rb_shake_peer_dir_left_prev,
+                    R.id.rb_shake_peer_dir_left_next, R.id.rb_shake_peer_dir_left_off,
+                    CardPrefs.getShakePeerActDir(host, CardPrefs.SHAKE_ACT_LEFT));
+            checkDir3(rgShakePeerDirRight, R.id.rb_shake_peer_dir_right_prev,
+                    R.id.rb_shake_peer_dir_right_next, R.id.rb_shake_peer_dir_right_off,
+                    CardPrefs.getShakePeerActDir(host, CardPrefs.SHAKE_ACT_RIGHT));
+            checkDir3(rgShakePeerDirUp, R.id.rb_shake_peer_dir_up_prev,
+                    R.id.rb_shake_peer_dir_up_next, R.id.rb_shake_peer_dir_up_off,
+                    CardPrefs.getShakePeerActDir(host, CardPrefs.SHAKE_ACT_UP));
+            checkDir3(rgShakePeerDirDown, R.id.rb_shake_peer_dir_down_prev,
+                    R.id.rb_shake_peer_dir_down_next, R.id.rb_shake_peer_dir_down_off,
+                    CardPrefs.getShakePeerActDir(host, CardPrefs.SHAKE_ACT_DOWN));
         } finally {
             mShakeUiSyncing = false;
         }
-        cbShakeLrRev.setEnabled(on);      // 总开关关 ⇒ 置灰（可见）
-        cbShakeUdRev.setEnabled(on);
         // 🆕 TASK-042：响应方向多选同样随总开关置灰
         cbShakeAxisLr.setEnabled(on);
         cbShakeAxisUd.setEnabled(on);
+        // 🆕 2026-10-10：四动作方向整块（标签 + 四个组）随总开关置灰（可见即可灰）
+        setEnabledDeep(llShakePeerDir, on);
         // 🆕 灵敏度三档：总开关关时置灰
         rbShakeSensLow.setEnabled(on);
         rbShakeSensMid.setEnabled(on);
@@ -1300,20 +1329,22 @@ public class LabPageController {
         if (tvShakeMap != null) {
             String prev = host.getString(R.string.lab_shake_page_prev);
             String next = host.getString(R.string.lab_shake_page_next);
-            String lrCol = lrRev ? next : prev;    // 左晃
-            String rrCol = lrRev ? prev : next;    // 右晃
-            String udCol = udRev ? next : prev;    // 上晃
-            String ddCol = udRev ? prev : next;    // 下晃
+            String off = host.getString(R.string.lab_shake_page_off);
+            String lrCol = dirLabel(CardPrefs.getShakePeerActDir(host, CardPrefs.SHAKE_ACT_LEFT), prev, next, off);
+            String rrCol = dirLabel(CardPrefs.getShakePeerActDir(host, CardPrefs.SHAKE_ACT_RIGHT), prev, next, off);
+            String udCol = dirLabel(CardPrefs.getShakePeerActDir(host, CardPrefs.SHAKE_ACT_UP), prev, next, off);
+            String ddCol = dirLabel(CardPrefs.getShakePeerActDir(host, CardPrefs.SHAKE_ACT_DOWN), prev, next, off);
             // 🆕 TASK-042：未使能的组在映射行里显式标注「不响应」，用户一眼看出为何甩了没反应
+            //   🔴 优先于「关」：轴没响应时，方向设置根本轮不到 —— 显示"不响应"信息量更大。
             if (!axLr) {
-                String off = host.getString(R.string.lab_shake_map_axis_off,
+                String axOff = host.getString(R.string.lab_shake_map_axis_off,
                         host.getString(R.string.lab_shake_axis_lr));
-                lrCol = off; rrCol = off;
+                lrCol = axOff; rrCol = axOff;
             }
             if (!axUd) {
-                String off = host.getString(R.string.lab_shake_map_axis_off,
+                String axOff = host.getString(R.string.lab_shake_map_axis_off,
                         host.getString(R.string.lab_shake_axis_ud));
-                udCol = off; ddCol = off;
+                udCol = axOff; ddCol = axOff;
             }
             tvShakeMap.setText(host.getString(R.string.lab_shake_map_now, lrCol, rrCol, udCol, ddCol));
         }
@@ -1325,8 +1356,9 @@ public class LabPageController {
      * <p>① <b>无可用加速度计</b>（真注册失败，见 {@link #hasAccelerometer()}）⇒ **只挂提醒、不拦操作**
      *   （🔴 用户定则 2026-10-09：墨水屏不强制置灰 —— 部分墨水屏是带传感器的）；
      * ② 开关一律可操作，按偏好如实回填；开启时拼「当前映射」（与对端晃动**共用同一套用户语义**：
-     *   默认 左晃→上一页 / 右晃→下一页；方向差异已在 {@code ShakeDetector.fire} 内部按模式反转，
-     *   UI 层看到的是**用户语义**，故两处映射行文案一致），未开启时显示「未开启」。
+     *   默认 左晃→上一页 / 右晃→下一页；方向差异已在 {@code ShakeDetector.fire} 内部用
+     *   {@code flipAct} 折掉，UI 层看到的是**用户语义**，故两处映射行文案一致），未开启时显示「未开启」。
+     *   🆕 2026-10-10 用户 ②：方向为**三值**（上一页/下一页/关），映射行里「关」如实显示「关」。
      */
     public void refreshShakeLocalUi() {
         if (cbShakeLocal == null) {
@@ -1344,15 +1376,20 @@ public class LabPageController {
                 boolean swipe = CardPrefs.getShakeLocalMode(host) == CardPrefs.SHAKE_LOCAL_MODE_SWIPE;
                 rgShakeLocalMode.check(swipe ? R.id.rb_shake_local_swipe : R.id.rb_shake_local_tap);
             }
-            // 🆕 TASK-074：回填「四动作方向」四个单选（左/右/上/下，各 2 选 1）
-            checkDir(rgShakeDirLeft, R.id.rb_shake_dir_left_prev, R.id.rb_shake_dir_left_next,
-                    CardPrefs.isShakeLocalActNext(host, CardPrefs.SHAKE_ACT_LEFT));
-            checkDir(rgShakeDirRight, R.id.rb_shake_dir_right_prev, R.id.rb_shake_dir_right_next,
-                    CardPrefs.isShakeLocalActNext(host, CardPrefs.SHAKE_ACT_RIGHT));
-            checkDir(rgShakeDirUp, R.id.rb_shake_dir_up_prev, R.id.rb_shake_dir_up_next,
-                    CardPrefs.isShakeLocalActNext(host, CardPrefs.SHAKE_ACT_UP));
-            checkDir(rgShakeDirDown, R.id.rb_shake_dir_down_prev, R.id.rb_shake_dir_down_next,
-                    CardPrefs.isShakeLocalActNext(host, CardPrefs.SHAKE_ACT_DOWN));
+            // 🆕 TASK-074：回填「四动作方向」四个单选（左/右/上/下，各 3 选 1）
+            // 🆕 2026-10-10 用户 ②：由 2 选 1 扩为 3 选 1（第三项「关」）
+            checkDir3(rgShakeDirLeft, R.id.rb_shake_dir_left_prev,
+                    R.id.rb_shake_dir_left_next, R.id.rb_shake_dir_left_off,
+                    CardPrefs.getShakeLocalActDir(host, CardPrefs.SHAKE_ACT_LEFT));
+            checkDir3(rgShakeDirRight, R.id.rb_shake_dir_right_prev,
+                    R.id.rb_shake_dir_right_next, R.id.rb_shake_dir_right_off,
+                    CardPrefs.getShakeLocalActDir(host, CardPrefs.SHAKE_ACT_RIGHT));
+            checkDir3(rgShakeDirUp, R.id.rb_shake_dir_up_prev,
+                    R.id.rb_shake_dir_up_next, R.id.rb_shake_dir_up_off,
+                    CardPrefs.getShakeLocalActDir(host, CardPrefs.SHAKE_ACT_UP));
+            checkDir3(rgShakeDirDown, R.id.rb_shake_dir_down_prev,
+                    R.id.rb_shake_dir_down_next, R.id.rb_shake_dir_down_off,
+                    CardPrefs.getShakeLocalActDir(host, CardPrefs.SHAKE_ACT_DOWN));
         } finally {
             mShakeUiSyncing = false;
         }
@@ -1377,24 +1414,26 @@ public class LabPageController {
         }
         // 开启 ⇒ 拼「当前映射」自证行。
         // 🆕 TASK-074：改读**四动作自选**（不再读旧的左右/上下反转开关）——
-        //   本机方向已由上面四个单选全权决定，与对端口径的 rev 开关彻底解耦。
+        //   本机方向已由上面四个单选全权决定，与对端口径彻底解耦。
+        // 🆕 2026-10-10 用户 ②：三值直读 —— 选「关」的动作在自证行里显示「关」。
         String prev = host.getString(R.string.lab_shake_page_prev);
         String next = host.getString(R.string.lab_shake_page_next);
-        String lrCol = CardPrefs.isShakeLocalActNext(host, CardPrefs.SHAKE_ACT_LEFT)  ? next : prev;
-        String rrCol = CardPrefs.isShakeLocalActNext(host, CardPrefs.SHAKE_ACT_RIGHT) ? next : prev;
-        String udCol = CardPrefs.isShakeLocalActNext(host, CardPrefs.SHAKE_ACT_UP)    ? next : prev;
-        String ddCol = CardPrefs.isShakeLocalActNext(host, CardPrefs.SHAKE_ACT_DOWN)  ? next : prev;
+        String off = host.getString(R.string.lab_shake_page_off);
+        String lrCol = dirLabel(CardPrefs.getShakeLocalActDir(host, CardPrefs.SHAKE_ACT_LEFT), prev, next, off);
+        String rrCol = dirLabel(CardPrefs.getShakeLocalActDir(host, CardPrefs.SHAKE_ACT_RIGHT), prev, next, off);
+        String udCol = dirLabel(CardPrefs.getShakeLocalActDir(host, CardPrefs.SHAKE_ACT_UP), prev, next, off);
+        String ddCol = dirLabel(CardPrefs.getShakeLocalActDir(host, CardPrefs.SHAKE_ACT_DOWN), prev, next, off);
         if (!CardPrefs.isShakeAxisLrEnabled(host)) {
-            String off = host.getString(R.string.lab_shake_map_axis_off,
+            String axOff = host.getString(R.string.lab_shake_map_axis_off,
                     host.getString(R.string.lab_shake_axis_lr));
-            lrCol = off;
-            rrCol = off;
+            lrCol = axOff;
+            rrCol = axOff;
         }
         if (!CardPrefs.isShakeAxisUdEnabled(host)) {
-            String off = host.getString(R.string.lab_shake_map_axis_off,
+            String axOff = host.getString(R.string.lab_shake_map_axis_off,
                     host.getString(R.string.lab_shake_axis_ud));
-            udCol = off;
-            ddCol = off;
+            udCol = axOff;
+            ddCol = axOff;
         }
         tvShakeLocalNote.setText(host.getString(R.string.lab_shake_local_note_on,
                 host.getString(R.string.lab_shake_map_now, lrCol, rrCol, udCol, ddCol)));
@@ -1459,12 +1498,90 @@ public class LabPageController {
         }
     }
 
-    /** 🆕 TASK-074：把某个「四动作方向」单选组回填到指定态（null 组安全跳过）。 */
-    private static void checkDir(RadioGroup rg, int prevId, int nextId, boolean next) {
+    /** 🆕 TASK-074 / 2026-10-10：把某个「四动作方向」单选组回填到指定三值态（null 组安全跳过）。 */
+    private static void checkDir3(RadioGroup rg, int prevId, int nextId, int offId, int dir) {
         if (rg == null) {
             return;
         }
-        rg.check(next ? nextId : prevId);
+        rg.check(dir == CardPrefs.SHAKE_DIR_NEXT ? nextId
+                : dir == CardPrefs.SHAKE_DIR_NONE ? offId : prevId);
+    }
+
+    /** 🆕 2026-10-10：方向组 id → 动作下标（本机 / 遥控两套 id 都认；未命中 −1）。 */
+    private static int actOfGroup(int groupId) {
+        if (groupId == R.id.rg_shake_dir_left || groupId == R.id.rg_shake_peer_dir_left) {
+            return CardPrefs.SHAKE_ACT_LEFT;
+        }
+        if (groupId == R.id.rg_shake_dir_right || groupId == R.id.rg_shake_peer_dir_right) {
+            return CardPrefs.SHAKE_ACT_RIGHT;
+        }
+        if (groupId == R.id.rg_shake_dir_up || groupId == R.id.rg_shake_peer_dir_up) {
+            return CardPrefs.SHAKE_ACT_UP;
+        }
+        if (groupId == R.id.rg_shake_dir_down || groupId == R.id.rg_shake_peer_dir_down) {
+            return CardPrefs.SHAKE_ACT_DOWN;
+        }
+        return -1;
+    }
+
+    /** 🆕 2026-10-10：单选项 id → 三值方向（本机 / 遥控两套 id 都认；未命中 −1）。 */
+    private static int dirOfChecked(int checkedId) {
+        if (checkedId == R.id.rb_shake_dir_left_prev
+                || checkedId == R.id.rb_shake_dir_right_prev
+                || checkedId == R.id.rb_shake_dir_up_prev
+                || checkedId == R.id.rb_shake_dir_down_prev
+                || checkedId == R.id.rb_shake_peer_dir_left_prev
+                || checkedId == R.id.rb_shake_peer_dir_right_prev
+                || checkedId == R.id.rb_shake_peer_dir_up_prev
+                || checkedId == R.id.rb_shake_peer_dir_down_prev) {
+            return CardPrefs.SHAKE_DIR_PREV;
+        }
+        if (checkedId == R.id.rb_shake_dir_left_next
+                || checkedId == R.id.rb_shake_dir_right_next
+                || checkedId == R.id.rb_shake_dir_up_next
+                || checkedId == R.id.rb_shake_dir_down_next
+                || checkedId == R.id.rb_shake_peer_dir_left_next
+                || checkedId == R.id.rb_shake_peer_dir_right_next
+                || checkedId == R.id.rb_shake_peer_dir_up_next
+                || checkedId == R.id.rb_shake_peer_dir_down_next) {
+            return CardPrefs.SHAKE_DIR_NEXT;
+        }
+        if (checkedId == R.id.rb_shake_dir_left_off
+                || checkedId == R.id.rb_shake_dir_right_off
+                || checkedId == R.id.rb_shake_dir_up_off
+                || checkedId == R.id.rb_shake_dir_down_off
+                || checkedId == R.id.rb_shake_peer_dir_left_off
+                || checkedId == R.id.rb_shake_peer_dir_right_off
+                || checkedId == R.id.rb_shake_peer_dir_up_off
+                || checkedId == R.id.rb_shake_peer_dir_down_off) {
+            return CardPrefs.SHAKE_DIR_NONE;
+        }
+        return -1;
+    }
+
+    /** 🆕 2026-10-10：三值方向 → 显示文案（三个文案由调用方传，避免每格重查资源）。 */
+    private static String dirLabel(int dir, String prev, String next, String off) {
+        if (dir == CardPrefs.SHAKE_DIR_NEXT) {
+            return next;
+        }
+        if (dir == CardPrefs.SHAKE_DIR_NONE) {
+            return off;
+        }
+        return prev;
+    }
+
+    /** 递归置灰/恢复一整块（含容器自身与全部子 View）。 */
+    private static void setEnabledDeep(View v, boolean enabled) {
+        if (v == null) {
+            return;
+        }
+        v.setEnabled(enabled);
+        if (v instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) {
+                setEnabledDeep(g.getChildAt(i), enabled);
+            }
+        }
     }
 
     /** 会话状态回调（主线程）—— 只更新状态行与两个按钮的可用性。 */

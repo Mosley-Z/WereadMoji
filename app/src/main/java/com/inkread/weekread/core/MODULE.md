@@ -27,7 +27,7 @@
 - `CoverStore.peek(Context, bookId, maxW)`
 - `PeriodRange.nowSec()` / `.startOf(mode, s)` / `.shift(mode, start, n)` / `.dayStart(start, i)` / `.isBook(m)` / `.isNote(m)`
 - `PeriodStats.parse(JSONObject, fetchedAt, mode, reqBase)` / `.isCurrentPeriod()` / `.todayIndex()`
-- `CardSpec.cardWidth()` / `.cardHeight()` / `.tapLeft()` / `.tapTop()` …
+- `CardSpec.cardWidth()` / `.cardHeight()` / `.updTapLeft()` / `.updTapTop()` / `.titleTapLeft()` / `.deskTouchLeft()` …
 - `CardPrefs.isEnabled(Context)` / `.setEnabled(Context, boolean)`
 - `CardDebug.note(Context, String)`
 

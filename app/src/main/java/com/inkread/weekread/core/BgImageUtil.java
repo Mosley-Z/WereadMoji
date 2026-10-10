@@ -12,6 +12,11 @@ import android.os.Environment;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
 
 /**
  * 🆕 TASK-075：背景图的**读取 / 解析 / 解码 / 铺满**共享工具。
@@ -156,6 +161,83 @@ public final class BgImageUtil {
             sample *= 2;
         }
         return sample;
+    }
+
+    // ── 候选：给"自绘选图页"用的图片清单 ──
+
+    /** 认可的图片后缀（小写比较）。 */
+    private static final String[] IMG_EXT = { ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif" };
+
+    /** 扫描的子目录（相对共享存储根）—— **非递归**，够覆盖绝大多数放图习惯。 */
+    private static final String[] SCAN_SUBS = {
+            "Pictures", "Picture", "DCIM", "DCIM/Camera", "Download", "Documents", "Pictures/微读墨记" };
+
+    /**
+     * 🆕 2026-10-10：为**墨台的自绘「选择背景图」**扫描候选图片。
+     *
+     * <p>🔴 <b>为什么必须自绘扫描、不能用系统选择器</b>：S4 ROM 缺
+     * {@code com.android.documentsui} ⇒ {@code ACTION_OPEN_DOCUMENT / GET_CONTENT / PICK}
+     * 在真机上全部 {@code No activities found}（本项目 {@code LockPrefs} §背景图 已实测登记）；
+     * 且墨台是 {@code FLAG_NOT_FOCUSABLE} 的**覆盖窗**，塞不进 EditText（拿不到输入法）
+     * ⇒ "填路径"这条老路在墨台内也走不通。剩下唯一可行且零新增权限的路 = 自己扫目录列出来让用户点。
+     *
+     * <p>扫描范围：{@link #SCAN_SUBS} 各子目录（**非递归**）+ App 私有外部目录（零权限兜底）。
+     * 顺序 = 最后修改时间**倒序**（刚存的图排前面）；总数封顶 {@code max}，避免大目录卡顿。
+     *
+     * <p>⚠️ 无 {@code READ_EXTERNAL_STORAGE} 时公共目录会读到空表（分区存储行为）——
+     * 这正是"如实反映能力"：调用方据此显示权限提示，而不是假装有一堆图。
+     */
+    public static List<File> candidates(Context c, int max) {
+        List<File> out = new ArrayList<File>();
+        if (max <= 0) return out;
+        File root = null;
+        try {
+            root = Environment.getExternalStorageDirectory();
+        } catch (Throwable ignored) {
+        }
+        for (String sub : SCAN_SUBS) {
+            if (root == null) break;
+            collect(new File(root, sub), out, max);
+        }
+        if (c != null) {
+            try {
+                collect(c.getExternalFilesDir(null), out, max);
+            } catch (Throwable ignored) {
+            }
+        }
+        // 按最后修改时间倒序（新的在前）—— 稳定排序，同刻的按路径
+        Collections.sort(out, new Comparator<File>() {
+            @Override
+            public int compare(File a, File b) {
+                long d = b.lastModified() - a.lastModified();
+                if (d != 0L) return d > 0L ? 1 : -1;
+                return a.getAbsolutePath().compareTo(b.getAbsolutePath());
+            }
+        });
+        if (out.size() > max) return new ArrayList<File>(out.subList(0, max));
+        return out;
+    }
+
+    private static void collect(File dir, List<File> out, int max) {
+        if (dir == null || out.size() >= max * 3) return;      // 多收一点给排序留余量，但有硬上限
+        try {
+            if (!dir.isDirectory()) return;
+            File[] fs = dir.listFiles();
+            if (fs == null) return;
+            for (File f : fs) {
+                if (f == null || !f.isFile() || !f.canRead()) continue;
+                if (!isImage(f.getName())) continue;
+                out.add(f);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static boolean isImage(String name) {
+        if (name == null) return false;
+        String n = name.toLowerCase(Locale.US);
+        for (String e : IMG_EXT) if (n.endsWith(e)) return true;
+        return false;
     }
 
     // ── 铺满：centerCrop（原 LockOverlay.drawBackground 里的那段，算式一字不改）──

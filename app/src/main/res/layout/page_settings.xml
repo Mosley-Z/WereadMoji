@@ -608,9 +608,9 @@
                         android:textSize="13sp" />
                 </LinearLayout>
 
-                <!-- ── 🆕 TASK-076：「墨台」分区（总开关 / 内容模块开关+调序 / 背景）──
-                     与 settings_layout.xml **共用同一 include** ⇒ 两端天然同步、零漂移。 -->
-                <include layout="@layout/inc_desk" />
+                <!-- ── 🆕 TASK-076：「墨台」分区原本在这里（`inc_desk`），
+                     2026-10-10 用户诉求 ① 起**整块搬进墨台页面右上角的自绘设置态**
+                     （`feature/DeskSettings`）⇒ 本页不再有墨台入口。 -->
             </LinearLayout>
 
         </LinearLayout>

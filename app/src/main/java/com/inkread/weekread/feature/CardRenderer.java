@@ -320,23 +320,25 @@ final class CardRenderer {
     }
 
     /**
-     * 抬头 + 右上更新时间 + 分隔线。三条分支（周 / 月 / 本书）共用。
+     * 抬头 + 左侧「⇄ 形态 / ⟳ 刷新 / 更新于」+ 分隔线。三条分支（周 / 月 / 本书）共用。
      *
-     * 抬头文字随形态变化（拍板 A）：`本周阅读时长` / `9月阅读` / `本书阅读进度`。
+     * 抬头文字随形态变化，🆕 TASK-080 起**二字化**（取 `nav_*`）：`本周` / `本月` / `本书` / `本记`
+     * （旧的长名如「本书阅读进度」已不再出现在卡面；🆕 2026-10-10 待办形态也纳入 ⇒ `待办`）。
      *
-     * 🆕 TASK-080 起抬头行的排布是（用户 2026-10-09 拍板 Q2）：
+     * 🆕 2026-10-10（第二轮，用户拍板「换一下切换形态和刷新的位置」）抬头行最终形态：
      * <pre>
-     * [ 打开墨台 ]  ⇄  本周                              更新于 14:32  ⟳
-     *  └─小按钮─┘   └切换┘└二字标题┘
+     *  ⇄ 本周  ⟳更新于 14:32   ··················   [打开墨台]
+     *  └抬头窗 88┘└─刷新窗 128─┘                     └─按钮 76─┘
      * </pre>
-     * 最左那个「打开墨台」是墨台的**唯一常驻入口**（四种形态都在）；标题取 `nav_*` 二字名；
-     * 最右的「更新于 + ⟳」一个字没动。
+     * · 最左 = 「⇄ + 二字标题」（短按切形态 / **长按弹隐藏时长菜单** —— 用户明确"不做修改"）；
+     * · 其右 = 「⟳ + 更新于」（点它手动刷新；桌面档由 `hitView` 承接，App 档是装饰）；
+     * · 最右 = 「打开墨台」—— 墨台的**唯一常驻入口**（四种形态都有），由左上角**搬到右上角**。
      * 🔴 改本方法时**只动抬头行**：`padY` / `titleY` / `iconTop` / `ruleY` 的算式一律不动，
-     * 正文才能保持逐像素不变（`TASK-080` 验收 A7）。
+     * 正文才能保持逐像素不变（`TASK-080` 验收 A7；2026-10-10 复核沿用同一条纪律）。
      *
      * v0.3.4 起两头各多一个小图标（拍板⑤）：
-     * · **左**：两个反向小箭头 —— 表示"抬头这里点一下可以切换形态"；
-     * · **右**：一段带箭头的圆弧 —— 表示"点这里刷新"。
+     * · **⟳**：一段带箭头的圆弧 —— 表示"点这里刷新"；
+     * · **⇄**：两个反向小箭头 —— 表示"这里点一下可以切换形态"。
      * 为什么要图标：墨水屏上没有涟漪、没有变色，光秃秃一行字用户不知道哪里能点。
      * 图标一律用 Path / 圆弧**画出来**，不用字符 —— 本机字体不一定带这些码位。
      *
@@ -369,20 +371,29 @@ final class CardRenderer {
         host.p.setTextSize(titleSize);
         float titleW = host.p.measureText(title);
 
-        // 🆕 TASK-080：抬头行最左是「打开墨台」小按钮，其右才是「⇄ + 二字标题」。
-        // 几何一律取 CardSpec（那边同时给桌面那个透明触摸窗定坐标 ⇒ 两边天然重合）。
+        // 🆕 2026-10-10 **第二轮**（用户拍板「换一下切换形态和刷新的位置」）：抬头行 =
+        // 最左「⇄ + 二字标题」→ 其右「⟳ + 更新于 HH:MM」→ 最右「打开墨台」按钮。
+        //     ⇄ 本周 ⟳更新于 14:32 ······················ [打开墨台]
+        // 几何一律取 CardSpec（那边同时给桌面那三个透明触摸窗定坐标 ⇒ 两边天然重合）。
         float deskW = CardSpec.DESK_BOX_W;
         float deskH = CardSpec.DESK_BOX_H;
-        float deskLeft = left + CardSpec.DESK_BOX_MARGIN_L;
-        float switchX = deskLeft + deskW + CardSpec.DESK_BOX_GAP;
+        float deskLeft = right - deskW - CardSpec.DESK_BOX_MARGIN_R;   // 右对齐
+
+        // 最左那一截：「⇄ 切形态图标」+ 其右的二字标题（短按切形态 / 长按隐藏菜单 —— 行为一字未改）
+        float switchX = left;
+        float titleX = switchX + icon + gapI;
+        // 其右那一截：「⟳ 刷新图标」+ 其右的「更新于 HH:MM」
+        float refX = titleX + titleW + gapI * 3f;
+        float upX = refX + icon + gapI * 2f;
 
         float upW = 0f;
-        // 抬头与右上时间不许打架：宽度不够就把时间字缩小（要扣掉按钮 + 两个图标占的位置）
+        // 左簇（⇄ + 二字标题 + ⟳ + 更新于）不许压到右端按钮 —— 极窄卡 / 超大字号才缩时间字。
+        // S4 480×800 实测：左簇 ≈ 30 + 46 + 30 + 104 = 210px，右端按钮左沿 344 ⇒ 永不触发（兜底而已）。
         if (up.length() > 0) {
             host.p.setTextSize(upSize);
             upW = host.p.measureText(up);
-            float avail = (right - left) - (deskW + CardSpec.DESK_BOX_GAP)
-                    - (icon + gapI) - titleW - (icon + gapI * 2f) - 10f;
+            float fixed = icon + gapI + titleW + gapI * 3f + icon + gapI * 2f;
+            float avail = (deskLeft - gapI * 4f) - (left + fixed);
             if (avail > 0 && upW > avail) {
                 upSize = Math.max(SZ_UPDATED * host.unit * 0.62f, upSize * avail / upW);
                 host.p.setTextSize(upSize);
@@ -393,29 +404,28 @@ final class CardRenderer {
         float titleY = padY + titleSize;
         float iconTop = titleY - titleSize * 0.36f - icon / 2f;
 
-        // 最左：「打开墨台」小按钮（1px 直角描边框，与图标行垂直居中）
-        drawDeskButton(c, deskLeft, iconTop + (icon - deskH) / 2f, deskW, deskH, titleSize);
-
-        // 其右并列：「⇄」切换图标 + 二字标题（TASK-080：标题已收敛为 nav_* 二字名）
+        // ① 最左：「⇄」切换图标 + 二字标题（短按切形态 / 长按隐藏菜单 —— 行为一字未改）
         drawSwitchIcon(c, switchX, iconTop, icon);
         host.p.setStyle(Paint.Style.FILL);
         host.p.setColor(INK);
         host.p.setTextAlign(Paint.Align.LEFT);
         host.p.setFakeBoldText(true);
         host.p.setTextSize(titleSize);
-        c.drawText(title, switchX + icon + gapI, titleY, host.p);
+        c.drawText(title, titleX, titleY, host.p);
         host.p.setFakeBoldText(false);
 
-        // 右：更新时间（贴右沿）+ 刷新图标（在它左边）
-        float iconX = right - icon;
+        // ② 其右：「⟳」刷新图标 + 「更新于 HH:MM」（点它手动刷新；桌面档由 `hitView` 承接）
+        drawRefreshIcon(c, refX, iconTop, icon);
         if (up.length() > 0) {
             host.p.setColor(GRAY);
             host.p.setTextSize(upSize);
-            host.p.setTextAlign(Paint.Align.RIGHT);
-            c.drawText(up, right, titleY, host.p);
-            iconX = right - upW - gapI * 2f - icon;
+            host.p.setTextAlign(Paint.Align.LEFT);
+            c.drawText(up, upX, titleY, host.p);
         }
-        drawRefreshIcon(c, iconX, iconTop, icon);
+
+        // ③ 最右：「打开墨台」小按钮（1px 直角描边框，与图标行垂直居中）
+        drawDeskButton(c, deskLeft, iconTop + (icon - deskH) / 2f, deskW, deskH, titleSize);
+
         host.p.setTextAlign(Paint.Align.LEFT);
         host.p.setColor(INK);
 

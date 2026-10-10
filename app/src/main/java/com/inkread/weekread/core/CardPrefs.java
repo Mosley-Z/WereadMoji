@@ -234,9 +234,15 @@ public final class CardPrefs {
 
     /** 晃动翻页总开关（默认关）。 */
     public static final boolean DEFAULT_SHAKE_ENABLED = false;
-    /** 左右晃方向反转（默认关 = 左晃上一页 / 右晃下一页）。 */
+    /**
+     * 左右晃方向反转（**旧键 · 只读**，默认关 = 左晃上一页 / 右晃下一页）。
+     *
+     * <p>🔴 自「三值化」（2026-10-10 用户 ②）起，方向不再用两个 rev 勾选表达，改由
+     * {@link #getShakePeerActDir} 的 4 动作 × 三值直存。本键**只为老数据迁移而读**，
+     * 不再有写入方（{@code setShakeLrRev} 已删）。
+     */
     public static final boolean DEFAULT_SHAKE_LR_REV = false;
-    /** 上下晃方向反转（默认关 = 上晃上一页 / 下晃下一页）。 */
+    /** 上下晃方向反转（**旧键 · 只读**，默认关 = 上晃上一页 / 下晃下一页）。迁移口径同 {@link #DEFAULT_SHAKE_LR_REV}。 */
     public static final boolean DEFAULT_SHAKE_UD_REV = false;
 
     public static boolean isShakeEnabled(Context c) {
@@ -249,20 +255,14 @@ public final class CardPrefs {
         sp(c).edit().putBoolean("remote_shake_enabled", v).commit();
     }
 
+    /** 左右晃方向反转 —— 🔴 **旧键 · 只读**（仅 {@link #getShakePeerActDir} 迁移时调用）。 */
     public static boolean isShakeLrRev(Context c) {
         return sp(c).getBoolean("remote_shake_lr_rev", DEFAULT_SHAKE_LR_REV);
     }
 
-    public static void setShakeLrRev(Context c, boolean v) {
-        sp(c).edit().putBoolean("remote_shake_lr_rev", v).commit();
-    }
-
+    /** 上下晃方向反转 —— 🔴 **旧键 · 只读**（仅 {@link #getShakePeerActDir} 迁移时调用）。 */
     public static boolean isShakeUdRev(Context c) {
         return sp(c).getBoolean("remote_shake_ud_rev", DEFAULT_SHAKE_UD_REV);
-    }
-
-    public static void setShakeUdRev(Context c, boolean v) {
-        sp(c).edit().putBoolean("remote_shake_ud_rev", v).commit();
     }
 
     // ── 🆕 TASK-042：晃动方向「通道使能」（V1.1.1-beta）──
@@ -350,7 +350,7 @@ public final class CardPrefs {
         sp(c).edit().putInt("shake_local_mode", v).commit();
     }
 
-    // ── 🆕 TASK-074 · 本机晃动「四动作方向」自选（用户 2026-10-09）────────────────────
+    // ── 🆕 TASK-074 · 晃动「四动作方向」自选（用户 2026-10-09）────────────────────
     //   用户需求（原文）：「我希望本机晃动翻页的四个动作都能自选方向，每个动作一个单选：
     //   左晃：上一页/下一页，右晃：上一页/下一页，上晃：上一页/下一页，下晃：上一页/下一页，
     //   每个动作之间不冲突，默认选项是当前的对应关系」。
@@ -363,27 +363,103 @@ public final class CardPrefs {
     public static final int SHAKE_ACT_UP = 2;
     public static final int SHAKE_ACT_DOWN = 3;
 
-    /** 四个动作的偏好键（下标 = SHAKE_ACT_*）。 */
-    private static final String[] SHAKE_ACT_KEY = {
-            "shake_local_dir_left", "shake_local_dir_right",
-            "shake_local_dir_up", "shake_local_dir_down"};
-    /** 四个动作的默认「是不是下一页」（下标 = SHAKE_ACT_*）—— 即 TASK-073 的既有对应关系。 */
-    private static final boolean[] SHAKE_ACT_DEFAULT_NEXT = {false, true, false, true};
+    // ── 🆕 2026-10-10 用户 ② · 方向三值化（每动作多一个「关」）────────────────────
+    //
+    //   用户需求（原文）：「在本机翻页选择四个动作的翻页方向中，增加一个选项"关"，选择后，
+    //   触发动作不发送翻页指令，而非从直接不判断某个方向的动作，这个逻辑同步到遥控晃动翻页中」。
+    //   ⇒ 方向由「上一页/下一页」二值扩为**三值**；「关」= 该动作命中后**仍走完整判决**，
+    //     只是到投递环节**直接丢弃**（不注入、不发指令、不算失败）——
+    //     与「响应方向（轴使能）」正交：轴使能是在**检测层**弃权，本三值是在**投递层**丢弃。
+    //   🔴 两份独立表：本机（手机正对自己）与遥控（背面朝自己）**各存各的**；
+    //     两边的 UI 语义都按**用户物理动作**（左晃/右晃/上晃/下晃）命名，raw sign 差异由
+    //     {@code ShakeDetector.fire} 内部用 flip(action) 折掉（详见该类 Javadoc）。
+    //   🔴 默认三值 = 旧行为（左/上→上一页，右/下→下一页），故**升级后逐位零差异**。
+    /** 该动作命中 ⇒ 发「上一页」。 */
+    public static final int SHAKE_DIR_PREV = 0;
+    /** 该动作命中 ⇒ 发「下一页」。 */
+    public static final int SHAKE_DIR_NEXT = 1;
+    /** 该动作命中 ⇒ **不发任何翻页指令**（"关"）。 */
+    public static final int SHAKE_DIR_NONE = 2;
 
-    /** 该动作晃一下**是否发「下一页」**（否则「上一页」）。越界按「左晃」读，绝不抛。 */
-    public static boolean isShakeLocalActNext(Context c, int act) {
-        if (act < 0 || act >= SHAKE_ACT_KEY.length) {
-            act = SHAKE_ACT_LEFT;
-        }
-        return sp(c).getBoolean(SHAKE_ACT_KEY[act], SHAKE_ACT_DEFAULT_NEXT[act]);
+    /** 本机四动作方向键（下标 = SHAKE_ACT_*）。🔴 新键名（旧键是 boolean，不能复用 —— getInt 会 CCE）。 */
+    private static final String[] SHAKE_LOCAL_DIR_KEY = {
+            "shake_ldir_left", "shake_ldir_right", "shake_ldir_up", "shake_ldir_down"};
+    /** 遥控（对端）四动作方向键（下标 = SHAKE_ACT_*）。 */
+    private static final String[] SHAKE_PEER_DIR_KEY = {
+            "shake_pdir_left", "shake_pdir_right", "shake_pdir_up", "shake_pdir_down"};
+    /** 三值的默认（下标 = SHAKE_ACT_*）：左/上 = 上一页，右/下 = 下一页 —— 与 TASK-073/074 现状一致。 */
+    private static final int[] SHAKE_DIR_DEFAULT = {
+            SHAKE_DIR_PREV, SHAKE_DIR_NEXT, SHAKE_DIR_PREV, SHAKE_DIR_NEXT};
+
+    /** 动作下标归一（越界一律按「左晃」，绝不抛）。 */
+    private static int normAct(int act) {
+        return (act < 0 || act >= SHAKE_DIR_DEFAULT.length) ? SHAKE_ACT_LEFT : act;
     }
 
-    public static void setShakeLocalActNext(Context c, int act, boolean next) {
-        if (act < 0 || act >= SHAKE_ACT_KEY.length) {
+    /** 三值归一（脏值/越界一律回落该动作的默认方向）。 */
+    private static int normDir(int dir, int act) {
+        return (dir == SHAKE_DIR_PREV || dir == SHAKE_DIR_NEXT || dir == SHAKE_DIR_NONE)
+                ? dir : SHAKE_DIR_DEFAULT[normAct(act)];
+    }
+
+    /**
+     * 🆕 2026-10-10：本机某动作的方向（{@link #SHAKE_DIR_PREV}/{@link #SHAKE_DIR_NEXT}/{@link #SHAKE_DIR_NONE}）。
+     *
+     * <p>🔴 迁移：旧键 {@code shake_local_dir_*} 是 boolean（"是不是下一页"）——
+     * 新键**存在**时读新键；不存在时读旧 boolean 并按 {@code next ? NEXT : PREV} 折算，
+     * 保证老用户升级后**逐位零差异**（且不写脏：一旦用户在 UI 里改过就落新键，此后不再看旧键）。
+     */
+    public static int getShakeLocalActDir(Context c, int act) {
+        final int a = normAct(act);
+        if (sp(c).contains(SHAKE_LOCAL_DIR_KEY[a])) {
+            return normDir(sp(c).getInt(SHAKE_LOCAL_DIR_KEY[a], SHAKE_DIR_DEFAULT[a]), a);
+        }
+        final boolean next = sp(c).getBoolean(SHAKE_ACT_KEY_LEGACY[a], SHAKE_DIR_DEFAULT[a] == SHAKE_DIR_NEXT);
+        return next ? SHAKE_DIR_NEXT : SHAKE_DIR_PREV;
+    }
+
+    public static void setShakeLocalActDir(Context c, int act, int dir) {
+        if (act < 0 || act >= SHAKE_LOCAL_DIR_KEY.length) {
             return;
         }
-        sp(c).edit().putBoolean(SHAKE_ACT_KEY[act], next).commit();
+        sp(c).edit().putInt(SHAKE_LOCAL_DIR_KEY[act], dir).commit();
     }
+
+    /**
+     * 🆕 2026-10-10：遥控（对端）某动作的方向 —— 「同步到遥控晃动翻页」。
+     *
+     * <p>🔴 迁移：旧口径是「左右/上下各一个反转」({@code remote_shake_lr_rev}/{@code remote_shake_ud_rev})，
+     * 等价于：默认 {左/上→上一页，右/下→下一页}，勾了反转则该组**两个动作一起翻**。
+     * ⇒ 新键不存在时按此式折算，保证老用户升级后**逐位零差异**。
+     *
+     * <p>⚠ 这里的 {@code act} 必须已经是**用户物理动作**（左/右/上/下晃），
+     * 由 {@code ShakeDetector.fire} 用 {@code flip(actionOf(...))} 折算后传入
+     * （遥控时手机背面朝自己 ⇒ raw sign 与"屏幕正对自己"相反）。
+     */
+    public static int getShakePeerActDir(Context c, int act) {
+        final int a = normAct(act);
+        if (sp(c).contains(SHAKE_PEER_DIR_KEY[a])) {
+            return normDir(sp(c).getInt(SHAKE_PEER_DIR_KEY[a], SHAKE_DIR_DEFAULT[a]), a);
+        }
+        // 迁移：本组的"反转"勾选把所有动作方向整体翻一次
+        final boolean lrGroup = (a == SHAKE_ACT_LEFT || a == SHAKE_ACT_RIGHT);
+        final boolean rev = lrGroup ? isShakeLrRev(c) : isShakeUdRev(c);
+        final boolean basePrev = (SHAKE_DIR_DEFAULT[a] == SHAKE_DIR_PREV);
+        final boolean isPrev = rev ? !basePrev : basePrev;
+        return isPrev ? SHAKE_DIR_PREV : SHAKE_DIR_NEXT;
+    }
+
+    public static void setShakePeerActDir(Context c, int act, int dir) {
+        if (act < 0 || act >= SHAKE_PEER_DIR_KEY.length) {
+            return;
+        }
+        sp(c).edit().putInt(SHAKE_PEER_DIR_KEY[act], dir).commit();
+    }
+
+    /** 🔴 旧 boolean 键（仅 {@link #getShakeLocalActDir} 迁移时读）。 */
+    private static final String[] SHAKE_ACT_KEY_LEGACY = {
+            "shake_local_dir_left", "shake_local_dir_right",
+            "shake_local_dir_up", "shake_local_dir_down"};
 
     // ── 🆕 TASK-041：手机端深色模式（V1.1.1-beta）──
     //

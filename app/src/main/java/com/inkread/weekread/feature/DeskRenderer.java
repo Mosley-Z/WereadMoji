@@ -3,6 +3,7 @@ package com.inkread.weekread.feature;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.RectF;
 
 import com.inkread.weekread.core.BgImageUtil;
 import com.inkread.weekread.ui.InkTheme;
@@ -36,6 +37,11 @@ final class DeskRenderer {
 
     private static final float BAR_H_UNITS = 3.0f;   // 顶栏高 = SZ_TITLE × 本值 × unit
 
+    /** 🆕 诉求 ④：齿轮与动作文字之间的横向间隙（×unit） */
+    private static final float GEAR_GAP_UNITS = 5f;
+    /** 🆕 诉求 ④：「更新于」与右端 `返回 ›` 之间的横向间隙（×unit） */
+    private static final float BACK_GAP_UNITS = 8f;
+
     private static final int INK   = 0xFF000000;
     private static final int GRAY  = 0xFF3C3C3C;
     private static final int LIGHT = 0xFF9A9A9A;
@@ -52,6 +58,8 @@ final class DeskRenderer {
     /** 顶栏文案（由 {@link DeskPageView} 从资源注入）。 */
     private String titleText = "";
     private String backText = "";
+    /** 🆕 顶栏**右端的可点动作**（如「设置」）；空 = 不画、也不命中。 */
+    private String actionText = "";
 
     void setEmptyText(String s) { emptyText = (s == null) ? "" : s; }
 
@@ -60,6 +68,12 @@ final class DeskRenderer {
         titleText = (title == null) ? "" : title;
         backText = (back == null) ? "" : back;
     }
+
+    /**
+     * 🆕 注入顶栏右端动作（如「设置」）—— 与 `‹ 返回` 对称：**画与命中共用 {@link #actionBox}**
+     * ⇒ 不会"看着能点、其实点不中"。
+     */
+    void setActionText(String s) { actionText = (s == null) ? "" : s; }
 
     // ── 分区注册（由 {@link DeskPageView} 按模块注册表装配）──
 
@@ -112,30 +126,51 @@ final class DeskRenderer {
      */
     void draw(Canvas c, float w, float vh, float unit, float scrollY,
               Bitmap bg, int veilPct, String updated) {
-        drawBackground(c, w, vh, bg, veilPct);
-        drawHeader(c, w, unit, updated);
+        drawChrome(c, w, vh, unit, bg, veilPct, updated);
 
         float left = w * PAD_X_RATIO, right = w - left;
-        float y = headerHeight(unit) - scrollY;
+        float barH = headerHeight(unit);
+        float y = barH - scrollY;
+
+        // 🔴🔴 2026-10-10 修（用户报告）：顶栏**不透明**、而分区是从 `barH − scrollY` 起画的，
+        //    内容上滑时会**压到顶栏文字上**（标题「墨台」/「更新于」与正文叠字）。
+        //    修法 = 把内容**裁剪**到顶栏分隔线以下 —— 顶栏自身照旧显示背景图 + 白纱，
+        //    只是正文再也不会越界进来（等价于"吸顶"）。空态同样落在裁区内。
+        c.save();
+        c.clipRect(0f, barH, w, vh);
 
         if (secs.isEmpty()) {
             InsightRenderer.drawCenteredIn(c, w, y, emptyHeight(unit), unit, p, emptyText);
+            c.restore();
             return;
         }
 
         for (int i = 0; i < secs.size(); i++) {
             InsightRenderer.Section s = secs.get(i);
             float sh = s.height(w, vh, unit);
-            if (y + sh > 0f && y < vh) s.draw(c, w, vh, y, unit, p);
+            if (y + sh > barH && y < vh) s.draw(c, w, vh, y, unit, p);
             y += sh;
-            // 分区之间的 1px 分隔线（只在"线真的在屏上"时画 —— 同 InsightRenderer 纪律）
-            if (y > 0f && y < vh) {
+            // 分区之间的 1px 分隔线（只在"线真的在屏上、且在裁区内"时画 —— 同 InsightRenderer 纪律）
+            if (y > barH && y < vh) {
                 p.setStyle(Paint.Style.FILL);
                 p.setColor(LINE);
                 c.drawRect(left, y - 1f, right, y, p);
             }
         }
+        c.restore();
         p.setTextAlign(Paint.Align.LEFT);
+    }
+
+    /**
+     * 只画**背景 + 顶栏**（不画任何分区）。
+     *
+     * <p>🆕 2026-10-10：墨台的「设置态 / 壁纸预览态」由各自的自绘件负责正文，但**背景与顶栏**
+     * 必须与列表态同一套 chrome（不然进出设置会"背景/顶栏跳一下"）⇒ 抽成这个方法，
+     * 与 {@link #draw} 共用同一份实现（`draw` 现在是"chrome + 分区"）。
+     */
+    void drawChrome(Canvas c, float w, float vh, float unit, Bitmap bg, int veilPct, String updated) {
+        drawBackground(c, w, vh, bg, veilPct);
+        drawHeader(c, w, unit, updated);
     }
 
     /**
@@ -162,22 +197,42 @@ final class DeskRenderer {
         c.drawRect(0f, 0f, w, h, p);
     }
 
-    /** 顶栏：`‹ 返回`（左）+ 衬线「墨台」（居中）+ 「更新于 HH:MM」（右）+ 底部 1px 线。 */
+    /**
+     * 顶栏：左端动作簇〔可选：齿轮 + 动作文字（如「设置」）〕+ 衬线标题（居中）
+     * + 右端簇〔「更新于 HH:MM」+ `返回 ›`〕+ 底部 1px 线。
+     *
+     * <p>🆕 2026-10-10 第二轮（用户诉求 ④）：
+     * <ul>
+     *   <li><b>两键互换位次</b>：「设置」由右端搬到**左端**，「返回」由左端搬到**右端** ——
+     *       返回箭头随之**翻转**（`‹ 返回` ⇒ `返回 ›`，文案在 `strings.xml` 里改，本类只管画）；</li>
+     *   <li><b>设置键去框</b>：不再画 1px 直角描边（那是 `btn_ink` 的按钮语言），改「齿轮符号 + 加粗文字」——
+     *       与「返回」同属"顶栏文字键"，不再像颗按钮；</li>
+     *   <li>🔴 齿轮**自己画**（{@link #drawGear}），不用字符 `⚙` —— 本项目铁律：
+     *       墨水屏本机字体不一定带这些码位（`CardRenderer` 的 ⟳ / ⇄ 同理，一律 Path / 圆弧画出来）。</li>
+     * </ul>
+     */
     private void drawHeader(Canvas c, float w, float unit, String updated) {
         float barH = headerHeight(unit);
         float cy = barH * 0.5f;
         float pad = w * PAD_X_RATIO;
 
-        // 左：`‹ 返回`
-        p.setStyle(Paint.Style.FILL);
-        p.setColor(GRAY);
-        p.setFakeBoldText(false);
-        p.setTypeface(null);
-        p.setTextAlign(Paint.Align.LEFT);
-        p.setTextSize(SZ_BACK * unit);
-        c.drawText(backText, pad, baseline(cy), p);
+        // 左端：可选动作（`⚙ 设置`）—— 无描边框 + 文字加粗（用户诉求 ④）
+        boolean hasAction = actionText.length() > 0;
+        if (hasAction) {
+            RectF box = actionBox(w, unit);                 // 画与命中共用同一份几何
+            float icon = gearSize(unit);
+            p.setStyle(Paint.Style.FILL);
+            p.setTypeface(null);
+            p.setFakeBoldText(true);
+            p.setColor(INK);
+            p.setTextAlign(Paint.Align.LEFT);
+            p.setTextSize(SZ_BACK * unit);
+            drawGear(c, box.left + icon / 2f, cy, icon, INK);
+            c.drawText(actionText, box.left + icon + unit * GEAR_GAP_UNITS, baseline(cy), p);
+            p.setFakeBoldText(false);
+        }
 
-        // 中：衬线「墨台」（墨色）
+        // 中：衬线标题（墨色）
         p.setTypeface(InkTheme.serif());
         p.setColor(INK);
         p.setTextAlign(Paint.Align.CENTER);
@@ -185,12 +240,22 @@ final class DeskRenderer {
         c.drawText(titleText, w / 2f, baseline(cy), p);
         p.setTypeface(null);
 
-        // 右：「更新于 HH:MM」
+        // 右端簇：先量 `返回 ›`（它定"更新于"的右边界）
+        p.setStyle(Paint.Style.FILL);
+        p.setTypeface(null);
+        p.setFakeBoldText(false);
+        p.setTextSize(SZ_BACK * unit);
+        float backW = p.measureText(backText);
+
+        p.setColor(GRAY);
+        p.setTextAlign(Paint.Align.RIGHT);
+        c.drawText(backText, w - pad, baseline(cy), p);
+
+        // 「更新于 HH:MM」在「返回」左侧
         if (updated != null && updated.length() > 0) {
             p.setColor(LIGHT);
-            p.setTextAlign(Paint.Align.RIGHT);
             p.setTextSize(SZ_UPD * unit);
-            c.drawText(updated, w - pad, baseline(cy), p);
+            c.drawText(updated, w - pad - backW - unit * BACK_GAP_UNITS, baseline(cy), p);
         }
         p.setTextAlign(Paint.Align.LEFT);
 
@@ -200,6 +265,37 @@ final class DeskRenderer {
         c.drawRect(0f, barH - 1f, w, barH, p);
     }
 
+    /**
+     * 顶栏「齿轮」图标（用户诉求 ④「设置键前面加一个齿轮符号」）。
+     *
+     * <p>🔴 <b>画出来而不是打字符</b>：本机字体不一定带 `⚙`(U+2699)，缺字形就是豆腐块；
+     * 且字符版的字重 / 基线在 `setFakeBoldText` 下不可控。本类与 {@code CardRenderer} 的
+     * ⟳ / ⇄ 同一条纪律 —— **图标一律 Path / 圆弧自绘**。
+     *
+     * <p>形状：内环（描边圆）+ 8 根短齿（自 `0.62R` 到 `0.98R` 的径向短线）。
+     * 尺寸只给 ≈16px（= `SZ_BACK × unit`），细节再多也会糊成一团 ⇒ 到"看得出是个齿轮"为止。
+     *
+     * @param cx/cy 圆心（与同行文字的纵向中线同高）
+     * @param size  外接正方形边长
+     */
+    private void drawGear(Canvas c, float cx, float cy, float size, int color) {
+        float r = size * 0.5f;
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(Math.max(1.4f, size * 0.115f));
+        p.setColor(color);
+        c.drawCircle(cx, cy, r * 0.60f, p);
+        float r0 = r * 0.62f, r1 = r * 0.98f;
+        for (int i = 0; i < 8; i++) {
+            double a = Math.PI * 2.0 * i / 8.0;
+            float ca = (float) Math.cos(a), sa = (float) Math.sin(a);
+            c.drawLine(cx + ca * r0, cy + sa * r0, cx + ca * r1, cy + sa * r1, p);
+        }
+        p.setStyle(Paint.Style.FILL);
+    }
+
+    /** 齿轮边长（= 顶栏返回字号 × 本值）—— 与 {@link #actionBox} 共用，画与命中不许各算一份。 */
+    private float gearSize(float unit) { return SZ_BACK * unit * 0.98f; }
+
     /** 让文字基线落在纵向中线（`cy`）上。 */
     private float baseline(float cy) {
         Paint.FontMetrics fm = p.getFontMetrics();
@@ -207,8 +303,9 @@ final class DeskRenderer {
     }
 
     /**
-     * 触点是否命中顶栏的 `‹ 返回`（触摸区的唯一权威定义 —— 与 {@link #drawHeader} 同尺）。
+     * 触点是否命中顶栏**右端**的 `返回 ›`（触摸区的唯一权威定义 —— 与 {@link #drawHeader} 同尺）。
      * 🔴 只圈住"那一小段文字 + 一点余量"，不吞整条顶栏（免得点标题也返回）。
+     * 🆕 诉求 ④：返回键由左端搬到右端 ⇒ 命中区改按**右对齐**算（`w − pad − 文字宽`）。
      */
     boolean hitBack(float x, float y, float w, float unit) {
         float barH = headerHeight(unit);
@@ -217,6 +314,34 @@ final class DeskRenderer {
         float tw = p.measureText(backText);
         float pad = w * PAD_X_RATIO;
         float m = 8f * unit;
-        return x >= pad - m && x <= pad + tw + m;
+        return x >= w - pad - tw - m && x <= w - pad + m;
+    }
+
+    /**
+     * 触点是否命中顶栏**左端**的 `⚙ 设置`（触摸区的唯一权威定义 —— 与 {@link #drawHeader} 同尺）。
+     * 🔴 只圈住"齿轮 + 文字 + 一点余量"，不吞整条顶栏（免得点标题也进设置）。
+     */
+    boolean hitAction(float x, float y, float w, float unit) {
+        if (actionText.length() == 0) return false;
+        float barH = headerHeight(unit);
+        if (y < 0f || y > barH) return false;
+        RectF r = actionBox(w, unit);
+        float m = unit * 6f;
+        return x >= r.left - m && x <= r.right + m && y >= r.top - m && y <= r.bottom + m;
+    }
+
+    /**
+     * 顶栏**左端**动作键的矩形（**画与命中共用这一份**）。
+     * 🔴 触摸区在 {@link #hitAction} 里再放宽 `unit × 6`（文字本身矮，手指点不准）。
+     * 🆕 诉求 ④：改**左对齐**且**去掉描边框**后，宽度 = 齿轮 + 间隙 + 文字（不再留按钮内衬）。
+     */
+    private RectF actionBox(float w, float unit) {
+        p.setTextSize(SZ_BACK * unit);
+        float tw = p.measureText(actionText);
+        float bw = gearSize(unit) + unit * GEAR_GAP_UNITS + tw;
+        float bh = SZ_BACK * unit * 1.80f;
+        float left = w * PAD_X_RATIO;
+        float cy = headerHeight(unit) * 0.5f;
+        return new RectF(left, cy - bh / 2f, left + bw, cy + bh / 2f);
     }
 }

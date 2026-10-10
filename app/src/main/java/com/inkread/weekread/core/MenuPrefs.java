@@ -391,4 +391,42 @@ public final class MenuPrefs {
      * 🔴 第 3 项「月历」**只在月账单**出现（周账单下不显示，见 `TASK-077b` B1）。
      */
     public static final String[] VIEW_LABELS = { "摘录菜单", "读书菜单", "月历" };
+
+    // ══════════════════════ 🆕 周期选择（内部状态 · 非 13 项配置） ══════════════════════
+    //
+    // 2026-10-10 用户诉求：「墨单可以在墨台界面便捷地切换周/月并选择周期」。
+    // 墨单头部那条 `◀ 2026-W40 ▶` 选的是**看哪一期**；`[周|月]` 选的是**粒度**。
+    //
+    // 🔴 **缺省 = 未选**（键不存在）⇒ 渲染回落 `BillStore.latest(c)` —— 与改动前**逐字节一致**
+    //    （老用户零差异）。用户一旦点过就记住 (mode, start) 这一对，跨"呼出/关闭"生效。
+    // 🔴 **只记"看哪一期"、不触发生成**：不在库里的期（`startsOf` 之外）根本选不到
+    //    （导航箭头到边界即灰），所以永远不会出现"选了一期没有的账单"。
+
+    private static final String K_P_MODE  = "menu_period_mode";
+    private static final String K_P_START = "menu_period_start";
+
+    /** 已选周期类型；`""` = 未选（跟随最新一期）。 */
+    public static String periodMode(Context c) {
+        String v = sp(c).getString(K_P_MODE, "");
+        if (v == null) return "";
+        return (PeriodRange.WEEKLY.equals(v) || PeriodRange.MONTHLY.equals(v)) ? v : "";
+    }
+
+    /** 已选周期起点（秒）；0 = 未选（跟随最新一期）。 */
+    public static long periodStart(Context c) {
+        long v = sp(c).getLong(K_P_START, 0L);
+        return v > 0L ? v : 0L;
+    }
+
+    /** 记住用户选的这一期（mode 只认周/月，别的值钳成周）。 */
+    public static void setPeriodSel(Context c, String mode, long start) {
+        if (start <= 0L) { clearPeriodSel(c); return; }
+        String m = PeriodRange.MONTHLY.equals(mode) ? PeriodRange.MONTHLY : PeriodRange.WEEKLY;
+        sp(c).edit().putString(K_P_MODE, m).putLong(K_P_START, start).commit();
+    }
+
+    /** 回到「跟随最新一期」（两条键一起删 —— 只删一条会留下"半选"脏态）。 */
+    public static void clearPeriodSel(Context c) {
+        sp(c).edit().remove(K_P_MODE).remove(K_P_START).commit();
+    }
 }

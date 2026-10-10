@@ -46,10 +46,11 @@ public final class PeriodRange {
     public static final String TODO = "todo";
 
     /**
-     * 「洞察」—— V1.2.0-beta（TASK-044）起的第六个形态：阅读统计洞察页。
+     * 「足迹」（**2026-10-10 起对外显示名；原「洞察」**）—— V1.2.0-beta（TASK-044）起的第六个形态：
+     * 阅读统计页。🔴 **mode id 恒为 `insight`，不改**（它是数据键：缓存段 / prefs / 导出都用它）。
      *
      * 与「本书」「本记」「待办」一样**不是周期**：没有起止、不能步进。
-     * 它是 App 内导航重构后**阅读页下拉的第五项**（本周/本月/本书/本记/**洞察**）；
+     * 它是 App 内导航重构后**阅读页下拉的第五项**（本周/本月/本书/本记/**足迹**）；
      * 内容（兴趣雷达 / 年度 / 累计 / 排行 / 画像）由 `TASK-048` 起逐卡填充，
      * `TASK-044` 只登记形态常量 + 一个占位界面。
      */
@@ -88,7 +89,7 @@ public final class PeriodRange {
         return TODO.equals(m);
     }
 
-    /** 是不是「洞察」形态（V1.2.0-beta / TASK-044） */
+    /** 是不是「足迹」形态（V1.2.0-beta / TASK-044；2026-10-10 起由「洞察」改名） */
     public static boolean isInsight(String m) {
         return INSIGHT.equals(m);
     }
@@ -230,7 +231,7 @@ public final class PeriodRange {
         if (BOOK.equals(mode)) return "本书阅读进度";
         if (NOTE.equals(mode)) return "本记 · 今日一签";
         if (TODO.equals(mode)) return "待办事项";
-        if (INSIGHT.equals(mode)) return "阅读洞察";
+        if (INSIGHT.equals(mode)) return "阅读足迹";
         if (!MONTHLY.equals(mode)) {
             if (current) return "本周阅读时长";
             return "周 " + weekLabel(periodStart);

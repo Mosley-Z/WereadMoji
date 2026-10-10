@@ -3,6 +3,7 @@ package com.inkread.weekread.core;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -110,7 +111,10 @@ public final class PagePrefs {
      * 本项目 `StatsStore.modeShortLabel` / `CardLayout` 等已有"渲染/标签文案硬编码"的先例。
      */
     public static String moduleName(String id) {
-        if (MOD_BILL.equals(id))    return "阅读账单";
+        // 🔴 2026-10-10 改名（用户拍板）：`bill` 的对外名 = **「墨单」**（原「阅读账单」）。
+        //    这是"分区标题 + 设置页行标签"的**唯一来源** ⇒ 改这一处两端同步。
+        //    ⚠️ 模块 id 恒为 `bill`（prefs 键 `desk_order` / `desk_on_mask` 不受影响）。
+        if (MOD_BILL.equals(id))    return "墨单";
         if (MOD_RANK.equals(id))    return "读书排行";
         if (MOD_TODO.equals(id))    return "待办摘要";
         if (MOD_PROFILE.equals(id)) return "阅读画像";
@@ -247,11 +251,34 @@ public final class PagePrefs {
     }
 
     // ── 背景图（语义同 LockPrefs 的 lock_bg_path）──
+    //
+    // 🆕 2026-10-10 第二轮（用户诉求 ⑥）：「墨台背景图片除了纯白之外可选择自定义，和锁屏壁纸一样
+    //   **通过指定路径实现**」⇒ 墨台的背景不再是"扫目录列候选让用户点"，而是**固定一条路径**：
+    //     · 纯白（不使用图片）= `desk_bg_path` 为空；
+    //     · 自定义            = `desk_bg_path` = {@link #DESK_BG_REL}。
+    //   🔴 理由：墨台是 `FLAG_NOT_FOCUSABLE` 的覆盖窗，塞不进 EditText（拿不到输入法），
+    //     而 S4 ROM 又没有系统文件选择器 ⇒ "自己扫目录列出来"是上一版唯一能走的路，
+    //     但它要求存储读权限、还会把**墨单生成的壁纸**（也落在 `Pictures/` 下）混进候选里。
+    //     改成固定路径后这两件事一起消失，用户的心智模型与锁屏完全一致：
+    //     **把想要的图改名放到那个位置，再在墨台里选「自定义」**。
 
-    /** 已设置的墨台背景图路径（空 = 未设置 ⇒ 浅色底 + 细网点）。 */
+    /** 自定义背景的**固定路径**（相对共享存储根）—— 与锁屏 {@code LockPrefs.DEFAULT_BG_REL} 同款口径。 */
+    public static final String DESK_BG_REL = "Pictures/墨台背景.jpg";
+
+    /** 已设置的墨台背景图路径（空 = 未设置 ⇒ 纯白 + 细网点）。 */
     public static String getDeskBgPath(Context c) {
         String v = sp(c).getString(K_BG_PATH, "");
         return v == null ? "" : v;
+    }
+
+    /** 自定义背景图**实际可读**的文件；没有 ⇒ {@code null}（调用方据此把「自定义」置灰并如实提示）。 */
+    public static File resolveCustomBg(Context c) {
+        return BgImageUtil.resolveBgFile(c, DESK_BG_REL);
+    }
+
+    /** 「自定义」当前可选吗（= 固定路径上真有一张能读的图）。 */
+    public static boolean isCustomBgAvailable(Context c) {
+        return resolveCustomBg(c) != null;
     }
 
     public static void setDeskBgPath(Context c, String path) {

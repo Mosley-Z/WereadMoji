@@ -28,22 +28,49 @@
     <string name="nav_month">本月</string>
     <string name="nav_book">本书</string>
     <string name="nav_note">本记</string>
-    <string name="nav_insight">洞察</string>
+    <!-- 🆕 2026-10-10 用户拍板：卡片「待办」形态的抬头由长名「待办事项」改为二字名「待办」 -->
+    <string name="nav_todo">待办</string>
+    <!-- 2026-10-10 用户拍板：原「洞察」改名「足迹」—— 避免“被窥探”感，改成“回看自己的阅读”。mode id `insight` 不变（数据键）。 -->
+    <string name="nav_insight">足迹</string>
     <!-- 🆕 TASK-075：「墨台」桌面呼出页（第三全屏覆盖窗）-->
     <string name="desk_title">墨台</string>
-    <!-- 🆕 TASK-080：卡片左上角呼出入口（抬头行最左的小按钮）-->
+    <!-- 🆕 TASK-080 / 2026-10-10 改位：卡片**右上角**呼出入口（抬头行最右的小按钮）-->
     <string name="desk_open_btn">打开墨台</string>
-    <string name="desk_back">‹ 返回</string>
+    <!-- 🆕 2026-10-10 第二轮（诉求 ④）：返回键搬到顶栏**右端** ⇒ 箭头方向随之翻转 -->
+    <string name="desk_back">返回 ›</string>
     <string name="desk_empty">暂无内容</string>
-    <!-- 🆕 TASK-076：设置页「墨台」分区（总开关 / 内容模块开关+调序 / 背景）-->
-    <string name="label_desk_group">墨台</string>
+    <!-- 🆕 2026-10-10（用户诉求 ①）：墨台设置改为**墨台页内自绘**（原设置页「墨台」分区已移除）。
+         文案仍复用 `label_desk_*`（唯一来源），新增的只有下面这几条。 -->
+    <string name="desk_settings">设置</string>
+    <string name="desk_settings_title">墨台设置</string>
+    <!-- 🆕 2026-10-10 第二轮（诉求 ⑥）：背景 = 纯白 / 自定义（自定义读**一条固定路径**，
+         与锁屏壁纸同款心智；固定路径常量在 core/PagePrefs.DESK_BG_REL）-->
+    <string name="desk_bg_none">纯白（不使用图片）</string>
+    <string name="desk_bg_custom">自定义</string>
+    <string name="desk_bg_custom_found">已找到 %1$s</string>
+    <string name="desk_bg_custom_missing">没找到 %1$s —— 把想要的图片改名为「墨台背景.jpg」放进 Pictures 文件夹即可；没放图（或没给存储读权限）时「自定义」不可选。</string>
     <string name="label_desk_enabled">启用墨台</string>
     <string name="label_desk_modules">内容模块</string>
     <string name="label_desk_modules_tip">勾选决定是否显示；↑ ↓ 调整顺序。顺序即墨台自上而下的顺序，关掉的模块不占高度。</string>
     <string name="label_desk_bg">背景</string>
-    <string name="hint_desk_bg">背景图路径（留空 = 浅色网点）</string>
     <string name="label_desk_veil">白纱不透明度</string>
-    <string name="label_desk_bg_tip">白纱越白、背景越淡。背景图需可读权限，读不到时自动回退浅色网点。</string>
+    <string name="label_desk_bg_tip">白纱越白、背景越淡。读不到背景图时自动回退纯白网点，绝不因此弹不出墨台。</string>
+    <!-- 🆕 2026-10-10（用户诉求 ⑤⑥）：墨单头部的「生成壁纸」与「周/月」切换、壁纸保存反馈 -->
+    <string name="menu_gen_wallpaper">生成壁纸</string>
+    <string name="menu_mode_week">周</string>
+    <string name="menu_mode_month">月</string>
+    <string name="desk_wallpaper_none">这一期还没有墨单</string>
+    <string name="desk_wallpaper_rendering">正在生成…</string>
+    <string name="desk_wallpaper_save">保存到相册</string>
+    <!-- 🆕 2026-10-10 第二轮（诉求 ⑤）：生成后新增「分享」（复用本记导出那套系统分享面板） -->
+    <string name="desk_wallpaper_share">分享</string>
+    <string name="desk_wallpaper_share_title">分享墨单</string>
+    <string name="desk_wallpaper_share_none">这台设备上没有可接收图片的应用</string>
+    <string name="desk_wallpaper_sharing">正在准备分享…</string>
+    <string name="desk_wallpaper_close">关闭</string>
+    <string name="desk_wallpaper_saving">正在保存…</string>
+    <string name="desk_wallpaper_saved">已保存到相册 Pictures/微读墨记</string>
+    <string name="desk_wallpaper_saved_priv">已保存到应用目录：%1$s</string>
     <!-- TASK-048：原 `insight_placeholder`（"洞察页（开发中）…"）已随占位 TextView 一并删除 ——
          洞察页改为 InsightPageView 自绘（分区标题/空态文案按本项目惯例硬编码在渲染器里，
          与 CardRenderer 一致），此处不再需要该字符串。 -->
@@ -104,7 +131,7 @@
     <!-- 🆕 TASK-059：书籍排名统计范围（自定义页第三分区）-->
     <string name="label_rank_scope">书籍排名</string>
     <string name="label_rank_shelf_only">只统计书架上的书</string>
-    <string name="label_rank_shelf_only_tip">打开后，「本月」页与「洞察 · 读书排行」只列出你书架上的书；已从书架移除的书不再出现。首次打开会自动联网同步一次书架清单。</string>
+    <string name="label_rank_shelf_only_tip">打开后，「本月」页与「足迹 · 读书排行」只列出你书架上的书；已从书架移除的书不再出现。首次打开会自动联网同步一次书架清单。</string>
 
     <!-- 🔴 A6：本串 = 系统无障碍设置里显示的「权限说明」，必须与 res/raw/help.txt【首次配置·4 开无障碍】
          及 AndroidManifest.xml / res/xml/a11y_card_service.xml 的口径一致（同一事实，一处改齐）。
@@ -222,10 +249,11 @@
     <string name="lab_shake_sens_low">低</string>
     <string name="lab_shake_sens_mid">中</string>
     <string name="lab_shake_sens_high">高</string>
-    <string name="lab_shake_rev_lr">左右晃方向反转</string>
-    <string name="lab_shake_rev_ud">上下晃方向反转</string>
+    <!-- 🆕 2026-10-10 用户 ②：原来的「左右晃方向反转 / 上下晃方向反转」两个勾选
+         已换成下面的「四动作方向 3 选 1」（见 lab_shake_peer_dir_label）；这两条文案已无消费方。 -->
     <!-- 🆕 TASK-042（V1.1.1-beta）：晃动方向自选（响应哪几组轴）。
-         🔴 「响应」与「反转」是两回事：本组管"晃它响不响应"，下面两个"反转"管"翻哪一页"。
+         🔴 「响应」与「方向」是两回事：本组管"晃它响不响应"（检测层弃权），
+             下面四个动作的「方向（上/下/关）」管"翻哪一页 / 发不发"（投递层）。
          默认双勾 = 现模式；禁止双不勾（UI 弹回 + Preferences 联合兜底）。 -->
     <string name="lab_shake_axis_label">响应方向：</string>
     <string name="lab_shake_axis_lr">左右晃</string>
@@ -236,6 +264,11 @@
     <string name="lab_shake_hint">开启后晃动本机即可翻页。与音量键可同时使用。灵敏度分低/中/高三档（默认中）：太容易误触就调低，要甩很用力才响应就调高。⚠ 本应用需停在最前，切走后不生效。</string>
     <string name="lab_shake_page_prev">上一页</string>
     <string name="lab_shake_page_next">下一页</string>
+    <!-- 🆕 2026-10-10 用户 ②：四动作方向的第三个选项 —— 该动作命中后**不发任何翻页指令**。 -->
+    <string name="lab_shake_page_off">关</string>
+    <!-- 🆕 2026-10-10 用户 ②：遥控（对端）侧四动作方向（左/右/上/下晃 各 3 选 1）。
+         取代原来的两个「方向反转」勾选；默认值与旧勾选逐位等价。 -->
+    <string name="lab_shake_peer_dir_label">方向（每个动作可单独设置，选「关」则不发翻页）</string>
 
     <!-- 🆕 TASK-073：翻页页 · 「本机晃动」（晃本机 ⇒ 翻本机上的微信读书）。
          🔴 与上方「连接方式」无关（不依赖 install_role），两条可同时开。
@@ -256,9 +289,10 @@
     <string name="lab_shake_local_mode_swipe">横向滑动（在屏幕上左右划动）</string>
     <string name="lab_shake_local_portrait_note">※ 目前仅支持竖屏、左右横向翻页；横屏暂不支持。</string>
     <!-- 🆕 TASK-074：本机晃动「四动作方向」自选（左/右/上/下 各一个单选，互不冲突）。
-         🔴 默认 = 既有对应关系（左/上→上一页、右/下→下一页）；两行×两列排布。
-         复用 lab_shake_page_prev / lab_shake_page_next 作为两个选项文案。 -->
-    <string name="lab_shake_local_dir_label">方向（每个动作可单独设置）</string>
+         🆕 2026-10-10 用户 ②：每格由 2 选 1 扩为 **3 选 1**（上一页 / 下一页 / 关）。
+         🔴 默认 = 既有对应关系（左/上→上一页、右/下→下一页）；四行单列排布。
+         复用 lab_shake_page_prev / _next / _off 作为三个选项文案。 -->
+    <string name="lab_shake_local_dir_label">方向（每个动作可单独设置，选「关」则不发翻页）</string>
     <string name="lab_shake_local_dir_left">左晃</string>
     <string name="lab_shake_local_dir_right">右晃</string>
     <string name="lab_shake_local_dir_up">上晃</string>

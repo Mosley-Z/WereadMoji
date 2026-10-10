@@ -27,7 +27,7 @@ import com.inkread.weekread.core.CardPrefs;
  *   <li><b>本机模式</b>（{@link #sLocal}）—— 晃本机 ⇒ 翻**本机**上的微信读书。只需独立开关
  *       {@code CardPrefs.shake_local_enabled}，**不依赖**角色 / 连接方式；投递走
  *       {@link RemoteInjector#injectLocal}（无障碍手势）；方向由**四动作自选**决定
- *       （{@link CardPrefs#isShakeLocalActNext}，见 {@link #fire}）。</li>
+ *       （{@link CardPrefs#getShakeLocalActDir}，见 {@link #fire}）。</li>
  * </ul>
  * 两开关同时打开时两实例并行采样 ⇒ 两条路径**同时**触发（= TASK-074「一起翻页」口径）；
  * 🆕 此时**对端也切到「手机侧」方向口径** ⇒ 一次晃动两端**同向**翻（见 {@link #fire}）。
@@ -719,22 +719,26 @@ public final class ShakeDetector implements SensorEventListener {
     /**
      * 一次甩动**判决通过** ⇒ 决定指令，再按<b>本机 / 对端</b>分流投递。
      *
-     * <h4>① 方向基准（🆕 TASK-074：条件式，两模式不再"整体相反"）</h4>
+     * <h4>① 方向基准（🆕 TASK-074：条件式，两模式不再"整体相反"；🆕 2026-10-10 三值化）</h4>
      * <p>同一套 {@link #judge} 输出（主导轴 {@code idx} + 主峰符号 {@code sign}）先由
      * {@link #actionOf} 归一为**四个动作**之一（左/右/上/下晃，口径 = 手机"屏幕正对自己"），
-     * 再按下列条件取指令：
+     * 再按下列条件取方向（{@link CardPrefs#SHAKE_DIR_PREV}/{@link CardPrefs#SHAKE_DIR_NEXT}/
+     * {@link CardPrefs#SHAKE_DIR_NONE}）：
      * <ul>
      *   <li><b>「手机侧」口径</b>（本机实例 {@link #mLocal} = true，**或**对端实例但本机开关
-     *       {@code shake_local_enabled} 已打开）—— 四个动作各查 {@link CardPrefs#isShakeLocalActNext}
+     *       {@code shake_local_enabled} 已打开）—— 四个动作各查 {@link CardPrefs#getShakeLocalActDir}
      *       的**自选方向**（默认 左/上→上一页、右/下→下一页）。
      *       <p>🔴 对端实例在「本机开关打开」时**也切到手机侧**：这就是 TASK-074「一起翻页」
      *       —— 手机与墨水屏并排都正对使用者，一次晃动两端**必须同向翻**（TASK-073 的双实例
      *       各自按不同握持标定 ⇒ 曾出现"一前一后"，见验证记录 183）。</li>
      *   <li><b>「对端口径」</b>（仅对端实例、且本机开关**关闭**时）—— 沿用 TASK-029 标定
-     *       （背面朝自己）：{@code eff = rev ? −sign : sign}；{@code rev} 取
-     *       {@code remote_shake_lr_rev} / {@code remote_shake_ud_rev}。**本机开关关着时行为与
-     *       TASK-073 之前逐位一致**（用户 2026-10-09：「未打开时按之前确定的翻页逻辑来」）。</li>
+     *       （背面朝自己）：动作名先经 {@link #flipAct} 折成**用户物理动作**，再查
+     *       {@link CardPrefs#getShakePeerActDir}（旧 {@code remote_shake_lr_rev}/{@code _ud_rev}
+     *       两个反转勾选即其默认值的迁移源）。**本机开关关着时行为与 TASK-073 之前逐位一致**
+     *       （用户 2026-10-09：「未打开时按之前确定的翻页逻辑来」）。</li>
      * </ul>
+     * <p>🆕 「关」（{@link CardPrefs#SHAKE_DIR_NONE}）⇒ **判决照走、投递直接丢弃**（不注入、不发指令、
+     * 也不记为失败）—— 与「响应方向」（轴使能，在检测层就弃权）正交（用户 2026-10-10 ②）。
      *
      * <h4>② 投递路径</h4>
      * <ul>
@@ -752,8 +756,8 @@ public final class ShakeDetector implements SensorEventListener {
     private void fire(int idx, int sign) {
         final boolean lr = (idx == IDX_X);
         final int act = actionOf(idx, sign);
-        int cmd;
         boolean phoneSide;
+        int dir;
         try {
             // 🔴 TASK-074：方向基准是**条件式**的 ——
             //   ① 本机实例（mLocal）永远按「手机侧」口径；
@@ -761,18 +765,30 @@ public final class ShakeDetector implements SensorEventListener {
             //      手机正对使用者 ⇒ 两端必须同向）；开关关闭时才回落 TASK-029 的原始口径。
             phoneSide = mLocal || CardPrefs.isShakeLocalEnabled(mApp);
             if (phoneSide) {
-                cmd = CardPrefs.isShakeLocalActNext(mApp, act)
-                        ? RemoteProtocol.CMD_PAGE_NEXT : RemoteProtocol.CMD_PAGE_PREV;
+                dir = CardPrefs.getShakeLocalActDir(mApp, act);
             } else {
-                final boolean rev = lr ? CardPrefs.isShakeLrRev(mApp) : CardPrefs.isShakeUdRev(mApp);
-                final int eff = rev ? -sign : sign;   // 对端：默认 左/上→上一页、右/下→下一页
-                cmd = (eff < 0) ? RemoteProtocol.CMD_PAGE_PREV : RemoteProtocol.CMD_PAGE_NEXT;
+                // 🆕 2026-10-10：对端口径的动作名要**折一次符号**——手机背面朝自己，同一物理
+                // 甩动的 raw sign 与"屏幕正对自己"相反 ⇒ 用 flip(action) 换成用户物理动作名，
+                // 这样设置页上「左晃」在两块里指的是**同一个物理动作**（默认值也因此一致）。
+                // 🔴 与旧口径**逐位等价**：见 CardPrefs#getShakePeerActDir 的迁移式。
+                dir = CardPrefs.getShakePeerActDir(mApp, flipAct(act));
             }
         } catch (Throwable t) {
             Log.w(TAG, "fire: read prefs failed(swallowed): " + t);
             phoneSide = false;
-            cmd = (sign < 0) ? RemoteProtocol.CMD_PAGE_PREV : RemoteProtocol.CMD_PAGE_NEXT;
+            dir = (sign < 0) ? CardPrefs.SHAKE_DIR_PREV : CardPrefs.SHAKE_DIR_NEXT;
         }
+        // 🆕 2026-10-10 用户 ②：该动作选了「关」⇒ **不发任何翻页指令**。
+        //   🔴 与「响应方向（轴使能）」正交：轴使能是在**检测层**就弃权（上面 judge/AxisDetector
+        //      那层就 return 了），这里是在**投递层**丢弃 —— 判决照走、只是不投递、也不算失败。
+        if (dir == CardPrefs.SHAKE_DIR_NONE) {
+            Log.i(TAG, "SHAKE(mode=" + (mLocal ? "local" : "peer") + ") axis=" + (lr ? "LR" : "UD")
+                    + "(" + idx + ") sign=" + sign + " act=" + actName(act)
+                    + " src=" + (phoneSide ? "phone" : "peer") + " → OFF(关·不投递)");
+            return;
+        }
+        final int cmd = (dir == CardPrefs.SHAKE_DIR_NEXT)
+                ? RemoteProtocol.CMD_PAGE_NEXT : RemoteProtocol.CMD_PAGE_PREV;
         boolean sent = false;
         if (mLocal) {
             // 本机模式：不走遥控链路（不需要 role=PHONE / 通道就绪），直接在本机合成翻页手势。
@@ -790,8 +806,32 @@ public final class ShakeDetector implements SensorEventListener {
         }
         Log.i(TAG, "SHAKE(mode=" + (mLocal ? "local" : "peer") + ") axis=" + (lr ? "LR" : "UD")
                 + "(" + idx + ") sign=" + sign + " act=" + actName(act)
-                + " src=" + (phoneSide ? "phone" : "peer") + " → "
+                + " src=" + (phoneSide ? "phone" : "peer") + " dir=" + dirName(dir) + " → "
                 + RemoteProtocol.name(cmd) + " sent=" + sent);
+    }
+
+    /**
+     * 🆕 2026-10-10：动作名**左↔右 / 上↔下**对折（遥控侧 raw sign 与"屏幕正对自己"相反）。
+     * 只用于把 {@link #actionOf} 的（手机正对自己口径）动作名换成**用户物理动作**名。
+     */
+    private static int flipAct(int act) {
+        switch (act) {
+            case CardPrefs.SHAKE_ACT_LEFT:  return CardPrefs.SHAKE_ACT_RIGHT;
+            case CardPrefs.SHAKE_ACT_RIGHT: return CardPrefs.SHAKE_ACT_LEFT;
+            case CardPrefs.SHAKE_ACT_UP:    return CardPrefs.SHAKE_ACT_DOWN;
+            case CardPrefs.SHAKE_ACT_DOWN:  return CardPrefs.SHAKE_ACT_UP;
+            default:                        return act;
+        }
+    }
+
+    /** 三值方向名（日志用）。 */
+    private static String dirName(int dir) {
+        switch (dir) {
+            case CardPrefs.SHAKE_DIR_PREV: return "PREV";
+            case CardPrefs.SHAKE_DIR_NEXT: return "NEXT";
+            case CardPrefs.SHAKE_DIR_NONE: return "OFF";
+            default:                       return "?";
+        }
     }
 
     /**
@@ -803,7 +843,8 @@ public final class ShakeDetector implements SensorEventListener {
      *   <li>y·z 轴（上下）：{@code sign>0} = 上晃 / {@code sign<0} = 下晃。</li>
      * </ul>
      * 🔴 该映射**只负责"是哪个动作"**，与"翻上一页还是下一页"解耦 ——
-     * 后者由 {@link CardPrefs#isShakeLocalActNext} 的四动作单选决定。
+     * 后者由 {@link CardPrefs#getShakeLocalActDir}（本机）/ {@link #flipAct} +
+     * {@link CardPrefs#getShakePeerActDir}（对端）的四动作三值单选决定。
      */
     private static int actionOf(int idx, int sign) {
         if (idx == IDX_X) {

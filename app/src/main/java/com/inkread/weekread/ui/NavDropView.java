@@ -49,7 +49,7 @@ public class NavDropView extends View {
     private final float rowH;
 
     /** 五个可选界面；默认对齐 {@link com.inkread.weekread.core.PeriodRange} 的取数形态。 */
-    private String[] labels = {"本周", "本月", "本书", "本记", "洞察"};
+    private String[] labels = {"本周", "本月", "本书", "本记", "足迹"};
     private int selected = 0;
     /** 是否处于「展开」态（展开时自身高度 = MATCH_PARENT，只画顶部）。 */
     private boolean expanded = false;
