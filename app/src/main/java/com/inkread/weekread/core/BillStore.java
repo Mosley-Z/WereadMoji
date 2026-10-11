@@ -150,6 +150,31 @@ public final class BillStore {
         CardDebug.noteV(c, "bill prune: " + mode + " 保留 " + keep + " 期，删 " + (starts.size() - keep) + " 期");
     }
 
+    /**
+     * 🆕 第六批A（D7，2026-10-11）：**删掉某一期账单**（真实账 / 占位账一视同仁）。
+     *
+     * <p>用途只有一个：把**未完结的当期月账**清掉 —— "月永不显示进行中账"（D5）光靠"不再生成"
+     * 不够，旧版本（v1.2.2-beta 的 `maybeBackfillYear i == 0` / `refreshCurrent(MONTHLY)`）
+     * 已经在 store 里落过一份 2026-10 的当期月账，不删的话墨单月档永远还能看见它。
+     *
+     * <p>🔴 边界与纪律：
+     * <ul>
+     *   <li>**只动这一个键**（不连带、不轮转、不碰历史期）—— "是不是未完结期"由调用方判
+     *       （见 `BillScheduler.dropUnfinishedMonthly`）；</li>
+     *   <li>**幂等**：键不存在时是空操作、返回 false（调用方据此决定要不要留痕）；</li>
+     *   <li>不做业务判断（与前文 `save` 同一条纪律：本类只读写）。</li>
+     * </ul>
+     *
+     * @return true = 真的删掉了一个**已存在**的键
+     */
+    public static boolean remove(Context c, String mode, long periodStart) {
+        if (periodStart <= 0) return false;
+        String key = keyOf(mode, periodStart);
+        if (!sp(c).contains(key)) return false;
+        sp(c).edit().remove(key).commit();
+        return true;
+    }
+
     /** 清空全部账单（设置页 / 调试用）。 */
     public static void clear(Context c) {
         sp(c).edit().clear().commit();

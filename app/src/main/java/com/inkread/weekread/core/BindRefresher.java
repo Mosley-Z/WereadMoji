@@ -55,6 +55,11 @@ public final class BindRefresher {
      */
     public static int fireBound(Context c, String apiKey, String curMode) {
         if (c == null || apiKey == null || apiKey.length() == 0) return 0;
+        // 🆕 第六批A（D1，2026-10-11）：**刷新时机绑定** —— App 侧的"刷新"（含各页签刷新）同样是一次
+        //    可达时机 ⇒ 顺带做一次账单幂等补齐（跨期落定 / 月去进行中账 / 当期节流刷新）。
+        //    🔴 只绑"时机"、不改墨单口径；放在**闸门之前**：闸门管的是"补发请求别堆积"，
+        //    而 `ensureBills` 是另一条独立的后台链（自带并发闸 + 节流），不该被这个闸门连坐。
+        BillScheduler.ensureBills(c);
         long now = android.os.SystemClock.elapsedRealtime();
         if (sPending > 0 && now - sGateAt < GATE_MAX_MS) {
             CardDebug.note(c, "bind(app): gate closed (" + sPending + " in flight), skip");

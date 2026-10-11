@@ -1249,6 +1249,9 @@ public class MainActivity extends Activity {
         // 🆕 TASK-077：账单**幂等补齐**（后台线程；已有账单不重算、缺的期补上，不写假账）。
         //    与 `CardA11yService.onServiceConnected` 各调一次 —— 谁先谁生效，重复无害。
         BillScheduler.ensureBills(this);
+        // 🆕 第六批补丁（TASK-086）：**老索引一次性重建**（v<3 ⇒ 补回真实原价）。
+        //    与上行同一理由：这个时机本来就在做幂等补齐；重复调用无害，v3 稳态零请求。见 `验证记录/229`。
+        NoteSync.ensureIndexUpgrade(this);
     }
 
     @Override
@@ -1334,6 +1337,10 @@ public class MainActivity extends Activity {
         if (fired > 0) {
             CardDebug.note(this, "app refresh: bind fired " + fired + " req(s), cur=" + tabMode);
         }
+        // 🆕 第六批A（D1，2026-10-11）：**手动刷新路绑定** —— 用户在 App 内点刷新（含各页签刷新）也是
+        //    一次"可达时机" ⇒ 顺带做一次账单幂等补齐（跨期落定 / 月去进行中账 / 当期节流刷新）。
+        //    🔴 只绑"时机"、不改墨单口径；`ensureBills` 幂等 + 后台线程 + 自带并发闸 ⇒ 重复无害。
+        BillScheduler.ensureBills(this);
         if (PeriodRange.BOOK.equals(tabMode)) {
             refreshBook(key, force);
             return;

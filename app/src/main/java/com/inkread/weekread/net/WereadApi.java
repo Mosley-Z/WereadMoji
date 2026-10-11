@@ -398,6 +398,13 @@ public class WereadApi {
             s.readUpdateTime = b.optLong("readUpdateTime", 0L);
             s.progress = book.optInt("progress", 0);
             s.readingSec = book.optInt("readingTime", 0);
+            // 🆕 TASK-086 第六批B（Lead 指定的接线点 · 口径 D20–D22）：这里是**唯一的实时 `BookStats`
+            //    组装点**（「本书」等实时卡片走它）—— 两条独立来源各接一行，任一处成立即 `finished`：
+            //      ① `/book/getprogress` 的 `book.finishTime`（该书读完时接口才带）；
+            //      ② 书架条目的 `finishReading`（多数书只有这个标志）。
+            //    🔴 不接 ⇒ 实时卡片的 `finished` 恒 false，"已读完但 progress<99"的书会一直按旧值显示。
+            BookStats.applyFinishTime(s, book);
+            BookStats.applyFinishReading(s, b);
             s.chapterUid = book.optInt("chapterUid", 0);
             s.chapterIdx = book.optInt("chapterIdx", 0);
             s.chapterTitle = resolveChapter(c, apiKey, bookId,

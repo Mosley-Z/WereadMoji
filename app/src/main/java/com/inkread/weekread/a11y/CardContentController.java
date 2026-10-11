@@ -1,6 +1,7 @@
 package com.inkread.weekread.a11y;
 
 import com.inkread.weekread.core.AchievementPrefs;
+import com.inkread.weekread.core.BillScheduler;
 import com.inkread.weekread.core.BookStats;
 import com.inkread.weekread.core.BookStore;
 import com.inkread.weekread.core.CardDebug;
@@ -430,6 +431,11 @@ final class CardContentController {
                     if (cardView() != null) cardView().setRefreshing(false);
                     CardDebug.note(ctx, "fetch failed: " + error);
                 }
+                // 🆕 第六批A（D1，2026-10-11）：**刷新时机绑定** —— 卡片这一趟数据回来了，就顺带做一次
+                //    **账单幂等补齐**（跨期落定 / 月去进行中账 / 每 60 s 的当期刷新都在里面）。
+                //    🔴 只绑"时机"、**不改任何墨单口径**；`ensureBills` 自带并发闸 + 后台线程，重复无害，
+                //    稳态下只做几次 `has`/load 检查（零请求）。
+                BillScheduler.ensureBills(ctx);
                 ov.applyVisibility();
             }
         };
@@ -480,6 +486,8 @@ final class CardContentController {
                     }
                     CardDebug.note(ctx, "fetch book failed: " + error);
                 }
+                // 🆕 第六批A（D1）：同 `detailCb` —— 「本书」这一趟回来也算一次刷新时机（幂等，重复无害）
+                BillScheduler.ensureBills(ctx);
                 ov.applyVisibility();
             }
         });

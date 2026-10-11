@@ -2,6 +2,7 @@ package com.inkread.weekread.net;
 
 import com.inkread.weekread.core.NoteStats;
 import com.inkread.weekread.core.NoteStore;
+import com.inkread.weekread.core.StatsStore;
 
 import android.content.Context;
 import android.os.Handler;
@@ -118,6 +119,67 @@ public final class NoteSync {
     /** 用户手动刷新：清掉退避，立即放行（见 {@link #BACKOFF_MS}） */
     public static void clearBackoff() {
         sBackoffUntil = 0L;
+    }
+
+    /** 🆕 第六批补丁：本进程是否已经为「索引版本升级」**发起过**一次（见 {@link #ensureIndexUpgrade}） */
+    private static boolean sUpgradeTried;
+
+    /**
+     * 🆕 第六批补丁（`验证记录/229`）：落盘索引是**老格式**时，**一次性**重建索引。
+     *
+     * <p>判据 = {@link NoteStore#indexVersion}（`v`）**或** {@link NoteStore#indexHasPriceKeys}
+     * 说这份索引不是真正的 v3 内容；没索引文件（`v == -1`）**不动**（交给本记页的正常同步去建，
+     * 不给"从没同步过"的用户凭空加请求）。根因与代价论证见
+     * {@link NoteStore#INDEX_VERSION} 的 javadoc。
+     *
+     * <p>**只补价、不改任何价格语义**：这里只把 `/user/notebooks` 回包里本来就有的
+     * `centPrice/priceY/origY/free/progress` 落进索引（{@link NoteStore#compactIndex} 的事），
+     * 未知仍是 `—`、明确免费仍是「免费」。
+     *
+     * <p><b>有界性（防环论证）</b>：
+     * <ol>
+     *   <li>**同一进程至多发起一次**：{@link #sUpgradeTried} 只在"真的要起同步"那一刻置位，
+     *       此后同一进程内所有触发点（本方法可能被服务连接 / `onStart` 各调一次）直接返回；</li>
+     *   <li>**成功即自锁**：成功落盘 `v=3` 且每本书带 `centPrice` ⇒ 判据不再成立，
+     *       此后每次冷启动都是"读一次文件头 ⇒ 返回"（**零请求**）；</li>
+     *   <li>**失败也不空转**：失败由 {@link #sync} 既有的三道闸门兜住 —— in-flight 去重
+     *       （{@link #isRunning}）与空/失败退避 {@link #BACKOFF_MS}（{@link #canAutoStart}），
+     *       本方法在发起前也先查这两道闸门；</li>
+     *   <li>**失败不写 `v`**：{@link #sync} 只在**真的拉到**笔记本列表时才
+     *       {@link NoteStore#saveIndex}（半截/失败一律保留旧索引）⇒ 无网/401 不会把索引标成 v3。</li>
+     * </ol>
+     * 上界：连续两次冷启动（无网）= 最多 **2 次**尝试（每次冷启动 1 次），两次之间至少隔着
+     * {@link #BACKOFF_MS}（同进程内退避未过期不发；跨进程的两次冷启动各自最多 1 次）。
+     *
+     * <p>请求量：本方法用 `prefetch = 0` ⇒ **只拉索引**（`/user/notebooks` 一页，`hasMore=0`），
+     * 不做想法/划线预热（那是本记页的既有路径，与价格无关）。
+     */
+    public static void ensureIndexUpgrade(final Context c) {
+        if (c == null) return;
+        // ① 判据：索引文件存在且不是真正的 v3 内容（老 v2 / 假 v3 都算）
+        int v = NoteStore.indexVersion(c);
+        if (v < 0) return;                                        // 没有索引 ⇒ 不为此加请求
+        if (v >= NoteStore.INDEX_VERSION && NoteStore.indexHasPriceKeys(c)) return;
+        // ② 有 apiKey 才动作（没登录 ⇒ 发了也是 401，纯空转）
+        final String key = StatsStore.getKey(c);
+        if (key == null || key.length() == 0) return;
+        synchronized (LOCK) {
+            if (sUpgradeTried) return;                            // ③ 同进程至多一次
+            if (sRunning) return;                                 // 闸门②：已有一轮在跑 ⇒ 不叠加
+            if (!canAutoStart()) return;                          // 闸门③：退避未过期 ⇒ 不空转
+            sUpgradeTried = true;                                 // 记在"真的发起"那一刻（此后本进程不再试）
+        }
+        // 取证用（`验证记录/229`）：只在**真的发起**时留一行；稳态（已是 v3）完全静默。
+        com.inkread.weekread.core.CardDebug.noteV(c,
+                "note: 索引老格式(v=" + v + ") ⇒ 触发一次重建 /user/notebooks");
+        sync(c, key, true, 0, new Listener() {
+            @Override
+            public void onDone(int pool, int ideas, int total, String error, int state) {
+                com.inkread.weekread.core.CardDebug.noteV(c, "note: 索引重建结束 state=" + state
+                        + " 书=" + total + " 落盘v=" + NoteStore.indexVersion(c)
+                        + (error == null ? "" : " err=" + error));
+            }
+        });
     }
 
     /**

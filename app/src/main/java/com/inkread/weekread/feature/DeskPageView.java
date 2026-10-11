@@ -84,14 +84,16 @@ public final class DeskPageView extends View {
     private final DeskRenderer renderer = new DeskRenderer();
 
     /**
-     * 「读书排行」分区常驻实例（TASK-076）—— 内含内滚位移，装配时复用同一份。
-     * 🔴 与 {@link InsightPageView} 同做法：换料只调 `setItems`，不 new（new 会把内滚位移丢掉）。
+     * 「阅读资产」分区常驻实例（TASK-086 第六批B / D16：就地替换原「读书排行」）——
+     * 头部条（排序三键 / 展开·收起）的命中判定要用它。
+     * 🔴 与 {@link InsightPageView} 同做法：装配时复用同一份，不 new。
+     * 不再有内滚位移（D25：分区随整页滚动），所以这里也不需要 getter 式换料。
      */
-    private final InsightRenderer.RankSection rankSection = DeskModules.rankSection();
+    private final AssetSection assetSection = DeskModules.assetSection();
 
     /**
      * 🆕 TASK-077：「墨单」分区常驻实例 —— 头部条（页签 / 周期 / 生成壁纸）的命中判定要用它。
-     * 与 {@link #rankSection} 同理：装配时复用同一份，不 new。
+     * 与 {@link #assetSection} 同理：装配时复用同一份，不 new。
      */
     private final BillSection billSection = DeskModules.billSection();
 
@@ -150,9 +152,8 @@ public final class DeskPageView extends View {
     private float downX, downY, lastY;
     private float totDx, totDy;
     private int axis = AXIS_NONE;
-    /** 🆕 TASK-076：本次手势是否**落在排行区视口内**（手势分区 —— 决定这次滑动谁吃）。 */
-    private boolean dragRank = false;
     // 🔴 2026-10-11（TASK-18）：`dragVeil`（设置态拖白纱滑条）已随「背景」组删除。
+    // 🔴 2026-10-11（TASK-086 第六批B / D25）：`dragRank`（排行区内滚）已随「阅读资产」去掉内滚而删除。
 
     private static final int AXIS_NONE = 0;
     private static final int AXIS_VERT = 1;
@@ -176,7 +177,6 @@ public final class DeskPageView extends View {
         mode = MODE_LIST;
         scrollY = 0f;
         axis = AXIS_NONE;
-        dragRank = false;
         releasePreview();
         updatedLabel = "更新于 " + new SimpleDateFormat("HH:mm", Locale.US).format(new Date());
         buildSections();
@@ -594,26 +594,52 @@ public final class DeskPageView extends View {
         wp.setTextAlign(Paint.Align.LEFT);
     }
 
-    // ══════════════════════ 🆕 TASK-076：排行区手势分区 ══════════════════════
+    // ══════════════════════ 🆕 TASK-086 第六批B：阅读资产头部命中 ══════════════════════
+    // 🔴 D25 取舍：原「读书排行」有内滚（`dragRank` + `RANK_VIEWPORT_RATIO` 视口），
+    //    换成「阅读资产」后**去掉内滚**——分区内容随整页滚（上面 ACTION_MOVE 里那支
+    //    内滚分支连同 `dragRank` 字段一并删除）。这里只留头部条（排序三键 / 展开·收起）的命中。
 
-    /** 排行区**内容视口**在屏幕坐标里的顶边 y；-1 = 排行区不在分区表里（模块关了 / 没料）。 */
-    private float rankBodyTop() {
-        int idx = renderer.indexOf(rankSection);
+    /** 阅读资产分区**顶边**的屏幕坐标 y；-1 = 分区不在分区表里（模块关了 / 没料）。 */
+    private float assetTop() {
+        int idx = renderer.indexOf(assetSection);
         if (idx < 0) return -1f;
-        float top = renderer.sectionTop(idx, getWidth(), getHeight(), unit) - scrollY;
-        return top + InsightRenderer.secHeadH(unit);
+        return renderer.sectionTop(idx, getWidth(), getHeight(), unit) - scrollY;
     }
 
-    /** 触点是否落在排行区的**视口矩形**内（🔴 手势分区的唯一判据）。 */
-    private boolean hitRank(float y) {
-        float bt = rankBodyTop();
-        if (bt < 0f) return false;
-        float vp = getHeight() * InsightRenderer.RANK_VIEWPORT_RATIO;
-        return y >= bt && y <= bt + vp;
+    /**
+     * 阅读资产**头部条**命中：排序三键 → 展开/收起。
+     *
+     * <p>顺序即优先级：三键矩形与展开行不重叠，但先判键位更稳（键位是 3 个小矩形，
+     * 展开行是整行宽）。命中后立刻 `remeasure` + `invalidate`（排序/展开都改变行数 ⇒ 高度变）。
+     *
+     * <p>🔴 守卫**只拦哨兵 `-1f`**（分区不在分区表里）：阅读资产折叠态高度 ≈805 px > 屏高 800 px，
+     * 「展开 ▽」可见时头部必然已滚到视口上方（`top` 为负）——若把负数也当哨兵，展开/收起控件
+     * 在它唯一可见的状态下永远不可达（用户症状：「展开 ▽」点了没反应）。
+     * 头部条以外的越界由 `hitSort`/`hitToggle` 的矩形判据自行处理（矩形落在视口外自然不命中）。
+     * 注意：账单侧 `hitBillTab`/`hitBillHead` 的守卫**保持原样**（它们位于分区顶部，
+     * 顶边为负时控件确实已出屏）。
+     *
+     * @return true = 已消费本次点击（调用方不要再往下走别的命中链）
+     */
+    private boolean hitAssetHead(float x, float y) {
+        float top = assetTop();
+        if (top == -1f) return false;
+        int key = assetSection.hitSort(x, y, getWidth(), unit, top);
+        if (key >= 0) {
+            if (assetSection.setSort(key)) {           // 同键点击 ⇒ false ⇒ 不白刷一次
+                remeasure(getWidth(), getHeight());
+                invalidate();
+            }
+            return true;
+        }
+        if (assetSection.hitToggle(x, y, getWidth(), unit, top)) {
+            assetSection.toggleOpen();
+            remeasure(getWidth(), getHeight());
+            invalidate();
+            return true;
+        }
+        return false;
     }
-
-    /** 排行区当前是否需要内滚（装得下 ⇒ 不吃手势，让整页滚）。 */
-    private boolean rankScrollable() { return rankSection.canScroll(getHeight(), unit); }
 
     // ══════════════════════ 🆕 TASK-077：账单分区头部命中 ══════════════════════
 
@@ -696,7 +722,8 @@ public final class DeskPageView extends View {
                 totDy = 0f;
                 axis = AXIS_NONE;
                 // 🔴 命中判定**只在按下那一刻做一次** —— 之后整段滑动都归它，避免半途改判导致跳变。
-                dragRank = (mode == MODE_LIST) && rankScrollable() && hitRank(downY);
+                // 🔴 2026-10-11（TASK-086 第六批B / D25）：原「落在排行区 ⇒ 手势只驱动区内滚」的
+                //    `dragRank` 判定已删除 ——「阅读资产」没有内滚，列表态滑动恒为整页滚动。
                 // 🆕 TASK-086：数字键盘是**模态** —— 开着时整段按下只归键盘（不滚、不点、不返回）
                 padModal = (mode == MODE_LIST) && billSection.padOpen();
                 if (padModal) return true;
@@ -731,17 +758,14 @@ public final class DeskPageView extends View {
                 }
                 if (axis == AXIS_VERT) {
                     float mv = lastY - e.getY();     // 手指上滑 ⇒ mv > 0 ⇒ 内容上移
-                    if (dragRank) {
-                        // 🆕 TASK-076：落在排行区 ⇒ 本次滑动只驱动**区内**滚动，不带整页
-                        if (rankSection.scrollBy(mv, getHeight(), unit)) invalidate();
-                    } else {
-                        float next = scrollY + mv;
-                        if (next < 0f) next = 0f;
-                        if (next > maxScroll) next = maxScroll;     // 到顶/到底夹住，不穿透、不回弹
-                        if (next != scrollY) {
-                            scrollY = next;
-                            invalidate();
-                        }
+                    // 🔴 2026-10-11（TASK-086 第六批B / D25）：原「落在排行区 ⇒ 只滚区内」的分支
+                    //    已随「阅读资产」去掉内滚而删除 ⇒ 列表态一律整页滚动。
+                    float next = scrollY + mv;
+                    if (next < 0f) next = 0f;
+                    if (next > maxScroll) next = maxScroll;     // 到顶/到底夹住，不穿透、不回弹
+                    if (next != scrollY) {
+                        scrollY = next;
+                        invalidate();
                     }
                 }
                 lastY = e.getY();
@@ -757,7 +781,6 @@ public final class DeskPageView extends View {
                     longFired = false;
                     pendingPriceIdx = -1;
                     axis = AXIS_NONE;
-                    dragRank = false;
                     return true;
                 }
                 pendingPriceIdx = -1;
@@ -799,7 +822,6 @@ public final class DeskPageView extends View {
                         }
                     }
                     axis = AXIS_NONE;
-                    dragRank = false;
                     return true;
                 }
 
@@ -821,14 +843,13 @@ public final class DeskPageView extends View {
                         invalidate();
                     }
                     axis = AXIS_NONE;
-                    dragRank = false;
                     return true;
                 }
                 if (axis == AXIS_HORIZ
                         && totDx <= -Math.max(SLOP_PX, getWidth() * BACK_RATIO)) {
                     if (listener != null) listener.onDeskClose();       // 左滑返回
                 } else if (up && axis == AXIS_NONE) {
-                    // 🆕 TASK-086：实付算法下拉（**最优先**：弹层开着时它还负责"点外面收起"）
+                    // 🆕 TASK-086：收入算法下拉（**最优先**：弹层开着时它还负责"点外面收起"）
                     final float bTop = billTop();
                     int algoHit = (bTop >= 0f)
                             ? billSection.hitAlgo(e.getX(), e.getY(), getWidth(), unit, bTop)
@@ -852,12 +873,15 @@ public final class DeskPageView extends View {
                         // 🆕 2026-10-10：墨单头部（生成壁纸 / 周月 / 周期箭头）
                     } else if (hitBillTab(e.getX(), e.getY())) {
                         // 🆕 TASK-077：点账单页签条 ⇒ 切菜单（优先于"返回"判定，两者区域不重叠）
+                    } else if (hitAssetHead(e.getX(), e.getY())) {
+                        // 🆕 TASK-086 第六批B：阅读资产头部（排序三键 / 展开·收起）
+                        //    🔴 与账单头、页签条互不重叠（分属不同分区），先后无碍；
+                        //       「‹ 返回」必须留在最后（它最靠边、面积最小）。
                     } else if (renderer.hitBack(e.getX(), e.getY(), getWidth(), unit)) {
                         if (listener != null) listener.onDeskClose();   // 点 `‹ 返回`
                     }
                 }
                 axis = AXIS_NONE;
-                dragRank = false;
                 return true;
             }
 

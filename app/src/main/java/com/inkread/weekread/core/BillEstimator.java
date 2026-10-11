@@ -10,10 +10,10 @@ import java.util.Map;
 
 /**
  * 🆕 `TASK-086` 第三批（2026-10-11 · 方案文档 `§20.4` + `§20.10` 定稿）：**估算点回填器**
- * —— 把"没有真快照的历史期"补成**估算值**（锚点法），让实付的两种算法在历史期也**算得出来**。
+ * —— 把"没有真快照的历史期"补成**估算值**（锚点法），让收入的两种算法在历史期也**算得出来**。
  *
  * <h3>它解决什么</h3>
- * 实付依赖"每本书**每期期末**的累计进度"这条线 `Cum(book, period)`（`§20.1` 统一模型）：
+ * 收入依赖"每本书**每期期末**的累计进度"这条线 `Cum(book, period)`（`§20.1` 统一模型）：
  * <pre>
  *   算法 A · 增额(k) = 价 × clamp(Cum(k) − Cum(k−1), 0, 100) ÷ 100
  *   算法 B · 累计(k) = 价 × Cum(k) ÷ 100
@@ -84,14 +84,16 @@ public final class BillEstimator {
             Bill.Item it = b.items.get(i);
             if (it == null || it.bookId == null || it.bookId.length() == 0) continue;
 
-            // ③ 锚点 m：k 之后**最早**的精确期（"精确" = 有值 **且** 不是估算）
+            // ③ 锚点 m：k 之后**最早**的**真期末**期 —— 🆕 第六批A（D5 配套）把判据从
+            //    "有值 + 没被标估算" 收紧为 {@link #isTrueEnd}（`progressEndKnown` 或该期有
+            //    `ProgressLog` 期界快照）：旧的宽松判据会把**进行中当期**的"至今累计"当真期末锚点。
             long anchorP = -1L;
             int anchorPct = -1;
             for (int w = 0; w < win.size(); w++) {
                 long p = win.get(w).longValue();
                 if (p < b.periodStart) continue;
                 Bill.Item x = itemOf(byPeriod, p, it.bookId);
-                if (x != null && x.progressEndPct >= 0 && !x.progressEndEst) {
+                if (isTrueEnd(c, x, p)) {                  // 🆕 第六批A：真期末判据
                     anchorP = p;
                     anchorPct = x.progressEndPct;
                     break;
@@ -219,7 +221,7 @@ public final class BillEstimator {
                 for (int v = win.size() - 1; v >= 0; v--) {
                     long p = win.get(v).longValue();
                     Bill.Item x = itemOf(byPeriod, p, bid);
-                    if (x != null && x.progressEndPct >= 0 && !x.progressEndEst) {
+                    if (isTrueEnd(c, x, p)) {              // 🆕 第六批A（D5 配套）：真期末判据
                         anchorP = p;
                         anchorPct = x.progressEndPct;
                         break;
@@ -306,6 +308,33 @@ public final class BillEstimator {
     }
 
     /**
+     * 🆕 第六批A（D5 配套，2026-10-11）：这一行的期末值是不是**真期末** —— 锚点 ① 与链式期初的**唯一**判据。
+     *
+     * <pre>
+     *   真期末 ⟺ progressEndPct >= 0 且（① progressEndKnown  或  ② ProgressLog 里**该期**有期界快照）
+     * </pre>
+     *
+     * <p>① {@link Bill.Item#progressEndKnown} = "生成这一期时抓到的进度**就是**该期期末"（provenance 为真）；
+     * ② {@link ProgressLog#at} 有该期快照 = 该期结束时确实被记过一次（历史期由常规趟补写）。
+     *
+     * <p>🔴 为什么必须收紧（卡面点名的那条）：旧判据 `progressEndPct >= 0 && !progressEndEst` 只问
+     * "有值 + 没被标估算"，而**进行中的当期账**（旧版本 v1.2.2-beta 的 2026-10 月账）里的
+     * `progressEndPct` 是"**至今**"累计 —— task-48 的**当期豁免**又特意没给它标 `progressEndEst`
+     * ⇒ 它会被当成"最新真快照"，把"至今"当真期末去锚定整条估算曲线（历史期金额集体偏高）。
+     * 收紧后当期行**不够格当锚点**：它既不是 `progressEndKnown`，也没有期界快照。
+     * 这与 {@link #markEndTrust} 是**同一套判据**（那边是"标估算"的正面表述）。
+     *
+     * <p>⚠️ 依赖顺序：{@link #markEndTrust} 必须先跑（它负责把不可信值标成估算）—— 两个调用点
+     * （{@link #rebuild} 在它之后、{@link #fill} 在生成尾部）都满足。
+     */
+    private static boolean isTrueEnd(Context c, Bill.Item x, long periodStart) {
+        if (x == null || x.progressEndPct < 0) return false;
+        if (x.progressEndKnown) return true;
+        return x.bookId != null && x.bookId.length() > 0
+                && ProgressLog.at(c, x.bookId, periodStart) >= 0;
+    }
+
+    /**
      * 🆕 task-41（2026-10-11）：**「期末值可信度」标注 pass** —— 把"不是真期末"的
      * {@link Bill.Item#progressEndPct} 标成估算值（{@code progressEndEst = true}）。
      *
@@ -331,8 +360,11 @@ public final class BillEstimator {
      * <ul>
      *   <li>当期**不标** `progressEndEst`；若旧构建已标上，本次**清掉**（`progressEndEst = false`）
      *       ⇒ 装新包后首启即去 `≈`，不必等一次网络刷新；</li>
-     *   <li>于是当期重新成为锚点 ①（"最新真快照"）⇒ 历史期估算按"当期至今真值"归一重算，
-     *       这正是 `验证记录/208` §20.4「锚点 = 最近一次真快照」的本意；</li>
+     *   <li>于是当期不再被标估算（金额不带 `≈`）。⚠️ 这条理由在 **第六批A（D5）** 之后已不再
+     *       "让当期当锚点"：当期月账**不再生成/不再存在**（`BillScheduler` 的 `maybeBackfillYear`
+     *       去掉了 `i == 0`、`refreshCurrent(MONTHLY)` 不再服务当期、残留的未完结月账被
+     *       `dropUnfinishedMonthly` 删除），且锚点判据已收紧为 {@link #isTrueEnd}（当期即使存在
+     *       也不够格当锚点）。本方法的当期豁免**保留**：它管的是"当期行不要出现 `≈`"这件事本身。</li>
      *   <li>🔴 **精确值仍一律不动**（本方法只碰 `progressEndEst` 这一个布尔，从不改任何进度数值）。</li>
      * </ul>
      * ⚠️ 这是本方法**唯一**的时间依赖（其余判据仍与"现在"无关）—— 因此当期账单的估算结果

@@ -34,12 +34,33 @@ public class BookStats {
     public long readUpdateTime;
     /** 拉取时间（毫秒），用于「更新于 HH:MM」 */
     public long fetchedAt;
+    /**
+     * 🆕 第六批A（D20–D22，2026-10-11）：**读完时间**（`/book/getprogress` 的 `book.finishTime`，秒）。
+     *
+     * <p>{@code 0} = 接口没给 / 该书未读完（未读完时该字段缺失）。只当"是否已读完"的判据用，
+     * 不参与展示。见 {@link #applyFinishTime(BookStats, JSONObject)}。
+     */
+    public int finishTime;
+    /**
+     * 🆕 第六批A（D20–D22）：**已读完** —— `finishTime > 0`（`/book/getprogress`）**或**
+     * 书架 `finishReading == 1`（`/shelf/sync`）：两处任一处成立即为 true。
+     *
+     * <p>🔴 它只影响**计费口径**：见 {@link BillMoney#progressForBilling(int, boolean)} ——
+     * 已读完的书一律按 100% 计，避免"界面 100%、账单里 99%"。
+     */
+    public boolean finished;
 
-    /** 百分比，钳到 0–100（服务端偶尔会给 101 这种值） */
+    /**
+     * 百分比，钳到 0–100（服务端偶尔会给 101 这种值）。
+     *
+     * <p>🔴 第六批A（D20–D22）：**渲染口径与账单口径必须同一处判定** —— 末尾一律过
+     * {@link BillMoney#progressForBilling(int, boolean)}（≥99 或已读完 ⇒ 100）。
+     * {@code progress < 0}（未知）原样保留旧行为：这里返回 0（「本书」卡显示 0%），
+     * 而账单侧走的是"未知 ⇒ `—`"，两者语义不同、各自成立。
+     */
     public int percent() {
         if (progress < 0) return 0;
-        if (progress > 100) return 100;
-        return progress;
+        return BillMoney.progressForBilling(progress, finished);   // ≥99 / 已读完 ⇒ 100
     }
 
     public JSONObject toJson() {
@@ -57,6 +78,8 @@ public class BookStats {
             o.put("chapterTitle", chapterTitle);
             o.put("readUpdateTime", readUpdateTime);
             o.put("fetchedAt", fetchedAt);
+            o.put("finishTime", finishTime);          // 🆕 第六批A（D20–D22）
+            o.put("finished", finished);              // 🆕 第六批A（D20–D22）
         } catch (Exception ignored) {
         }
         return o;
@@ -77,12 +100,42 @@ public class BookStats {
         b.chapterTitle = o.optString("chapterTitle", "");
         b.readUpdateTime = o.optLong("readUpdateTime", 0);
         b.fetchedAt = o.optLong("fetchedAt", 0);
+        b.finishTime = o.optInt("finishTime", 0);                    // 🆕 第六批A
+        b.finished = o.optBoolean("finished", false) || b.finishTime > 0;   // 🆕 第六批A（自洽兜底）
         return b;
+    }
+
+    /**
+     * 🆕 第六批A（D20–D22）：从 `/book/getprogress` 的 `book` 对象解析「读完时间」。
+     *
+     * <p>这就是"零新增接口"的取数面：该书**读完**时接口才带 {@code finishTime}（秒），
+     * 未读完则字段缺失 ⇒ {@code 0}。调用点在 {@link BillScheduler} 的进度解析里
+     * （墨单链路），第六批B 的实时链路可同样调它。
+     */
+    public static void applyFinishTime(BookStats s, JSONObject book) {
+        if (s == null || book == null) return;
+        long ft = book.optLong("finishTime", 0L);
+        if (ft > 0) {
+            s.finishTime = (int) Math.min(Integer.MAX_VALUE, ft);
+            s.finished = true;
+        }
+    }
+
+    /**
+     * 🆕 第六批A（D20–D22）：从 `/shelf/sync` 的书架项解析 {@code finishReading == 1}（= 已读完）。
+     *
+     * <p>与 {@link #applyFinishTime} 是"两条独立来源、任一处成立即 true"（卡面 D20 定的口径）——
+     * 书架条目多数不带 `finishTime`，只有这个标志。
+     */
+    public static void applyFinishReading(BookStats s, JSONObject shelfBook) {
+        if (s == null || shelfBook == null) return;
+        if (shelfBook.optInt("finishReading", 0) == 1) s.finished = true;
     }
 
     /** 一行摘要，写进 card_debug.log */
     public String dump() {
         return "book=" + bookId + " 「" + title + "」 ch=" + chapterTitle
-                + " progress=" + progress + "% read=" + readingSec + "s";
+                + " progress=" + progress + "% read=" + readingSec + "s"
+                + (finished ? " finished(finishTime=" + finishTime + ")" : "");
     }
 }

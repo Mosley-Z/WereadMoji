@@ -233,6 +233,14 @@ public final class BillWallpaper {
         final float sBody   = 22f * s;
         final float sMeta   = 16f * s;
         final float sSmall  = 15f * s;
+        /**
+         * 🆕 2026-10-11（TASK-086 第六批B ⑦）：**合计块专用字号** —— 用户要求「合计三行字号调小」。
+         *
+         * <p>🔴 「用海报自己的尺」= 仍按本方法的基础字号 `s`（屏高/800）缩放，只是取一个更小的系数
+         * （18 &lt; `sBody` 的 22），**不动**墨单侧的任何字号 ⇒ A11「与墨单逐字一致」不受影响：
+         * 变的是**版面**（海报合计块的字号），文字 / 金额 / 口径仍全部来自同一批 `BillMoney`。
+         */
+        final float sTotal  = 18f * s;
         final float pad     = 34f * s;
         final float lineH   = 1.55f;
 
@@ -263,12 +271,12 @@ public final class BillWallpaper {
         //    读书菜单不显示价格，书名带《》、meta 追加进度%。
         final boolean excerpt = (view != MenuPrefs.VIEW_READING);
 
-        // 🆕 2026-10-10 第五轮（TASK-086）：摘录菜单的**价格两列**（原价 │ 实付）与实付算法。
+        // 🆕 2026-10-10 第五轮（TASK-086）：摘录菜单的**价格两列**（原价 │ 收入）与收入算法。
         //    🔴 海报与墨台屏幕**同一口径**（同一个 `MenuPrefs.paidAlgo` + 同一个 `BillMoney`）
         //    ⇒ 同一期墨单在屏幕上和壁纸上逐字一致（A11）。
         final String algo = MenuPrefs.paidAlgo(c);
         final boolean paidCol = excerpt && !MenuPrefs.PAID_OFF.equals(algo);
-        /** 单列宽（原价 / 实付各占一格；右对齐）。 */
+        /** 单列宽（原价 / 收入各占一格；右对齐）。 */
         final float pCol = s * 88f;
 
         float y = 22f * s + pad;
@@ -314,17 +322,18 @@ public final class BillWallpaper {
             return;
         }
 
-        // ⑤ 表头（沿用菜单隐喻：🆕 TASK-086 ⇒ 4 列 `品类 │ 主厨 │ 原价 │ 实付`）+ 分隔线
+        // ⑤ 表头（沿用菜单隐喻：🆕 TASK-086 ⇒ 4 列 `品类 │ 主厨 │ 原价 │ 收入`）+ 分隔线
         //    —— 🔴 **只在摘录菜单画**（读书菜单不显示价格列）
-        //    🆕 TASK-12：实付关（`paidCol == false`）时「原价」移到**最右列**（与实付同 x），
+        //    🆕 TASK-12：收入列关（`paidCol == false`）时「原价」移到**最右列**（与收入列同 x），
         //    与 `BillSection.Row#draw` 改后的锚点**同一规则**（A11：海报必须与墨台屏幕逐字一致）。
+        //    🔴 2026-10-11（TASK-086 第六批B ⑥）：用户可见「收入」统一改叫**收入**（Java 标识符不动）。
         if (excerpt) {
             p.setTypeface(Typeface.MONOSPACE);
             p.setColor(GRAY);
             p.setTextSize(sMeta);
             cv.drawText("品类", left, y + sMeta, p);
             p.setTextAlign(Paint.Align.RIGHT);
-            if (paidCol) cv.drawText("实付", right, y + sMeta, p);
+            if (paidCol) cv.drawText("收入", right, y + sMeta, p);
             cv.drawText("原价", paidCol ? (right - pCol) : right, y + sMeta, p);
             p.setTextAlign(Paint.Align.LEFT);
             cv.drawText("主厨", left + avail * 0.34f, y + sMeta, p);
@@ -341,7 +350,8 @@ public final class BillWallpaper {
         final int tLines = excerpt ? (1 + (tparts[0] != null ? 1 : 0) + (tparts[1] != null ? 1 : 0)) : 1;
         float tailH = 0f;
         if (wholeNote.length() > 0) tailH += sSmall * lineH;
-        tailH += sBody * lineH * tLines;            // 账单合计（摘录 1–3 行 / 读书菜单 1 行）
+        tailH += sTotal * lineH * tLines;           // 账单合计（摘录 1–3 行 / 读书菜单 1 行）
+        // 🔴 2026-10-11（第六批B ⑦）：条形码高度 ×2 ⇒ `barsH(s)` 已翻倍，这里**无需再乘**（它自己重算）。
         if (excerpt) tailH += barsH(s);             // 🆕 #4：合计下方铺满内容宽的装饰条形码一行
         tailH += sSmall * lineH * 2f;               // 落款 + 水印
         tailH += s * 30f;
@@ -394,9 +404,9 @@ public final class BillWallpaper {
             p.setTextSize(sBody);
             String no = String.format(java.util.Locale.US, "NO.%02d", i + 1);
             if (excerpt) {
-                // 🆕 TASK-086：右端两列（实付贴右、原价在其左），列宽固定 ⇒ 与表头严格成列
-                // 🆕 TASK-12：实付关（`dtxt == null`）时原价锚点 = `right`（占最右列），
-                //    与 `BillSection.Row#draw` 同规则；实付开着时锚点仍是 `right − pCol` ⇒ 版面不变。
+                // 🆕 TASK-086：右端两列（收入贴右、原价在其左），列宽固定 ⇒ 与表头严格成列
+                // 🆕 TASK-12：收入关（`dtxt == null`）时原价锚点 = `right`（占最右列），
+                //    与 `BillSection.Row#draw` 同规则；收入开着时锚点仍是 `right − pCol` ⇒ 版面不变。
                 final String ptxt = BillMoney.priceText(c, it);
                 final String dtxt = paidCol ? BillMoney.paidText(c, it, algo) : null;
                 p.setTextAlign(Paint.Align.RIGHT);
@@ -413,13 +423,13 @@ public final class BillWallpaper {
                 }
                 final float scPrice = InkTheme.moneyScaleX(p, ptxt, moneyMax);
                 final String pfit = (scPrice < 1f) ? ptxt : fit(p, ptxt, moneyMax);
-                final float priceX = (dtxt != null) ? (right - pCol) : right;   // 🔴 TASK-12：实付关 ⇒ 原价贴右
+                final float priceX = (dtxt != null) ? (right - pCol) : right;   // 🔴 TASK-12：收入关 ⇒ 原价贴右
                 p.setTextScaleX(scPrice);
                 cv.drawText(pfit, priceX, y + sBody, p);
                 p.setTextScaleX(1f);
                 p.setTextAlign(Paint.Align.LEFT);
                 // 🔴 同 `BillSection.Row#draw` 的上机教训：标题可用宽 = min(列式界, 原价**实际墨迹**左沿 − 间隔)。
-                //    只按列宽推会在「实付关」时把标题放进价格列里 ⇒ 画出来糊成乱码（A11 要求两边一致）。
+                //    只按列宽推会在「收入关」时把标题放进价格列里 ⇒ 画出来糊成乱码（A11 要求两边一致）。
                 final float used = pCol * ((dtxt != null) ? 2f : 1f);
                 float titleMax = avail - used - s * 10f;
                 final float titleMaxInk = priceX - p.measureText(pfit) - left - s * 10f;
@@ -484,24 +494,25 @@ public final class BillWallpaper {
             p.setTypeface(Typeface.MONOSPACE);
             p.setFakeBoldText(true);
             p.setColor(INK);
-            p.setTextSize(sBody);
+            p.setTextSize(sTotal);
             // 🆕 task-48（用户第五批 #3/#4）：合计由「单行 + 压缩字距」改为
             //   **左标签 + 右对齐 1–3 行**，再在下方压一条**铺满内容宽**的装饰条形码（票据观感）。
             //   🔴 金额仍**只来自 `BillMoney`**（同一套 `paidCount/totalPaidFen/totalEstimated`）
             //   ⇒ A11「与墨单同源同词」不变：差的只是**版面**（墨单 1 行 / 海报 2–3 行）。
             //   第 1 行：左「合计」+ 右「(本期)阅读 H 小时」；第 2/3 行：右对齐金额段（可缺）。
+            //   🔴 2026-10-11（第六批B ⑦）：三行字号由 `sBody`(22) 收到 `sTotal`(18)，行距同步收紧。
             p.setTextAlign(Paint.Align.LEFT);          // 显式声明（不依赖上一段的状态）
             cv.drawText("合计", left, ty + sBody, p);
             p.setTextAlign(Paint.Align.RIGHT);
             String hoursTxt = totalHours(b, algo);
-            cv.drawText(fit(p, hoursTxt, avail * 0.72f), right, ty + sBody, p);
-            ty += sBody * lineH;
+            cv.drawText(fit(p, hoursTxt, avail * 0.72f), right, ty + sTotal, p);
+            ty += sTotal * lineH;
             if (tparts[0] != null) {
-                cv.drawText(fit(p, tparts[0], avail), right, ty + sBody, p);
-                ty += sBody * lineH;
+                cv.drawText(fit(p, tparts[0], avail), right, ty + sTotal, p);
+                ty += sTotal * lineH;
                 if (tparts[1] != null) {
-                    cv.drawText(fit(p, tparts[1], avail), right, ty + sBody, p);
-                    ty += sBody * lineH;
+                    cv.drawText(fit(p, tparts[1], avail), right, ty + sTotal, p);
+                    ty += sTotal * lineH;
                 }
             }
             p.setTextAlign(Paint.Align.LEFT);
@@ -592,7 +603,7 @@ public final class BillWallpaper {
      *   <li>增额档：`(≈)读回 ¥X` + `折合 ¥Y/小时`（`H = 0` 时折合为 null）；</li>
      *   <li>累计档：`(≈)累计读回 ¥X` + **null**（累计额 ÷ 本期时长 = 跨口径混算 ⇒ 不写折合）。</li>
      * </ul>
-     * 返回 `{null, null}` = 这一段不写（实付关 / 一行都算不出来）。
+     * 返回 `{null, null}` = 这一段不写（收入关 / 一行都算不出来）。
      */
     private static String[] totalMoneyParts(Context c, Bill b, String algo) {
         if (MenuPrefs.PAID_OFF.equals(algo)) return new String[] { null, null };
@@ -609,9 +620,14 @@ public final class BillWallpaper {
         return new String[] { first, second };
     }
 
-    /** 🆕 task-48（#4）：装饰条形码一行的推进量（见 {@link #bars}）。 */
+    /**
+     * 🆕 task-48（#4）：装饰条形码一行的推进量（见 {@link #bars}）。
+     *
+     * <p>🔴 2026-10-11（第六批B ⑦）：用户要求「条形码高度 ×2」⇒ 推进量一并 **22s → 44s**
+     * （高度翻倍而不加推进量就会与下一行叠字）。`tailH` 用的就是本方法 ⇒ **自动重算**，不留两处数。
+     */
     private static float barsH(float s) {
-        return s * 22f;
+        return s * 44f;
     }
 
     /**
@@ -624,8 +640,9 @@ public final class BillWallpaper {
      * @return 推进后的 y
      */
     private static float bars(Canvas cv, Paint p, float left, float right, float y, float s) {
-        final float cy = y + s * 11f;
-        final float top = cy - s * 5.5f, bot = cy + s * 5.5f;
+        // 🔴 2026-10-11（第六批B ⑦）：条高 11s → **22s**（×2）；`cy` 取半高 ⇒ 与 `barsH` 的 44s 对齐。
+        final float cy = y + s * 22f;
+        final float top = cy - s * 11f, bot = cy + s * 11f;
         final int[] pat = { 3, 1, 1, 2, 1, 3, 1, 2, 2, 1, 3, 1, 1, 2, 3, 1, 2, 1, 1, 3, 2, 1, 1, 2, 1 };
         p.setStyle(Paint.Style.FILL);
         p.setColor(INK);

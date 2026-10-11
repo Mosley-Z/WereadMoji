@@ -134,10 +134,10 @@ final class BillSection implements InsightRenderer.Section {
     private static final float WP_W_UNITS       = 62f;
     private static final float WP_H_UNITS       = 1.85f;
 
-    // ── 🆕 TASK-086：价格两列 / 实付算法控件 / 数字键盘的尺（画与命中共用同一批） ──
-    /** 「实付」列宽（×unit）—— 右对齐在分区右内边距；「原价」列落在它**左侧**同等宽度处。 */
+    // ── 🆕 TASK-086：价格两列 / 收入算法控件 / 数字键盘的尺（画与命中共用同一批） ──
+    /** 「收入」列宽（×unit）—— 右对齐在分区右内边距；「原价」列落在它**左侧**同等宽度处。 */
     private static final float PRICE_COL_W      = 62f;
-    /** 「实付算法：增额 ▾」整块宽（×unit）。 */
+    /** 「收入算法：增额 ▾」整块宽（×unit）。 */
     private static final float ALGO_W_UNITS     = 118f;
     /** 周期条里 `‹ 单号 ›` 与 `[周|月]` 之间的间隔（×unit）。 */
     private static final float NAV_GAP_UNITS    = 10f;
@@ -165,7 +165,7 @@ final class BillSection implements InsightRenderer.Section {
     private int view = MenuPrefs.VIEW_EXCERPT;
 
     // ── 🆕 TASK-086：两个**瞬时态**（都不落盘 —— 弹层不是配置） ──
-    /** 实付算法下拉框是否展开。 */
+    /** 收入算法下拉框是否展开。 */
     private boolean algoOpen;
     /** 数字键盘正在编辑的书目下标（-1 = 键盘关着）；{@link #padText} 是正在输入的"元"字符串。 */
     private int padItem = -1;
@@ -399,7 +399,7 @@ final class BillSection implements InsightRenderer.Section {
      * `‹ 单号 ›` 的外框。
      *
      * <p>🆕 <b>TASK-086（用户 Q4）</b>：**周期选择向左靠齐** —— 紧邻 `[周|月]` 右缘，
-     * 把右端整块让给「实付算法：增额 ▾」（那一簇才是"向右靠齐"的）。
+     * 把右端整块让给「收入算法：增额 ▾」（那一簇才是"向右靠齐"的）。
      * 改前它右端对齐分区右内边距，两簇会在 480px 上撞在一起。
      */
     private RectF navStrip(float w, float unit, float top) {
@@ -409,7 +409,7 @@ final class BillSection implements InsightRenderer.Section {
         return new RectF(left, y0, left + NAV_W_UNITS * unit, y0 + h);
     }
 
-    /** 🆕 TASK-086：`实付算法：增额 ▾` 的外框（**右端对齐**分区右内边距，与周期选择分列两端）。 */
+    /** 🆕 TASK-086：`收入算法：增额 ▾` 的外框（**右端对齐**分区右内边距，与周期选择分列两端）。 */
     private RectF algoStrip(float w, float unit, float top) {
         float right = w - w * InsightRenderer.PAD_X_RATIO;
         float h = SZ_SMALL * unit * CHIP_H_UNITS;
@@ -446,7 +446,7 @@ final class BillSection implements InsightRenderer.Section {
         return x >= r.left - unit * 4f && x <= r.right && y >= r.top - pad && y <= r.bottom + pad;
     }
 
-    // ══════════════════════ 🆕 TASK-086：实付算法下拉（自绘） ══════════════════════
+    // ══════════════════════ 🆕 TASK-086：收入算法下拉（自绘） ══════════════════════
 
     /** 命中码：没中（不消费）。 */
     static final int ALGO_MISS = -1;
@@ -456,7 +456,7 @@ final class BillSection implements InsightRenderer.Section {
     static final int ALGO_DISMISS = 4;
 
     /**
-     * 实付算法控件 / 下拉框的命中。
+     * 收入算法控件 / 下拉框的命中。
      *
      * <p>🔴 **必须自绘**：墨台是单 Canvas 逐帧自绘的覆盖层（宿主是 Service 的
      * `TYPE_ACCESSIBILITY_OVERLAY` 窗），塞 `Spinner` 之类会破坏"整页一次重绘、无动画"的前提
@@ -675,7 +675,7 @@ final class BillSection implements InsightRenderer.Section {
      * （`MenuPrice.set(..., -1)` ⇒ `ed.remove(bookId)`），该行自然回落到「免费 / `—`」。
      * 🔴 零 UI 改动（不动 12 键几何，避免墨屏布局风险）。
      * <p>🆕 **收口 F1（2026-10-10）**：落盘/清除后必须 {@link #invalidateRows()} ——
-     * 行文本（`Row.c3` 原价、实付列、合计、以及表头下的提示小字）都是 `laid()` 期
+     * 行文本（`Row.c3` 原价、收入列、合计、以及表头下的提示小字）都是 `laid()` 期
      * **算好并缓存**的（缓存键 `cw/cu`），只 `invalidate()` 重画的是**旧**行数据。
      */
     void padPress(int key) {
@@ -906,15 +906,15 @@ final class BillSection implements InsightRenderer.Section {
         drawArrow(c, ns.right - aw / 2f, ns.centerY(), unit, false, idx > 0, p);
         p.setTextAlign(Paint.Align.LEFT);
 
-        // ③ 🆕 TASK-086（用户 Q4）：右端「实付算法：增额 ▾」——**右靠**，与左簇（周月 + 周期导航）分列两端
+        // ③ 🆕 TASK-086（用户 Q4）：右端「收入算法：增额 ▾」——**右靠**，与左簇（周月 + 周期导航）分列两端
         drawAlgoChip(c, w, unit, top, p);
     }
 
     /**
-     * 🆕 TASK-086：`实付算法：增额 ▾` 控件本体（下拉框由 {@link #drawAlgoDrop} 另画）。
+     * 🆕 TASK-086：`收入算法：增额 ▾` 控件本体（下拉框由 {@link #drawAlgoDrop} 另画）。
      *
      * <p>🔴 只在**摘录菜单**出现 —— 读书菜单根本没有价格列（`TASK-077` §非目标），
-     * 在那儿摆一个"实付算法"是无意义的控件。
+     * 在那儿摆一个"收入算法"是无意义的控件。
      */
     private void drawAlgoChip(Canvas c, float w, float unit, float top, Paint p) {
         if (ctx == null || bill == null) return;
@@ -1064,7 +1064,7 @@ final class BillSection implements InsightRenderer.Section {
 
         final String billTitle = MenuPrefs.title(ctx);
         final String serial = Bill.serialOf(bill.mode, bill.periodStart);
-        // 🆕 TASK-086：实付算法（渲染期只读一条 prefs）——`off` ⇒ 实付列整列不出、表头回落 3 列
+        // 🆕 TASK-086：收入算法（渲染期只读一条 prefs）——`off` ⇒ 收入列整列不出、表头回落 3 列
         final String algo = MenuPrefs.paidAlgo(ctx);
         final boolean paidCol = !MenuPrefs.PAID_OFF.equals(algo);
 
@@ -1086,9 +1086,10 @@ final class BillSection implements InsightRenderer.Section {
 
             out.add(Row.sep());
             if (excerptMenu && !bill.placeholder) {
-                // 表头沿用菜单隐喻（Q11）：🆕 TASK-086 ⇒ **4 列** `品类 │ 主厨 │ 原价 │ 实付`
-                //（实付关着 ⇒ 回落 3 列 `品类 │ 主厨 │ 原价`，列位与条目行严格对齐）
-                Row h = Row.line("品类", paidCol ? "实付" : null, SZ_BODY * scB);
+                // 表头沿用菜单隐喻（Q11）：🆕 TASK-086 ⇒ **4 列** `品类 │ 主厨 │ 原价 │ 收入`
+                //（收入列关着 ⇒ 回落 3 列 `品类 │ 主厨 │ 原价`，列位与条目行严格对齐）
+                // 🔴 2026-10-11（TASK-086 第六批B ⑥）：用户可见「收入」统一改叫**收入**（Java 标识符不动）。
+                Row h = Row.line("品类", paidCol ? "收入" : null, SZ_BODY * scB);
                 h.color = GRAY;
                 h.mono = bMono;
                 h.c2 = "主厨";
@@ -1133,7 +1134,7 @@ final class BillSection implements InsightRenderer.Section {
             String no = String.format(java.util.Locale.US, "NO.%02d", i + 1);
             if (excerptMenu) {
                 // 🔴 价**总是跟着条目走**（菜单的"价格"列）；配置 ⑩ 的「合计」子块只管**底部那行合计**。
-                //    🆕 TASK-086：右端拆成「原价 │ 实付」两列（实付关着 ⇒ 只剩原价，列位不变）。
+                //    🆕 TASK-086：右端拆成「原价 │ 收入」两列（收入关着 ⇒ 只剩原价，列位不变）。
                 Row l1 = Row.line(no + "  " + nz(it.title),
                         paidCol ? BillMoney.paidText(ctx, it, algo) : null, SZ_BODY * scB);
                 l1.bold = true;
@@ -1342,7 +1343,7 @@ final class BillSection implements InsightRenderer.Section {
      * {@link #billTotalNote(String)}**（单一出口，本方法不重写任何金额口径）。
      * 单行放不下时由调用方那一行（`Row.compress`）压字距画完整串，不截断。
      *
-     * <p>🆕 task-48（用户第五批 #3）：第一段**按实付算法分档**——
+     * <p>🆕 task-48（用户第五批 #3）：第一段**按收入算法分档**——
      * <ul>
      *   <li>**增额档**（`PAID_PERIOD`）：`合计   阅读 16.9 小时` —— 时段阅读时长，逐字不动；</li>
      *   <li>**累计档**（`PAID_CUMULATIVE`）：`合计   本期阅读 16.9 小时` —— 加「本期」二字，
@@ -1482,11 +1483,17 @@ final class BillSection implements InsightRenderer.Section {
 
     // ══════════════════════ 行 ══════════════════════
 
-    private static final class Row {
+    /**
+     * 🆕 TASK-086 第六批B：本类由 {@code private} **放宽为包内可见**（Lead 批准，见 `tasks/TASK-086`）。
+     * 🔴 **零行为、零版式变化** —— 只去掉了类上那一个 `private`，字段 / 工厂 / {@code h()} / {@code draw()}
+     * 本来就是包内可见；放宽的唯一目的是让同包的 {@code AssetSection}（阅读资产）**复用同一套行渲染**，
+     * 不再另写第二套（用户 ③ 的「版式统一」要求）。
+     */
+    static final class Row {
         int kind;
         String a, b;            // a = 主；b = 右端（两端对齐时用）
         String c2;              // 中间列（表头三段用）
-        /** 🆕 TASK-086：右起第二列（`原价`）—— 与 `b`（`实付`）组成价格两列，严格右对齐。 */
+        /** 🆕 TASK-086：右起第二列（`原价`）—— 与 `b`（`收入`）组成价格两列，严格右对齐。 */
         String c3;
         /** 🆕 TASK-086：这一行属于哪个书目（`items` 下标；-1 = 不是书目行）—— 长按录价的命中锚点。 */
         int itemIdx = -1;
@@ -1596,13 +1603,13 @@ final class BillSection implements InsightRenderer.Section {
             float x = left + indent * unit;
 
             if (c3 != null) {
-                // 🆕 TASK-086：右端**两列** —— 「实付」贴分区右边距、「原价」落在它左侧同等宽度处。
+                // 🆕 TASK-086：右端**两列** —— 「收入」贴分区右边距、「原价」落在它左侧同等宽度处。
                 //    🔴 两列都右对齐，表头与每一条书目共用同一份列宽 ⇒ 数字严格成列（不会参差）。
-                // 🆕 TASK-12（用户 2026-10-10 指令① 第 3 条）：**实付关**
+                // 🆕 TASK-12（用户 2026-10-10 指令① 第 3 条）：**收入关**
                 //    （`MenuPrefs.PAID_OFF` ⇒ 调用方把 `b` 传 null、只给 `c3`）时，
-                //    原价**占用最右列**（锚点 = `right`，与实付开着时**实付所在的同一 x**），
+                //    原价**占用最右列**（锚点 = `right`，与收入开着时**收入所在的同一 x**），
                 //    而不是仍停在 `right − pcw` 把右端空出一格。表头 / 条目行共用本分支 ⇒ 两处一致。
-                //    ⚠️ 只用"锚点"这一处变量搬家，**不动列宽、不动列序、不动行高** ⇒ 实付开着时
+                //    ⚠️ 只用"锚点"这一处变量搬家，**不动列宽、不动列序、不动行高** ⇒ 收入开着时
                 //    版面逐像素不变（同一份 `pcw`、同一份 `lim` 公式）。
                 final float pcw = PRICE_COL_W * unit;
                 p.setTextAlign(Paint.Align.RIGHT);
@@ -1621,17 +1628,17 @@ final class BillSection implements InsightRenderer.Section {
                 }
                 final float scPrice = InkTheme.moneyScaleX(p, c3, moneyMax);
                 final String cs = (scPrice < 1f) ? c3 : fit(p, c3, moneyMax);
-                final float priceX = (bs != null) ? (right - pcw) : right;   // 🔴 TASK-12：实付关 ⇒ 原价贴右
+                final float priceX = (bs != null) ? (right - pcw) : right;   // 🔴 TASK-12：收入关 ⇒ 原价贴右
                 p.setTextScaleX(scPrice);
                 c.drawText(cs, priceX, base, p);
                 p.setTextScaleX(1f);
                 p.setTextAlign(Paint.Align.LEFT);
                 // 🔴 上机实测（2026-10-10，480×800）：`lim` **不能只按列宽推**。
-                //    实付**关**时 `lim = right − pcw − 8u ≈ 372`，而「原价」右对齐在 `right − pcw`、
+                //    收入**关**时 `lim = right − pcw − 8u ≈ 372`，而「原价」右对齐在 `right − pcw`、
                 //    其墨迹左沿可能落在 ~326 ⇒ 标题被放进价格列里，**画出来是糊在一起的乱码**
                 //    （实测：「卡拉马佐夫兄弟（套装上下册）」压住「¥97.99」）。
                 //    故再与「原价**实际墨迹**左沿 − 间隔」取小；顺带让窄价（如 ¥15）多让出空间。
-                //    ✅ TASK-12 后这条教训继续成立（实付关时原价移到 `right`，墨迹左沿随之内缩）。
+                //    ✅ TASK-12 后这条教训继续成立（收入关时原价移到 `right`，墨迹左沿随之内缩）。
                 float lim = right - pcw * ((bs != null) ? 2f : 1f) - unit * 8f;
                 final float inkLim = priceX - p.measureText(cs) - unit * 6f;
                 if (inkLim < lim) lim = inkLim;

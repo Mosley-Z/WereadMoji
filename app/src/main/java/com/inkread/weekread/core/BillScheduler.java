@@ -52,16 +52,16 @@ public final class BillScheduler {
     /**
      * 🆕 `TASK-086` 第三批（A19）：**年回填**往回补几个月（= 用户拍板的"近 12 个月"，`§20.10`）。
      *
-     * <p>🔴 实际回填 **13 期 = 当月 + 前 12 个月**（循环 `i = 0 .. 该值`）—— 与
-     * {@link BillStore#KEEP_MONTHLY}（13）成对：承诺的窗口是"当月 + 前 12 个月"，少一个月会被
-     * `prune` 当场吃掉（见 `验证记录/212` 的"修复前/修复后"对照）。
+     * <p>🔴 实际回填 **12 期 = 前 12 个已完结月**（循环 `i = 1 .. 该值`）—— 与
+     * {@link BillStore#KEEP_MONTHLY}（13）相比少一期：**当期月账不再生成**（第六批A D5），
+     * 所以留档窗口 13 在本口径下**永远装不满**（`prune` 不会触发，属刻意留的余量）。
      *
      * <p>为什么用"月"而不是"周"：月粒度正好覆盖"回查一年"，且一周一次的回填在**估算**上更细但
      * 请求量 ×4（§20.8 落法写的是"月 ×12 ≈ 12 次"）⇒ 按定稿口径只回填月账。
      */
     private static final int YEAR_BACKFILL_MONTHS = 12;
 
-    /** 年回填每期之间的**限流**间隔（毫秒）—— 一次性补 13 期，别把接口打成连发（`§20.10` 分批限流）。 */
+    /** 年回填每期之间的**限流**间隔（毫秒）—— 一次性补 12 期，别把接口打成连发（`§20.10` 分批限流）。 */
     private static final long YEAR_BACKFILL_GAP_MS = 400L;
 
     /**
@@ -72,6 +72,20 @@ public final class BillScheduler {
      * 稳态请求量压到"每分钟至多一趟 `getprogress`"。
      */
     private static final long CUR_REFRESH_GAP_MS = 60_000L;
+
+    /**
+     * 🆕 第六批A（D2/D4，2026-10-11）：**跨期落定**的重试间隔（毫秒）—— 见 {@link #landRecent}。
+     *
+     * <p>与 {@link #YEAR_BACKFILL_GAP_MS} 是"同族"的限流常量（都用来把"可能反复发生的后台趟"
+     * 压成有界次数）：刚结束那一期的账**已存在但还没有真期末**（`progressEndKnown` / 期界快照都没有）
+     * 时，最多每 {@code LAND_GAP_MS} 重生成一次。
+     *
+     * <p>取 10 分钟：正常路径下**一次常规趟就落定**（重生成会写入真期末 ⇒ 下次不再触发），
+     * 这个间隔只兜"生成失败/断网"那类反复重试；同时避免卡片刷新（最快 5 s 一次）把接口打成连发。
+     * 缺账（`BillStore` 里根本没有这一期）**不走这个闸**：那是"该有账而没有"，每次可达时机都该补
+     * （断网期间补不上，联网后第一个可达时机补上 —— 即 D3 的退化口径）。
+     */
+    private static final long LAND_GAP_MS = 10 * 60_000L;
 
     /**
      * 🔴 并发闸：服务创建与 {@code MainActivity.onStart} 是两个独立的调用点，
@@ -121,25 +135,38 @@ public final class BillScheduler {
         // 两个 mode 各自独立补，互不影响。
         fill(c, apiKey, PeriodRange.WEEKLY, now);
         fill(c, apiKey, PeriodRange.MONTHLY, now);
+        // 🆕 第六批A（D2/D4）：**到点落定** —— 每个 mode 的"最近一个已完结期"（周 = 上周、月 = 上月）
+        //    若缺账或还没落上**真期末**，就用常规趟生成/重生成一次。放在两个 fill **之后**：
+        //    fill 已经把"缺账"补掉了 ⇒ 这里常态下只做一次 load 检查（零请求）。
+        landRecent(c, apiKey, PeriodRange.WEEKLY, now);
+        landRecent(c, apiKey, PeriodRange.MONTHLY, now);
         // 🆕 TASK-086 第三批（A19）：一次性把最近 12 个月补齐（**自动、无提示、不阻塞渲染**）
+        //    🔴 第六批A（D5）：只回填**已完结月**（去掉了 i == 0 的当月趟），见方法内说明。
         maybeBackfillYear(c, apiKey, now);
+        // 🆕 第六批A（D7）：清掉"未完结的当期月账"这类旧版本残留（只删未完结期、幂等、有日志）
+        dropUnfinishedMonthly(c, now);
         // 🆕 task-48（用户第五批 #2④）：**当期有界刷新** —— `fill` 只补已完结期、年回填有一次性水位线
-        //    ⇒ 当期账一旦落盘就再也不更新（本机 2026-10 月账停在装包时刻）。这里对两个 mode 的当期
-        //    各做一次**节流常规趟**（只刷已存在的当期；60 s 内不重复）。放在 `rebuild` **之前** ⇒
-        //    估算曲线拿到的当期进度是刚刷过的。
+        //    ⇒ 当期账一旦落盘就再也不更新（本机 2026-10 月账停在装包时刻）。这里对当期做一次
+        //    **节流常规趟**（只刷已存在的当期；60 s 内不重复）。
+        //    🔴 第六批A（D5，2026-10-11）：**月不再服务当期** —— 当期月账既不生成也不刷新
+        //    （"月永不显示进行中账"）⇒ 这里只留周；`refreshCurrent` 内另有 MONTHLY 早退兜底。
         refreshCurrent(c, apiKey, PeriodRange.WEEKLY, now);
-        refreshCurrent(c, apiKey, PeriodRange.MONTHLY, now);
+        // 🆕 第六批B（D19，跨卡唯一接触点 · Lead 指派的薄接线）：**阅读资产随本月卡片刷新时机一起刷**。
+        //    幂等 / TTL 闸门 / 后台线程 / 零 UI 全在 `AssetRefresher.ensure` 内部（第六批B 的类）。
+        AssetRefresher.ensure(c);
         // 🆕 TASK-086 第三批（A15 自洽）：把两个 mode 的估算点**整条曲线**重算一遍 ——
         //    `fill` 是"一期一期就地估算"，各期锚点/分母随数据增长而变 ⇒ 数列不 telescope
         //    （2026-10-11 S4 实测 Σ增额 ¥98 ≠ 末期累计 ¥33.32）。这里用同一锚点基准写定全窗口，
         //    并把**期初链到上一期期末** ⇒ 逐期增额首尾相消。纯本地、零请求。
+        //    🔴 第六批A：锚点判据已收紧为**真期末**（`BillEstimator.isTrueEnd`）—— 当期"至今值"
+        //    不再冒充期末锚点。
         BillEstimator.rebuild(c, PeriodRange.WEEKLY);
         BillEstimator.rebuild(c, PeriodRange.MONTHLY);
     }
 
     /**
-     * 🆕 `TASK-086` 第三批（A19，`§20.8` / `§20.10` 定稿）：**一次性**年回填 —— 把**当月 + 前
-     * {@link #YEAR_BACKFILL_MONTHS} 个月**（共 13 期，循环 `i = 0 .. 12`）的**月账**补齐，好让估算点（`§20.4` 锚点法）拿得到
+     * 🆕 `TASK-086` 第三批（A19，`§20.8` / `§20.10` 定稿）：**一次性**年回填 —— 把**前
+     * {@link #YEAR_BACKFILL_MONTHS} 个已完结月**（共 12 期，循环 `i = 1 .. 12`）的**月账**补齐，好让估算点（`§20.4` 锚点法）拿得到
      * 逐期的 `R_j`（= 各期账单里每本书的 `readTimeSec`）。
      *
      * <h3>为什么不复用 {@link #fill}</h3>
@@ -147,37 +174,37 @@ public final class BillScheduler {
      * 继续往更早补**（用户可能已有 3 期账）⇒ 必须 `continue`，且要跨过 {@link #BACKFILL_MAX} 的 4 期上限。
      *
      * <h3>一次性水位线</h3>
-     * 跑完 13 期才 {@link BillStore#markYearBackfilled}（中途某期数据拿不到 ⇒ **不置位**，
+     * 跑完 12 期才 {@link BillStore#markYearBackfilled}（中途某期数据拿不到 ⇒ **不置位**，
      * 下次启动继续补）⇒ 稳态下每次开 App 只做一次 `getBoolean`（**零请求**）。
      *
      * <h3>请求预算与红线</h3>
      * 每期 1 次 `/readdata/detail`（本地缓存已有则跳过）＋ 每期之间限流 {@link #YEAR_BACKFILL_GAP_MS}；
      * 估算趟**不抓进度、不抓热门**（见 {@link #generateOne(Context, String, String, long, boolean)}）⇒
-     * 一次性成本 ≈ 13 次请求。🔴 全部发生在 `bill-ensure` 后台线程，**渲染侧依旧只读 `BillStore`**。
+     * 一次性成本 ≈ 12 次请求。🔴 全部发生在 `bill-ensure` 后台线程，**渲染侧依旧只读 `BillStore`**。
      */
     private static void maybeBackfillYear(Context c, String apiKey, long nowSec) {
-        // 实付关了 ⇒ 估算没人看，别占带宽（用户随时可以重新打开，那时再补）
+        // 收入关了 ⇒ 估算没人看，别占带宽（用户随时可以重新打开，那时再补）
         if (MenuPrefs.PAID_OFF.equals(MenuPrefs.paidAlgo(c))) return;
         if (BillStore.yearBackfilled(c)) return;                       // 已完整回填过 ⇒ 一次性
         if (apiKey == null || apiKey.length() == 0) return;            // 没登录 ⇒ 拉不到，等下次
 
         final long curStart = PeriodRange.startOf(PeriodRange.MONTHLY, nowSec);
         int done = 0;
-        // 🔴 i 从 **0** 起（2026-10-11 修正）：口径是「**当月 + 前 12 个月**」⇒ 共
-        //    {@link #YEAR_BACKFILL_MONTHS} + 1 = 13 期；且只有把**当月**也落盘，store 里才会
-        //    真正出现 13 个 monthly 键，`KEEP_MONTHLY = 13` 的留档修复才**可被观测/可被演练**
-        //    （此前 i 从 1 起 ⇒ 只有 12 键，`prune` 恰好不触发，修复等于无法验证）。
-        for (int i = 0; i <= YEAR_BACKFILL_MONTHS; i++) {
+        // 🔴 i 从 **1** 起（第六批A D5，2026-10-11 改）：口径 = 「**前 12 个已完结月**」——
+        //    **当期月账永不生成**（"月永不显示进行中账"：今天 2026-10-11 ⇒ 最新可见月 = 2026-09）。
+        //    旧实现 i 从 0 起会把**当月**也落盘（常规趟），于是"当月"一直以"至今累计"的形态出现在月档，
+        //    正是本批要拆掉的那个口径（并且它还会污染 `BillEstimator.rebuild` 的锚点，见 `isTrueEnd`）。
+        //    残留的未完结当期月账由 {@link #dropUnfinishedMonthly} 一次清掉。
+        for (int i = 1; i <= YEAR_BACKFILL_MONTHS; i++) {
             long ps = PeriodRange.shift(PeriodRange.MONTHLY, curStart, -i);
             if (ps <= 0) break;
             if (BillStore.has(c, PeriodRange.MONTHLY, ps)) {           // 🔴 continue，**不是** break
                 done++;
                 continue;
             }
-            // 🔴 估算趟只在**历史期**用（i > 0）：估算趟不抓进度 ⇒ 若把**当月**也按估算趟生成，
-            //    当月的行会全是 `pStart/pEnd = 空` ⇒ 月档当月退化成整片 `—`（2026-10-11 实测踩到）。
-            //    当月走**常规趟**（抓进度、拿真实"现在"的累计），历史期走估算趟。
-            if (!generateOne(c, apiKey, PeriodRange.MONTHLY, ps, i > 0)) break;   // 拿不到 ⇒ 本轮停，下次重试
+            // 🔴 估算趟：年回填只碰**已完结的历史月**，不抓进度、不抓热门（省 Top-N × 12 次请求）。
+            //    需要"真期末进度"的只有"刚结束的那一期"，那由 {@link #landRecent} 用**常规趟**负责。
+            if (!generateOne(c, apiKey, PeriodRange.MONTHLY, ps, true)) break;   // 拿不到 ⇒ 本轮停，下次重试
             done++;
             try {
                 Thread.sleep(YEAR_BACKFILL_GAP_MS);
@@ -186,11 +213,11 @@ public final class BillScheduler {
                 break;
             }
         }
-        if (done >= YEAR_BACKFILL_MONTHS + 1) {
+        if (done >= YEAR_BACKFILL_MONTHS) {
             BillStore.markYearBackfilled(c);
-            CardDebug.noteV(c, "bill: 年回填完成（当月 + 前 " + YEAR_BACKFILL_MONTHS + " 个月，估算点已就位）");
+            CardDebug.noteV(c, "bill: 年回填完成（前 " + YEAR_BACKFILL_MONTHS + " 个已完结月，估算点已就位）");
         } else {
-            CardDebug.noteV(c, "bill: 年回填未完成 done=" + done + "/" + (YEAR_BACKFILL_MONTHS + 1) + "（下次启动续补）");
+            CardDebug.noteV(c, "bill: 年回填未完成 done=" + done + "/" + YEAR_BACKFILL_MONTHS + "（下次启动续补）");
         }
     }
 
@@ -210,7 +237,10 @@ public final class BillScheduler {
             long ps = PeriodRange.shift(mode, curStart, -i);
             if (ps <= 0) break;
             if (BillStore.has(c, mode, ps)) {
-                if (i == 1) healJustFinished(c, apiKey, mode, ps);     // 🆕 task-41（#7 有界自愈）
+                // 🆕 第六批A（D2/D4）：原 task-41 的 `healJustFinished` 自愈**搬走了** ——
+                //    "刚结束那一期的真期末"统一由 {@link #landRecent} 负责（它在 `runEnsure` 里
+                //    紧跟两个 `fill` 之后跑）。搬走的理由：自愈要**限流**（`LAND_GAP_MS`）且要区分
+                //    "没开进度 ⇒ 无需真期末"，放在这里会"每次 ensureBills 都重生成一次"。
                 break;                                                 // 已有 ⇒ 更早的期也已处理（连续性）
             }
             long end = periodEnd(mode, ps);
@@ -220,38 +250,121 @@ public final class BillScheduler {
     }
 
     /**
-     * 🆕 task-41（2026-10-11 · 用户 #7「老账不自愈复评」）—— **有界自愈：只补"刚结束的那一期"**。
+     * 🆕 第六批A（D2/D4，2026-10-11）：**跨期落定** —— 管"最近一个**已完结**期"（周 = 上周、月 = 上月）。
      *
-     * <p>问题（复评结论）：{@link #fill} 一碰到"库里已有"就 `break`、{@link #maybeBackfillYear} 一碰 `has`
-     * 就 `continue` 且水位线一次性 ⇒ **已落盘的期永远不会再生成**。若某一期的账是**它还在进行中**时生成的
-     * （典型 = 年回填 `i == 0` 的当期月账，见 {@code 验证记录/208}），那期的进度就永久停在"生成那一刻"，
-     * 不会自愈。
+     * <p>这是"不引闹钟"（D2 = A 案，{@link android.app.AlarmManager} 一律不引）下"**到点落定**"的落点：
+     * **到点后的第一个可达时机**（解锁 / 开 App / 开墨台 / 卡片刷新）会调 {@link #ensureBills}，
+     * 于是这里做一次**跨期检测**：
+     * <pre>
+     *   ① 缺账（BillStore 里根本没有这一期）   ⇒ **常规趟生成一次**（抓真期界 endKnown = true）
+     *   ② 已存在但缺真期末（且用户要进度）      ⇒ **限流**（{@link #LAND_GAP_MS}）后常规趟重生成
+     *   ③ 已带真期末 / 占位空账 / 没开进度      ⇒ **已落定**，什么都不做
+     * </pre>
      *
-     * <p><b>可修面（只此一面）</b>：**刚结束的那一期**（{@code i == 1}）—— 它现在是过去时，用**常规趟**
-     * 重生成一次，即可由 `/book/getprogress` 拿到"接近期末"的真值（{@code endKnown = true} ⇒ 顺带把该期的
-     * 真期界快照写进 {@link ProgressLog}）。<b>幂等 / 自限流</b>：重生成后该期行里就有
-     * {@code progressEndKnown = true}，下次不再触发 ⇒ 正常情况下**一期只多一次常规趟**；只有在生成失败
-     * （数据拿不到）时才会在下次启动重试。
+     * <p>🔴 <b>幂等 + 有界</b>（三条红线，逐条都不许破）：
+     * <ol>
+     *   <li>常规趟成功后该期行里就有真期末（{@code progressEndKnown}）⇒ 下次直接命中 ③；
+     *       生成失败（断网 / 数据拿不到）时该期仍然缺账 ⇒ **每个可达时机重试** —— 这就是 D3 的**退化口径**
+     *       （**不注册网络回调**、不动 ConnectivityManager）：断网期间**不会**在后台补，
+     *       联网后的**第一个可达时机**才补上。代价如实登记在 {@code 验证记录/226}；</li>
+     *   <li>① 那一路**不设闸**（"该有账而没有"越早补越好）；② 那一路用 {@link #LAND_GAP_MS} 限流 ⇒
+     *       卡片刷新最快 5 s 一次也不会把接口打成连发；</li>
+     *   <li>用户没开"进度"相关项（{@link MenuPrefs#showProgress} 关 **且** 收入关）时账里本来就没有
+     *       进度字段 ⇒ 视为**已落定**（否则会每次启动白重生成一遍，白烧请求）。判据与
+     *       {@link #generateOne} 的 {@code baseNeedProgress} **同一处**（见 {@link #progressWanted}）。</li>
+     * </ol>
      *
-     * <p>🔴 <b>不可修面（技术理由，不是"延后"）</b>：更早的历史期 —— 它们各自的期末早已过去，而
-     * `/book/getprogress` 只返回"现在"的进度 ⇒ **历史期末进度事后不可查**；任何"用现在的值回填历史期"
-     * 都是编数（{@code 验证记录/208} 的坑）。因此本方法**只**碰 {@code i == 1}，且只在"该期账里一行真期末
-     * 都没有"时动手；不动原 `break` 语义、不动更早的期。
+     * <p>🔴 <b>不改"什么时候该有账"的口径</b>：只处理"最近一个已完结期"；更早的期照样由
+     * {@link #fill}（最近 4 期）与 {@link #maybeBackfillYear}（前 12 个已完结月）负责；
+     * **当期（进行中）永不生成**（D5：月永不显示进行中账）。残留的未完结当期月账由
+     * {@link #dropUnfinishedMonthly} 清掉。
+     *
+     * <p>⚠️ <b>前身</b>：task-41 的 {@code healJustFinished}（只做"缺真期末 ⇒ 重生成"，无限流、
+     * 也不看"要不要进度"）。它的**不可修面**结论照旧成立并保留在这里：更早的历史期，其期末进度
+     * 事后不可查（`/book/getprogress` 只给"现在"）⇒ 只碰"刚结束的那一期"，绝不用今天的值编历史期。
+     *
+     * <p>⚠️ 本方法**不算估算曲线**：那由 `runEnsure` 末尾的 {@link BillEstimator#rebuild} 做。
      */
-    private static void healJustFinished(Context c, String apiKey, String mode, long ps) {
+    private static void landRecent(Context c, String apiKey, String mode, long nowSec) {
         try {
+            if (apiKey == null || apiKey.length() == 0) return;        // 没登录 ⇒ 拉不到，等下次
+            final long curStart = PeriodRange.startOf(mode, nowSec);
+            if (curStart <= 0) return;
+            final long ps = PeriodRange.shift(mode, curStart, -1);     // 最近一个**已完结**期
+            if (ps <= 0) return;
             Bill b = BillStore.load(c, mode, ps);
-            if (b == null || b.items == null || b.items.isEmpty()) return;
-            for (int i = 0; i < b.items.size(); i++) {
-                Bill.Item it = b.items.get(i);
-                // 只要有一行是"真期末"（本期就是刚结束期时抓到的），就认为这期的进度可信 ⇒ 不自愈
-                if (it != null && it.progressEndKnown && it.progressEndPct >= 0) return;
+            if (b == null) {                                          // ① 缺账 ⇒ 常规趟生成
+                CardDebug.noteV(c, "bill: 跨期落定 " + mode + " " + ps + " 缺账 ⇒ 常规趟生成");
+                generateOne(c, apiKey, mode, ps);
+                return;
             }
-            CardDebug.noteV(c, "bill: 期末自愈（刚结束期缺真期末）⇒ 常规趟重生成 " + mode + " " + ps);
-            generateOne(c, apiKey, mode, ps);                          // 常规趟：endKnown = true
+            if (b.items == null || b.items.isEmpty()) {
+                // ② 占位账 / 空账 = "该期确实没有阅读记录"（已定论）⇒ 不重试（否则每次可达时机白跑一趟）
+                return;
+            }
+            if (!progressWanted(c) || hasTrueEnd(b)) return;          // ③ 已落定（含"没开进度" ）
+            long age = System.currentTimeMillis() - b.generatedAt;
+            if (b.generatedAt > 0 && age >= 0 && age < LAND_GAP_MS) return;   // ② 限流
+            CardDebug.noteV(c, "bill: 跨期落定 " + mode + " " + ps + " 缺真期末 ⇒ 常规趟重生成（上次生成 "
+                    + (b.generatedAt > 0 ? (age / 1000) + "s 前" : "时刻未知") + "）");
+            generateOne(c, apiKey, mode, ps);                          // 常规趟：抓真期界
         } catch (Throwable t) {
-            // 自愈是"锦上添花"：异常绝不能影响主流程
-            CardDebug.noteV(c, "bill: 期末自愈异常 " + mode + " " + ps + " " + t);
+            // 落定是"锦上添花"：异常绝不能影响主流程（与 refreshCurrent 同一条红线）
+            CardDebug.noteV(c, "bill: 跨期落定异常 " + mode + " " + t);
+        }
+    }
+
+    /**
+     * 这一期账里有没有**真期末**（任一行 `progressEndKnown && progressEndPct >= 0` 即真）
+     * —— D4「落定」的判据（与 {@link BillEstimator} 的锚点判据同源：那边问"能不能当锚点"，
+     * 这边问"还需不需要重生成"）。
+     */
+    private static boolean hasTrueEnd(Bill b) {
+        if (b == null || b.items == null) return false;
+        for (int i = 0; i < b.items.size(); i++) {
+            Bill.Item it = b.items.get(i);
+            if (it != null && it.progressEndKnown && it.progressEndPct >= 0) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 用户配置里"要不要进度"—— **与 {@link #generateOne} 的 `baseNeedProgress` 同一判据**
+     * （显示进度开着 **或** 收入不是"关闭"）。
+     */
+    private static boolean progressWanted(Context c) {
+        return MenuPrefs.showProgress(c) || !MenuPrefs.PAID_OFF.equals(MenuPrefs.paidAlgo(c));
+    }
+
+    /**
+     * 🆕 第六批A（D7，2026-10-11）：**一次性清掉"未完结的当期月账"**（旧版本残留）。
+     *
+     * <p>为什么需要：D5 之后月档"永不显示进行中账"，但**旧版本已经把 2026-10 的当期月账落进了
+     * `bills.xml`**（`maybeBackfillYear` 的 `i == 0` 那一趟 + `refreshCurrent(MONTHLY)`）。口径改掉
+     * 不等于老数据消失 —— 不清的话月档仍会显示 2026-10（那张"至今累计"的账），等于没改。
+     *
+     * <p>🔴 <b>只删未完结期</b>（`nowSec < periodEnd`）：历史期一律不碰（它们的 `progressEndKnown` /
+     * 估算链是本批的锚点来源）。**幂等**：删完再跑一遍没有可删的（一次 `startsOf` + N 次整数比较）；
+     * 每次都记日志（`bill: 删除未完结当期月账 …`）⇒ 可离线复核。
+     *
+     * <p>为什么不放进 `fill` / `maybeBackfillYear`：那两处是"补缺"，这里是"清残留"，
+     * 语义不同、失败互不牵连（本方法自己吞异常、只留痕）。
+     */
+    private static void dropUnfinishedMonthly(Context c, long nowSec) {
+        try {
+            List<Long> starts = BillStore.startsOf(c, PeriodRange.MONTHLY);
+            if (starts == null || starts.isEmpty()) return;
+            for (int i = 0; i < starts.size(); i++) {
+                long ps = starts.get(i).longValue();
+                if (ps <= 0) continue;
+                long end = periodEnd(PeriodRange.MONTHLY, ps);
+                if (nowSec >= end) continue;                           // 已完结 ⇒ 不碰（历史期全留）
+                if (BillStore.remove(c, PeriodRange.MONTHLY, ps)) {
+                    CardDebug.noteV(c, "bill: 删除未完结当期月账 " + ps + "（月档不显示进行中账，D5/D7）");
+                }
+            }
+        } catch (Throwable t) {
+            CardDebug.noteV(c, "bill: 删除未完结月账异常 " + t);
         }
     }
 
@@ -278,14 +391,22 @@ public final class BillScheduler {
      *       本机当期**周**账从来不生成这一既有事实见 `验证记录/223` 的登记项，不在本轮改）；</li>
      *   <li>**节流**：账龄 &lt; {@link #CUR_REFRESH_GAP_MS} ⇒ 早退（`generatedAt` 是账单自带、已持久化的
      *       时间戳 ⇒ 冷启动也认，`BillStore` 不必新增 pref）；</li>
-     *   <li>**实付关不刷**、**没登录不刷**（与 {@link #maybeBackfillYear} 同一条红线）；</li>
+     *   <li>**收入关不刷**、**没登录不刷**（与 {@link #maybeBackfillYear} 同一条红线）；</li>
      *   <li>成本 = 一次常规趟：本地 `stats_*` 缓存命中 ⇒ **0 次 `/readdata/detail`**，
-     *       外加 Top-N 次 `/book/getprogress`（N ≤ 榜单上限；实付关时连它也跳过）；</li>
+     *       外加 Top-N 次 `/book/getprogress`（N ≤ 榜单上限；收入关时连它也跳过）；</li>
      *   <li>全程在 `bill-ensure` 后台线程内 ⇒ **渲染侧依旧零请求**。</li>
      * </ol>
+     *
+     * <p>🔴 第六批A（D5，2026-10-11）：**本方法不再服务 `MONTHLY`** —— 月档永不显示进行中账，
+     * 当期月账既不生成也不刷新（方法内 MONTHLY 早退兜底 + `runEnsure` 只传 `WEEKLY`）。
+     * 需要"真期末"的"刚结束月"由 {@link #landRecent} 用常规趟落定，与"当期"不是一回事。
      */
     private static void refreshCurrent(Context c, String apiKey, String mode, long nowSec) {
         try {
+            // 🔴 第六批A（D5，2026-10-11）：**月不再服务当期** —— 月档永不显示进行中账
+            //    （今天 2026-10-11 ⇒ 最新可见月 = 2026-09）。这里做兜底早退：调用点已经只传 WEEKLY，
+            //    但把口径钉在方法里，避免将来有人"顺手"再把它加回 runEnsure 又把进行中月账刷回来。
+            if (PeriodRange.MONTHLY.equals(mode)) return;
             if (apiKey == null || apiKey.length() == 0) return;
             if (MenuPrefs.PAID_OFF.equals(MenuPrefs.paidAlgo(c))) return;
             final long curStart = PeriodRange.startOf(mode, nowSec);
@@ -373,8 +494,8 @@ public final class BillScheduler {
         boolean wantProgress = MenuPrefs.showProgress(c);
         long endSec = periodEnd(mode, periodStart) - 1L;
 
-        // 🆕 TASK-086：**实付**要用进度（算法 A 要期初+期末、算法 B 要期末）⇒
-        //    实付列没关就必须逐本抓进度。接口仍是既有的 `/book/getprogress`（**零新增接口**），
+        // 🆕 TASK-086：**收入**要用进度（算法 A 要期初+期末、算法 B 要期末）⇒
+        //    收入列没关就必须逐本抓进度。接口仍是既有的 `/book/getprogress`（**零新增接口**），
         //    代价是"补齐一期"多 Top-N 次请求（N ≤ 8）—— 一期只发生一次，可接受。
         final boolean baseNeedProgress = wantProgress
                 || !MenuPrefs.PAID_OFF.equals(MenuPrefs.paidAlgo(c));
@@ -420,16 +541,24 @@ public final class BillScheduler {
                     List<String> hot = WereadApi.fetchBestBookmarks(apiKey, it.bookId);
                     if (!hot.isEmpty()) it.hotText = hot.get(0);
                 }
-                // 进度（默认关；🆕 实付列开着时强制抓 —— 见 needProgress）
+                // 进度（默认关；🆕 收入列开着时强制抓 —— 见 needProgress）
                 if (needProgress) {
-                    Integer pg = fetchProgressPct(apiKey, it.bookId);
+                    boolean[] fin = new boolean[1];                        // 🆕 第六批A：`finishTime > 0` ⇒ 已读完
+                    Integer pg = fetchProgressPct(apiKey, it.bookId, fin);
                     if (pg == null) {
                         // 兜底：索引里顺带带回的 `readingProgress`（略旧但真实，且零请求）
                         int idxPg = NoteStore.progressOf(c, it.bookId);
                         if (idxPg >= 0) pg = Integer.valueOf(idxPg);
                     }
                     if (pg != null) {
-                        it.progressPct = pg.intValue();
+                        // 🆕 第六批A（D20–D22）：**生成期 clamp** —— ≥99（含 99）或已读完一律按 100% 记，
+                        //    这样"生成（账单）/估算（BillEstimator）/渲染（墨单·海报·本书卡）"三处
+                        //    看到的是**同一个百分比、同一笔金额**（不许界面 100%、账单里 99%）。
+                        //    🔴 未知不走这里：`pg == null` 时整个块被跳过（`progressPct` 保持 -1 ⇒ `—`）；
+                        //    `progressForBilling(pg >= 0, …)` 只会返回 0..100，负值分支不可达（留兜底）。
+                        int pgv = BillMoney.progressForBilling(pg.intValue(), fin[0]);
+                        if (pgv < 0) pgv = pg.intValue();
+                        it.progressPct = pgv;
                         // 🆕 TASK-086：**期初进度** = 上一期结束时的快照（`ProgressLog`）
                         // 🆕 TASK-086 拍板②（2026-10-10）：`ProgressLog` 没有该期快照时（首期 / 升版前
                         //    生成的账没有快照 / 换机），回落到**上一期账单里同书的 `progressPct`** ——
@@ -468,18 +597,20 @@ public final class BillScheduler {
                         //      （`fill()` 目前不为当期生成账单 ⇒ 本条不可达，留作兜底。）
                         //   ④ 都取不到 ⇒ -1 ⇒ 累计档该行 `—`（不编数）。
                         int endPct = ProgressLog.at(c, it.bookId, periodStart);
-                        if (endPct < 0 && endKnown) endPct = pg.intValue();
-                        if (endPct < 0 && periodStart == curStart) endPct = pg.intValue();
+                        if (endPct < 0 && endKnown) endPct = pgv;
+                        if (endPct < 0 && periodStart == curStart) endPct = pgv;
                         it.progressEndPct = endPct;
                         // 记下"本期结束时"的进度，供**下一期**当期初基线（一期一次，常量级增长）
                         // 🔴 拍板② 配套修复（上机倒逼，2026-10-10）：**只在本期真的是"刚结束的那一期"时**才记。
                         //    `endKnown == false` 表示这次抓到的是**"现在"**（补更早的期），
                         //    它**不是**那一期的期末值；若照样 `put`，会用"现在"顶掉那一期的真实快照，
-                        //    并让 `ProgressLog.at(下一期)` 永久失配 ⇒ 下一期实付整列 `—`。
+                        //    并让 `ProgressLog.at(下一期)` 永久失配 ⇒ 下一期收入整列 `—`。
                         //    上机实测（S4）：`31808219` 的快照被补旧期覆盖成 `1788192000:34`，
                         //    于是当期 `1790524800` 取不到基线 ⇒ 整列 `—`，正是拍板② 要治的病根之一。
+                        //    🆕 第六批A：写入的是 **clamp 后**的值（`pgv`）—— 快照即账单口径，
+                        //    下一期据此算期初增量时不会出现"99% 的期末 vs 100% 的界面"对不上。
                         if (endKnown) {
-                            ProgressLog.put(c, it.bookId, periodStart, pg.intValue());
+                            ProgressLog.put(c, it.bookId, periodStart, pgv);
                         }
                     }
                 }
@@ -575,7 +706,7 @@ public final class BillScheduler {
         BillStore.save(c, b);
         CardDebug.noteV(c, "bill: 生成 " + mode + " " + periodStart + " 本数=" + b.items.size()
                 + " 有价=" + BillMoney.pricedCount(c, b.items) + "/" + b.items.size()
-                + " 实付合计=" + BillMoney.yuan(BillMoney.totalPaidFen(c, b.items, MenuPrefs.paidAlgo(c)))
+                + " 收入合计=" + BillMoney.yuan(BillMoney.totalPaidFen(c, b.items, MenuPrefs.paidAlgo(c)))
                 + (endKnown ? "" : " (补旧期·期末进度不可信)")
                 + (b.placeholder ? " (占位)" : "")
                 + (estRows > 0 ? " 估算行=" + estRows + "/" + b.items.size() : ""));
@@ -650,8 +781,16 @@ public final class BillScheduler {
 
     // ══════════════════════ 进度（可选 · 默认关） ══════════════════════
 
-    /** 拉某本书的阅读进度百分比；失败 / 无 ⇒ null。**阻塞式**（仅后台线程）。 */
-    private static Integer fetchProgressPct(String apiKey, String bookId) {
+    /**
+     * 拉某本书的阅读进度百分比；失败 / 无 ⇒ null。**阻塞式**（仅后台线程）。
+     *
+     * <p>🆕 第六批A（D20–D22，2026-10-11）：顺带解析 `book.finishTime`（`> 0` = 已读完）—— 写进
+     * {@code finishedOut[0]}（用一元素数组当出参：调用方只想多要一个布尔，不值得为它建一个类）。
+     * **零新增接口**：这个字段本来就在同一个 `/book/getprogress` 响应里。
+     * 🔴 本方法**只报"接口怎么说"**：clamp（≥99 / 已读完 ⇒ 100）由调用方走
+     * {@link BillMoney#progressForBilling}，判据只有那一处。
+     */
+    private static Integer fetchProgressPct(String apiKey, String bookId, boolean[] finishedOut) {
         if (apiKey == null || apiKey.trim().length() == 0) return null;
         if (bookId == null || bookId.length() == 0) return null;
         try {
@@ -662,6 +801,7 @@ public final class BillScheduler {
             if (r.error != null || r.json == null) return null;
             JSONObject book = r.json.optJSONObject("book");
             if (book == null) return null;
+            if (finishedOut != null) finishedOut[0] = book.optLong("finishTime", 0L) > 0L;
             int p = book.optInt("progress", -1);
             return (p >= 0 && p <= 100) ? Integer.valueOf(p) : null;
         } catch (Throwable t) {

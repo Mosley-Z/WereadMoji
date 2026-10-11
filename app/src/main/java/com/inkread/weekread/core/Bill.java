@@ -14,7 +14,7 @@ import java.util.List;
  * <ul>
  *   <li>🔴 <b>价</b> = **书籍市场价**（{@link Item#marketPriceFen}，单位**分**；生成期解析、渲染只读
  *       ⇒ {@link BillMoney}）。<b>旧口径</b>「`clamp(⌈分钟÷10⌉)` 虚构价」**已作废**（`priceOf` 已删）；</li>
- *   <li>🔴 <b>实付</b> = 书价 × 进度（两算法，见 {@link BillMoney#paidFen}）；</li>
+ *   <li>🔴 <b>收入</b> = 书价 × 进度（两算法，见 {@link BillMoney#paidFen}）；</li>
  *   <li>🔴 <b>合计行</b> = `合计   本期阅读 H 小时` + 次行 `读回 ¥X，折合 ¥Y/小时`
  *       （{@code BillSection#billTotalMain} / {@code #billTotalNote}；两行是上机倒逼，见该方法注释）；</li>
  *   <li>周期起止**必须**由 {@link PeriodRange} 算（周 = 周一 00:00、月 = 1 日 00:00）⇒ {@link #serialOf}/{@link #rangeLabel} 同源。</li>
@@ -71,10 +71,10 @@ public final class Bill {
         public int mineCount;
         /** 微信公开热门划线（后台预热；无 / 未取 ⇒ null）。🔴 不等同本人划线 ⇒ 渲染须标来源。 */
         public String hotText;
-        /** 阅读进度百分比（0~100；-1 = 未知）。 = **期末/当前**进度（实付的两算法都用它）。 */
+        /** 阅读进度百分比（0~100；-1 = 未知）。 = **期末/当前**进度（收入的两算法都用它）。 */
         public int progressPct = -1;
 
-        // ── 🆕 TASK-086：市场价 + 期初进度（实付两算法的数据基础） ──
+        // ── 🆕 TASK-086：市场价 + 期初进度（收入两算法的数据基础） ──
 
         /**
          * **市场价**（分）——生成期由 {@link BillScheduler} 解析好落盘，渲染期只读。
@@ -143,7 +143,7 @@ public final class Bill {
          * （如年回填 `i == 0` 写的当期月账，其值语义是"至今"而非期末）的行也标成本字段。
          * 两条都表示"这个数不是真期末"，渲染与判据一视同仁。
          *
-         * <p>唯一用途 = 形制：渲染侧据它给**实付金额**加 `≈` 前缀（A18：**仅此一项**，
+         * <p>唯一用途 = 形制：渲染侧据它给**收入金额**加 `≈` 前缀（A18：**仅此一项**，
          * 不加最浅灰 / 不画期界细线 / 不加表尾图例 / 不加周期选择器后缀）。
          * 🔴 老账无此键 ⇒ 读回 {@code false} ⇒ 行为与本批之前**逐字一致**。
          *
@@ -318,6 +318,20 @@ public final class Bill {
                     // 🆕 第三批：估算标记（老账无键 ⇒ false = "精确"，A13 老账兼容不变）
                     it.progressEndEst = j.optBoolean("progressEndEst", false);
                     it.progressStartEst = j.optBoolean("progressStartEst", false);
+                    // 🆕 第六批A（D20–D22 补 · 2026-10-11 用户④「按 100% 记」对**历史账单**也要成立）：
+                    //   **读取期同判据 clamp** —— 这是全仓**唯一**的读取期归一点。
+                    //   为什么必须有：落盘的历史期（如 `monthly 2026-06` 的 99%）**永不会被重生成**
+                    //   （`fill` 只补"最近 4 期内缺账"的期、`landRecent` 只管最近一个已完结期），
+                    //   若只在生成期 clamp，那一行会永远按 99% 计钱、永远显示 99% ⇒ 与用户④正面冲突。
+                    //   判据**复用同一实现**（{@link BillMoney#progressForBilling}，`finished=false` 分支
+                    //   已含 `>= 99 ⇒ 100`），故"生成 / 估算 / 渲染 / 阅读资产"四处不可能分叉：
+                    //     `>= 99 ⇒ 100`（读满）、`< 0 ⇒ -1`（未知 ⇒ `—`、不计合计）、其余原值。
+                    //   🔴 这只是一次**读取变换**：不改 JSON 结构、不动任何 `*Est`/`Known` 标记、
+                    //      不做迁移式写回（落盘值要变，只有在该期本就会被估算/重生成重写时才会发生，
+                    //      且方向单一：99 → 100）。
+                    it.progressPct = clampStoredPct(it.progressPct);
+                    it.progressStartPct = clampStoredPct(it.progressStartPct);
+                    it.progressEndPct = clampStoredPct(it.progressEndPct);
                     b.items.add(it);
                 }
             }
@@ -325,5 +339,24 @@ public final class Bill {
         } catch (Throwable t) {
             return null;
         }
+    }
+
+    /**
+     * 🆕 第六批A（D20–D22 补，2026-10-11）：**读取期**进度归一 —— 唯一实现仍是
+     * {@link BillMoney#progressForBilling}（这里 `finished=false`：账单行**不携带**"已读完"这个事实，
+     * 它只在实时卡片/阅读资产那条线上由 {@link BookStats} 提供）。
+     *
+     * <pre>
+     *   pct &gt;= 99  ⇒ 100     （读满阈值：99 也算 100）
+     *   pct &lt;  0   ⇒  -1     （未知 ⇒ `—`、不计合计，绝不折成 0）
+     *   其余        ⇒ 原值
+     * </pre>
+     *
+     * <p>🔴 幂等、确定性、无副作用：`clamp(clamp(x)) == clamp(x)`；只用于"把**存储行**的值拿去
+     * 显示 / 算钱 / 进合计"之前的一次归一，**不写回盘**。调用点只有 {@link #fromJson}（读取总入口）
+     * ⇒ 墨单、海报、估算、合计、阅读资产看到的都是同一口径。
+     */
+    public static int clampStoredPct(int pct) {
+        return BillMoney.progressForBilling(pct, false);
     }
 }

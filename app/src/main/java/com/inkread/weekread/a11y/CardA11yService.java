@@ -4,6 +4,7 @@ import com.inkread.weekread.core.BillScheduler;
 import com.inkread.weekread.core.CardDebug;
 import com.inkread.weekread.core.CardPrefs;
 import com.inkread.weekread.core.LockPrefs;
+import com.inkread.weekread.net.NoteSync;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
@@ -153,6 +154,10 @@ public class CardA11yService extends AccessibilityService {
      */
     public static void showDesk() {
         if (sInstance != null && sInstance.desk != null) sInstance.desk.show();
+        // 🆕 第六批A（D2，2026-10-11）：**开墨台**是一次"可达时机"（用户特意来看账单，最该是最新的）
+        //    ⇒ 顺带做一次账单幂等补齐（跨期落定 / 月去进行中账 / 当期节流刷新都在里面）。
+        //    `ensureBills` 自带并发闸 + 后台线程 ⇒ 立即返回，不挡墨台的显示。
+        if (sInstance != null) BillScheduler.ensureBills(sInstance);
     }
 
     /** 关闭墨台。 */
@@ -287,6 +292,10 @@ public class CardA11yService extends AccessibilityService {
         // 🆕 TASK-077：账单**幂等补齐**（后台线程 + 并发闸；稳态只做一次 has 检查 ⇒ 零请求）。
         //    另一个调用点是 `MainActivity.onStart()` —— 两处各调一次，谁先谁生效，重复无害。
         BillScheduler.ensureBills(this);
+        // 🆕 第六批补丁（TASK-086）：**老索引一次性重建**（v<3 ⇒ 补回 199 本真实原价）。
+        //    与上行同一时机、同样的"重复无害 + 幂等"约定：同进程至多发起一次，
+        //    已是 v3 ⇒ 只读一次文件头即返回（零请求）。见 `验证记录/229`。
+        NoteSync.ensureIndexUpgrade(this);
     }
 
     /**
@@ -393,6 +402,9 @@ public class CardA11yService extends AccessibilityService {
                 CardDebug.note(CardA11yService.this, "SCREEN_ON 收到 → 忽略其后 "
                         + SCREEN_ON_IGNORE_MS + "ms 内的翻页指纹");
                 maybeLockOnScreenOn();             // TASK-022：亮屏即弹软锁（若已启用并设了密码）
+                // 🆕 第六批A（D2，2026-10-11）：**亮屏/解锁**是"到点后的第一个可达时机"里最常见的那一个
+                //    ⇒ 顺带做一次账单幂等补齐（不引闹钟的前提下，这里就是"到点落定"的落点）。
+                BillScheduler.ensureBills(CardA11yService.this);
             }
         };
         try {

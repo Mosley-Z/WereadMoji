@@ -336,10 +336,10 @@ public final class MenuPrefs {
                 EMPTY_SKIP.equals(v) ? EMPTY_SKIP : EMPTY_PLACEHOLDER).commit();
     }
 
-    // ══════════════════════ 🆕 TASK-086 ⑭ 实付算法（三选一） ══════════════════════
+    // ══════════════════════ 🆕 TASK-086 ⑭ 收入算法（三选一） ══════════════════════
     //
-    // 用户 2026-10-10 第五轮拍板（Q3/Q4）：实付列默认 **算法 A 本期增额**；
-    // 控件放**周/月同一行**、右靠；文案 `实付算法：增额 ▾` ⇒ 点开**自绘下拉框**三选一。
+    // 用户 2026-10-10 第五轮拍板（Q3/Q4）：收入列默认 **算法 A 本期增额**；
+    // 控件放**周/月同一行**、右靠；文案 `收入算法：增额 ▾` ⇒ 点开**自绘下拉框**三选一。
     //
     // 🔴 只落**选择结果**这一条键；下拉框的"开/合"是**瞬时态，不落盘**（弹层不是配置）。
     // 🔴 切换**不触发重生成账单** —— 两种算法都是渲染期纯乘除（见 `core/BillMoney`）。
@@ -349,7 +349,7 @@ public final class MenuPrefs {
     public static final String PAID_PERIOD = "period";
     /** 算法 B · 累计进度。 */
     public static final String PAID_CUMULATIVE = "cumulative";
-    /** 关闭：实付列整列不显示。 */
+    /** 关闭：收入列整列不显示。 */
     public static final String PAID_OFF = "off";
 
     /** 下拉框选项顺序（= 绘制与命中同一份顺序，勿各写一套）。 */
@@ -360,7 +360,7 @@ public final class MenuPrefs {
     public static final String[] PAID_DESCS = {
             "本期增额 · 本单这本书替我读回多少",
             "累计进度 · 这本书我一共读回多少",
-            "关闭 · 不显示实付列",
+            "关闭 · 不显示收入列",
     };
 
     public static String paidAlgo(Context c) {

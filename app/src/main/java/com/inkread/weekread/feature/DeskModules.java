@@ -9,17 +9,14 @@ import com.inkread.weekread.core.NoteStore;
 import com.inkread.weekread.core.PagePrefs;
 import com.inkread.weekread.core.PeriodRange;
 import com.inkread.weekread.core.PeriodStats;
-import com.inkread.weekread.core.RankFilter;
 import com.inkread.weekread.core.StatsStore;
-import com.inkread.weekread.core.TodoItem;
-import com.inkread.weekread.core.TodoStore;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
 /**
- * 🆕 TASK-076：**墨台模块注册表** —— 6 个模块的**唯一登记处**（定稿设计 §3.1）。
+ * 🆕 TASK-076：**墨台模块注册表** —— 5 个模块的**唯一登记处**（定稿设计 §3.1）。
  *
  * <p>注册表与本包内的渲染器/容器一起构成"加模块只改一处"的闭环：
  * <pre>
@@ -28,11 +25,20 @@ import java.util.List;
  *              —— 容器（DeskPageView）、渲染器（DeskRenderer）、设置页都不用动
  * </pre>
  *
- * <p>🔴 **数据全部读本地缓存**（`StatsStore` / `TodoStore` / `NoteStore`）⇒ 零网络请求（定稿设计 §2.3）。
- * 缓存为空时画**各自的空态**（不是崩、不是白屏）。
+ * <p>🔴 **数据全部读本地缓存**（`StatsStore` / `NoteStore` / `AssetStore` / `BillStore`）⇒ 零网络请求
+ * （定稿设计 §2.3）。缓存为空时画**各自的空态**（不是崩、不是白屏）。
  *
- * <p>🆕 本卡（076）已落地 5 个真实模块（`rank` / `todo` / `profile` / `note` / `annual`）；
- * `bill`（TASK-077）已换成真账单。共 **6 个**模块。
+ * <p>🆕 本卡（076）已落地 5 个真实模块（`rank` / `profile` / `note` / `annual`）；
+ * `bill`（TASK-077）已换成真账单。共 **5 个**模块。
+ *
+ * <p>🆕 TASK-086 第六批B（用户 ③ / ⑤）：
+ * <ul>
+ *   <li>`rank`（② ）由「读书排行」**就地**换成 {@link AssetSection}「阅读资产」——
+ *       id / 位 / 顺序 / 开关**零迁移**（D16），洞察页 K8 的 {@code RankSection} 不受影响（D17）；</li>
+ *   <li>`todo`（原 ③ 待办摘要）**整块下线** —— id / `BIT_TODO = 4` / `moduleName` 分支都已从
+ *       {@code PagePrefs} 删除（**位 4 不复用**）；手机端待办页与卡片池的「待办」不受影响（D25）。
+ *       原实现已归档到 `_archive/废案/2026-10-11_待办摘要模块/`。</li>
+ * </ul>
  */
 final class DeskModules {
 
@@ -42,8 +48,6 @@ final class DeskModules {
     private static final float LINE_UNITS = 2.1f;
     private static final int GRAY = 0xFF3C3C3C;
 
-    /** 待办摘要最多列几项（再多就"还有 N 项"）。 */
-    private static final int TODO_MAX = 5;
     // 🔴 「今日一签」**不做行数截断**（不设 NOTE_MAX_LINES）：定稿设计未规定截断，而卡片侧
     //    `CardLayout.layoutNote` 的截断是"原文段 / 想法段"分段封顶、且卡片档另有「展开▽」可看全文；
     //    墨台只有一块文字区，按总行数硬截会把末尾的「—— 书名」署名一起截掉（有引文无出处，更差）。
@@ -52,7 +56,6 @@ final class DeskModules {
     private static final List<DeskModule> ALL = Arrays.<DeskModule>asList(
             new BillModule(),
             new RankModule(),
-            new TodoModule(),
             new ProfileModule(),
             new NoteModule(),
             new AnnualModule());
@@ -71,12 +74,13 @@ final class DeskModules {
     }
 
     /**
-     * 「读书排行」分区的**常驻实例**。
+     * 🆕 TASK-086 第六批B：「阅读资产」分区的**常驻实例**（原「读书排行」的常驻实例，D16 就地替换）。
      *
-     * <p>与 {@link InsightPageView} 同做法：分区自带**内滚位移**，每帧 new 会把位移丢掉 ⇒
-     * 容器（{@link DeskPageView}）持有同一个实例做手势分区判定，本类只负责换料。
+     * <p>常驻的原因：顶部那三枚**排序键**（时长 / 原价 / 收入，D12）与「展开 ▽ / 收起 △」（D13）的
+     * 命中判定由容器（{@link DeskPageView}）做，容器得先拿到同一个分区实例；且"当前按什么排、
+     * 是否展开"要跨帧记住（存在实例里，免得每帧重建）。
      */
-    static InsightRenderer.RankSection rankSection() { return RankModule.SECTION; }
+    static AssetSection assetSection() { return RankModule.SECTION; }
 
     /**
      * 🆕 TASK-077：「阅读账单」分区的**常驻实例**。
@@ -110,45 +114,24 @@ final class DeskModules {
         }
     }
 
-    // ══════════════════════ ② 读书排行（♻️ 复用 RankSection）══════════════════════
+    // ══════════════════════ ② 阅读资产（🆕 TASK-086 第六批B · 用户 ③ / D9–D19）══════════════════════
 
     private static final class RankModule implements DeskModule {
-        /** 常驻分区实例（内滚位移跨帧保留）。 */
-        static final InsightRenderer.RankSection SECTION = new InsightRenderer.RankSection();
+        /** 常驻分区实例（排序键 / 展开态跨帧保留）。 */
+        static final AssetSection SECTION = new AssetSection();
 
         public String id() { return PagePrefs.MOD_RANK; }
 
         public InsightRenderer.Section build(Context c) {
-            // 料 = 当年年度回包的 longest[]（`StatsStore` 本地缓存，零请求）；
-            // 「只统计书架上的书」开关与洞察页**同口径**（RankFilter 是唯一过滤口径）。
-            PeriodStats ann = StatsStore.loadAnnual(c, PeriodRange.yearOf(PeriodRange.nowSec()));
-            SECTION.setItems(ann == null ? null : RankFilter.apply(c, ann.longest));
+            // 🔴 只读本地：`AssetStore`（`/shelf/sync` + 逐本 `/book/getprogress` 的缓存）+
+            //    `MenuPrice` / `NoteStore` 的**本地**价格索引 ⇒ 本渲染路径**零网络**。
+            //    续补在 `AssetRefresher.ensure`（幂等 + TTL 闸门 + 后台线程，D19 与本月卡片同时机）。
+            SECTION.refresh(c);
             return SECTION;
         }
     }
 
-    // ══════════════════════ ③ 待办摘要（读 TodoStore）══════════════════════
-
-    private static final class TodoModule implements DeskModule {
-        public String id() { return PagePrefs.MOD_TODO; }
-
-        public InsightRenderer.Section build(Context c) {
-            List<TodoItem> pending = TodoStore.pending(c);
-            List<String> lines = new ArrayList<String>();
-            int n = Math.min(pending == null ? 0 : pending.size(), TODO_MAX);
-            for (int i = 0; i < n; i++) {
-                TodoItem t = pending.get(i);
-                String when = (t == null) ? "" : t.whenLabel();
-                String body = (t == null || t.content == null) ? "" : t.content.trim();
-                lines.add((when != null && when.length() > 0) ? (when + "  " + body) : body);
-            }
-            int total = (pending == null) ? 0 : pending.size();
-            if (total > n) lines.add("… 还有 " + (total - n) + " 项");
-            return new TextSection(PagePrefs.moduleName(id()), lines, "暂无待办");
-        }
-    }
-
-    // ══════════════════════ ④ 阅读画像（♻️ 复用 profileSection）══════════════════════
+    // ══════════════════════ ③ 阅读画像（♻️ 复用 profileSection）══════════════════════
 
     private static final class ProfileModule implements DeskModule {
         public String id() { return PagePrefs.MOD_PROFILE; }
@@ -170,7 +153,7 @@ final class DeskModules {
         }
     }
 
-    // ══════════════════════ ⑤ 今日一签（读 NoteStore）══════════════════════
+    // ══════════════════════ ④ 今日一签（读 NoteStore）══════════════════════
 
     private static final class NoteModule implements DeskModule {
         public String id() { return PagePrefs.MOD_NOTE; }
@@ -192,7 +175,7 @@ final class DeskModules {
         }
     }
 
-    // ══════════════════════ ⑥ 年度视图（♻️ 复用 annualSection）══════════════════════
+    // ══════════════════════ ⑤ 年度视图（♻️ 复用 annualSection）══════════════════════
 
     private static final class AnnualModule implements DeskModule {
         public String id() { return PagePrefs.MOD_ANNUAL; }
@@ -206,7 +189,7 @@ final class DeskModules {
     // ══════════════════════ 通用小区块（标题 + 若干行 / 空态）══════════════════════
 
     /**
-     * 「标题 + 左对齐若干行」的轻量分区 —— 供墨台的文字型模块（待办 / 一签 / 占位）共用。
+     * 「标题 + 左对齐若干行」的轻量分区 —— 供墨台的文字型模块（今日一签 / 占位）共用。
      *
      * <p>🔴 折行按 `Paint.breakText` 实测（不是按字数估），因为墨台是**比例化**排版：
      * 同一段文字在不同屏宽下每行装得下的字数不同；按字数估会在窄屏溢出、宽屏浪费。

@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * 🆕 `TASK-086`：**墨单的钱**（原价解析 / 实付两算法 / 合计 / 金额格式化）—— 全部是**渲染期算术**。
+ * 🆕 `TASK-086`：**墨单的钱**（原价解析 / 收入两算法 / 合计 / 金额格式化）—— 全部是**渲染期算术**。
  *
  * <h3>三条红线</h3>
  * <ol>
@@ -71,10 +71,46 @@ public final class BillMoney {
         return it.marketPriceFen;
     }
 
-    // ══════════════════════ ③ 实付（两算法） ══════════════════════
+    // ══════════════════════ ③ 收入（两算法） ══════════════════════
 
     /**
-     * 「实付」列（分）。
+     * 🆕 第六批A（D20，用户拍板）：**读满阈值** —— 进度 {@code >= 99} 即视作 100%。
+     *
+     * <p>为什么是 99 而不是 100：实测（`_probe/huibenlema` 前作探针）部分**已读完**的书
+     * `/book/getprogress` 仍返回 {@code progress = 99} ⇒ 只看 {@code == 100} 会漏判。
+     */
+    public static final int READ_DONE_PCT = 99;
+
+    /**
+     * 🆕 第六批A（D20–D22，2026-10-11）：**计费口径的进度** —— 「生成 / 估算 / 渲染」三处**唯一**的
+     * 百分比入口（Lead 冻结接口，第六批B 的「阅读资产」也调它，**签名不许改**）。
+     *
+     * <pre>
+     *   finished                       ⇒ 100      （已读完 ⇒ 读满按 100% 计；**优先于"未知"**）
+     *   progressPct &lt; 0                ⇒  -1      （未读完且未知 —— 🔴 不许当 0）
+     *   progressPct &gt;= 99              ⇒ 100      （读满阈值）
+     *   其余                            ⇒  原值
+     * </pre>
+     *
+     * <p>为什么必须共用一处：一个书读到 99% 时，界面显示"100% / 已读完"、账单却按 99% 计钱，
+     * 是同一份数据两套口径 —— 用户会当成算错。把判据收在这一个方法里，三处就不可能再分叉。
+     *
+     * <p>⚠️ 判据次序（2026-10-11 与 Lead 逐字核对）：{@code finished} 先行 —— 「已读完」是**确定事实**，
+     * 即便这一轮 `progress` 没取到（`-1`）也按 100% 计；只有"**未读完且进度未知**"才回 `-1`
+     * （第六批B 的「阅读资产」正是靠这个 `-1` 显示 `—` 且不计入合计）。
+     *
+     * @param progressPct `/book/getprogress` 或书架索引给的原始进度（{@code < 0} = 未知）
+     * @param finished    是否已读完（见 {@link BookStats#finished}：`finishTime > 0` 或书架 `finishReading == 1`）
+     */
+    public static int progressForBilling(int progressPct, boolean finished) {
+        if (finished) return 100;                                // 已读完 ⇒ 100%（确定事实，压过"未知"）
+        if (progressPct < 0) return UNKNOWN;                     // 未读完且未知 ⇒ 未知（绝不折成 0）
+        if (progressPct >= READ_DONE_PCT) return 100;             // 读满阈值：99 也算 100
+        return progressPct;
+    }
+
+    /**
+     * 「收入」列（分）。
      *
      * <pre>
      *   算法 A · 本期增额（默认）  = 价 × clamp(期末 − 期初, 0, 100) ÷ 100
@@ -89,18 +125,18 @@ public final class BillMoney {
      * 算法 A 的**期末取值与判据改为与算法 B 同源**（都取 {@code progressEndPct}、都只要求"这个值存在"），
      * 详见下方 `else` 分支内的说明；task-15~task-40 期间"一字未动"是那时的实况。
      *
-     * @return {@code >= 0} 实付（分）；{@link #UNKNOWN} ⇒ 该行显示 `—` 且**不计入合计**
+     * @return {@code >= 0} 收入（分）；{@link #UNKNOWN} ⇒ 该行显示 `—` 且**不计入合计**
      */
     public static int paidFen(Context c, Bill.Item it, String algo) {
         if (it == null || algo == null) return UNKNOWN;
         if (MenuPrefs.PAID_OFF.equals(algo)) return UNKNOWN;
 
         final int price = effFen(c, it);
-        // 🆕 TASK-086 第三批 8-b（2026-10-11 用户拍板原文「改 >= 0，免费实付应为 0」）：
+        // 🆕 TASK-086 第三批 8-b（2026-10-11 用户拍板原文「改 >= 0，免费收入应为 0」）：
         //   `UNKNOWN`（未知价 ⇒ 显示 `—`）与 `FREE`（免费 ⇒ 显示 `¥0`）必须**分开**处理 ——
-        //   免费书的实付是**确定的 ¥0**，不需要进度也成立，故在下面的进度判据**之前**短路返回。
-        if (price == UNKNOWN) return UNKNOWN;               // 未知价 ⇒ 实付仍 `—`（不计合计）
-        if (price == FREE) return FREE;                     // 免费 ⇒ 实付 `¥0`（先于进度判据短路）
+        //   免费书的收入是**确定的 ¥0**，不需要进度也成立，故在下面的进度判据**之前**短路返回。
+        if (price == UNKNOWN) return UNKNOWN;               // 未知价 ⇒ 收入仍 `—`（不计合计）
+        if (price == FREE) return FREE;                     // 免费 ⇒ 收入 `¥0`（先于进度判据短路）
 
         final int end = it.progressPct;
         final boolean cumulative = MenuPrefs.PAID_CUMULATIVE.equals(algo);
@@ -154,7 +190,7 @@ public final class BillMoney {
         return (int) (((long) price * (long) delta + 50L) / 100L);
     }
 
-    /** 合计实付（分）—— 只累加**算得出来**的行（无价 / 无进度 / 首期无基线的行不进合计）。 */
+    /** 合计收入（分）—— 只累加**算得出来**的行（无价 / 无进度 / 首期无基线的行不进合计）。 */
     public static long totalPaidFen(Context c, List<Bill.Item> items, String algo) {
         if (items == null) return 0L;
         long sum = 0L;
@@ -166,7 +202,7 @@ public final class BillMoney {
     }
 
     /**
-     * 合计里有几行算出**非零**实付（{@link #paidFen} &gt; 0）。
+     * 合计里有几行算出**非零**收入（{@link #paidFen} &gt; 0）。
      *
      * <p>🆕 TASK-086 上机实测补：合计行的「读回 / 折合」两段**只在 n &gt; 0 时**才写。
      * 一行都算不出来（老账无 `marketPriceFen` / 算法 A 首期无基线 / 全是免费书）时，
@@ -203,7 +239,7 @@ public final class BillMoney {
     // ══════════════════════ ③-b 估算标记（第三批 · A18） ══════════════════════
 
     /**
-     * 这一行的实付金额是不是**估算值**（⇒ 金额前加 `≈`）。
+     * 这一行的收入金额是不是**估算值**（⇒ 金额前加 `≈`）。
      *
      * <p>🆕 TASK-086 第三批（2026-10-11 · `§20.10` 定稿 Q-D）：形制**只保留"估算金额前缀 `≈`"一项**，
      * 精确金额**无前缀**。本方法是**唯一**判据 —— 两个表面（`feature/BillSection` 墨屏 /
@@ -274,7 +310,7 @@ public final class BillMoney {
     }
 
     /**
-     * 「实付」列的文案：与 {@link #paidFen} 同源；**估算值加 `≈` 前缀**（A18 形制的唯一一项）。
+     * 「收入」列的文案：与 {@link #paidFen} 同源；**估算值加 `≈` 前缀**（A18 形制的唯一一项）。
      *
      * <p>🔴 前缀拼在**本方法**里（而不是两个渲染侧各拼一次）：`feature/BillSection.java`（墨屏）
      * 与 `feature/BillWallpaper.java`（海报）都调它 ⇒ 屏幕与海报逐字一致（A11）。

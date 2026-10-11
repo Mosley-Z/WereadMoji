@@ -149,16 +149,27 @@ public final class NoteStore {
      *      （`centPrice` / `priceY` / `origY` / `free` / `progress`）⇒ 索引的**结构语义已变**。
      * </pre>
      *
-     * ⚠️ **读到老版本（无 `v` / `v<3`）不强制重建** —— 缺字段按各自的 `optInt(…, 默认值)` 读，
-     * 功能不受影响（缺价 ⇒ 该行落 {@link BillMoney#UNKNOWN} ⇒ 显示 `—`，正是卡面 §老账兼容要的形态）；
-     * 下次正常的索引刷新（{@link #saveIndex}）会把新字段给每本书补齐，
-     * 已算出的字数由 {@link #carryCharCounts} 搬过来，不会清零。
-     * 这样避免"升级即多发一次 `/user/notebooks`"（卡面「零新请求」的红利）。
+     * 🔴 **新口径（第六批补丁 / `验证记录/229`）：落盘 `v < INDEX_VERSION`（含无 `v` 的老格式）
+     * ⇒ 触发一次索引重建**（{@link com.inkread.weekread.net.NoteSync#ensureIndexUpgrade}，
+     * 判据 {@link #indexVersion}；同会话至多一次、有 apiKey 才动、失败不写 `v`）。
      *
-     * <p>🔴 **本常量目前只被写、从不被读**（写入点：{@link #saveIndex} 与
-     * {@link #writeIndexKeepCache} 的 {@code o.put("v", INDEX_VERSION)}；全仓**没有** {@code optInt("v")}
-     * 之类的版本闸）⇒ 升到 3 **不触发任何回退 / 重建分支**，老索引（v=2）靠字段级默认值 + 字数搬运容忍。
-     * 复核命令与输出见 `验证记录/201`（拍板④）。
+     * <p>**为什么必须重建**（旧口径的代价，真机实测 S4 / `验证记录/229`）：v2 索引**没有**
+     * `centPrice`/`priceY`/`origY`/`free`/`progress` 五个字段 ⇒ 每本书的价一律走默认值
+     * ⇒ 落 {@link BillMoney#UNKNOWN} ⇒ 阅读资产显示「原价未知」、墨单落 `—`。
+     * 本机 225 本里有 **199 本其实有真实原价**（网关 `/user/notebooks` 一次回包就带着，
+     * 只是压缩时被丢掉了）—— 不重建就等于这些书**永久**按未知处理，正是用户
+     * `m00885` 报的「应当有原价的书籍都显示免费」。
+     * 旧口径「不强制重建」的理由是省一次 `/user/notebooks`；但**没有别的路径**会把价格补回来
+     * （正常的索引刷新只在进本记页/手动刷新时发生，且 `INDEX_TTL_MS = 6h` 内不会重拉），
+     * 于是"省一次请求"换来的是"永久缺价"。故改为**一次性**重建：成功落 `v=3` 后
+     * {@link #indexVersion} 不再满足判据 ⇒ 自动停止，稳态零新增请求。
+     *
+     * <p>⚠️ 只看 `v` 会漏掉一种假 v3：{@link #writeIndexKeepCache}（字数回填）会把 `v` 顶成
+     * {@link #INDEX_VERSION}，但它**不重拉索引** —— 老索引被搬过来的书仍然没有价格字段。
+     * 所以判据里叠了一条 {@link #indexHasPriceKeys}（成功重建后恒为真，不会反复触发）。
+     *
+     * <p>写入点仍是 {@link #saveIndex} 与 {@link #writeIndexKeepCache} 的
+     * {@code o.put("v", INDEX_VERSION)}；复核见 `验证记录/201`（拍板④）与 `验证记录/229`。
      */
     public static final int INDEX_VERSION = 3;
 
@@ -243,6 +254,46 @@ public final class NoteStore {
 
     public static boolean indexFresh(Context c) {
         return index(c) != null && indexAge(c) <= INDEX_TTL_MS;
+    }
+
+    /**
+     * 🆕 第六批补丁：**落盘索引自报的格式版本**（文件里的 `v`）。
+     *
+     * @return {@code >= 0} 索引文件里的 `v`（缺失按 0 = v2 之前的老格式算）；
+     *         <b>{@code -1} = 压根没有索引文件</b>（区分"老索引"和"没索引"——
+     *         后者不动，交给正常的本记页同步去建，{@link com.inkread.weekread.net.NoteSync#ensureIndexUpgrade} 不为此加请求）
+     */
+    public static int indexVersion(Context c) {
+        if (c == null) return -1;
+        String s = read(c, F_INDEX);
+        if (s == null) return -1;
+        try {
+            return new JSONObject(s).optInt("v", 0);
+        } catch (Exception e) {
+            return 0;               // 解析不了 ⇒ 当最老版本（与"无 v"同向），由重建修好
+        }
+    }
+
+    /**
+     * 🆕 第六批补丁：这份索引**是否真的带上了 v3 的价格字段**（每本书的 `centPrice`）。
+     *
+     * <p>为什么不能只看 `v`：{@link #writeIndexKeepCache}（字数回填）会把 `v` 顶成
+     * {@link #INDEX_VERSION}，却**不重拉索引** ⇒ 老书身上仍然没有价格字段，
+     * 只看 `v` 会得出"已是 v3、无需重建"的假结论，价格永远补不上（真机风险点，见 `验证记录/229`）。
+     * {@link #compactIndex} 对每本书**无条件**写那 5 个键，所以"至少一本带 `centPrice` 键"
+     * 就等于"这份索引确实是从服务端拉下来的一遍"；成功重建后恒为真 ⇒ 不会反复触发。
+     *
+     * @return {@code true} = 有索引且至少一本书带 `centPrice` 键；**没有索引 / 索引为空 ⇒ true**
+     *         （= 不在本判据上追加触发，避免给"从没同步过"的用户凭空加请求）
+     */
+    public static boolean indexHasPriceKeys(Context c) {
+        JSONArray a = index(c);
+        if (a == null || a.length() == 0) return true;
+        for (int i = 0; i < a.length(); i++) {
+            JSONObject o = a.optJSONObject(i);
+            if (o != null && o.has("centPrice")) return true;
+        }
+        return false;
     }
 
     // ══════════════════════ 🆕 TASK-086：索引里的书价 / 进度 ══════════════════════
@@ -429,7 +480,7 @@ public final class NoteStore {
                 o.put("priceY", book == null ? 0.0 : book.optDouble("price", 0.0));
                 o.put("origY", book == null ? 0 : book.optInt("originalPrice", 0));
                 o.put("free", book == null ? 0 : book.optInt("free", 0));
-                // 进度在**条目顶层**（不在 `book` 里）—— 与价格同一次回包（实付的兜底数据源）
+                // 进度在**条目顶层**（不在 `book` 里）—— 与价格同一次回包（收入的兜底数据源）
                 o.put("progress", b.optInt("readingProgress", -1));
             } catch (Exception e) {
                 continue;
