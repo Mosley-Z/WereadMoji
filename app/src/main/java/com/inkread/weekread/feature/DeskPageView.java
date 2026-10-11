@@ -10,7 +10,7 @@ import android.net.Uri;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
-import android.widget.Toast;
+// 🆕 第七批 W2（task-72）：`import android.widget.Toast;` 已删 —— 反馈改屏上自绘（见 `showTip`）。
 
 import com.inkread.weekread.R;
 // 🔴 2026-10-11（TASK-18）：`import com.inkread.weekread.core.BgImageUtil;` 已随墨台背景图功能删除
@@ -116,6 +116,22 @@ public final class DeskPageView extends View {
     private Bitmap preview;
     private String previewErr = "";
     private boolean previewBusy = false;
+
+    // 🆕 第七批 W2（task-72）：屏上自绘提示（替代被系统吞掉的 Toast，详见 `showTip`）。
+    /** 当前提示文本（null = 不显示）。 */
+    private String tipText = null;
+    /** 提示自动消失的时长（ms）。 */
+    private static final long TIP_MS = 4000L;
+    /** 提示条专用画笔（不借用共享的 `wp`，避免污染同帧其它绘制）。 */
+    private final Paint tipPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    /** 到期抹掉提示（只改提示状态，不动任何业务数据）。 */
+    private final Runnable tipHide = new Runnable() {
+        @Override
+        public void run() {
+            tipText = null;
+            invalidate();
+        }
+    };
     private String previewMode = null;
     private long previewStart = 0L;
     private final RectF btnSave = new RectF();
@@ -125,8 +141,26 @@ public final class DeskPageView extends View {
     private Uri savedUri;
 
     // ── 🆕 TASK-086：长按录价 / 模态弹层（都是**瞬时态**，不落任何盘）──
-    /** 长按录价的候选书目下标（-1 = 当前这次按下不在无价行上）。 */
+    /** 长按录价 / 移出的候选书目行下标（-1 = 当前这次按下不在可长按的行上）。 */
     private int pendingPriceIdx = -1;
+    /** 🆕 第七批 W2（task-66）：长按目标种类（0 = 无；见 {@link #LP_*}）。 */
+    private int longKind;
+    /**
+     * 🆕 W2：按下瞬间**记下的书 id**（阅读资产那一侧的动作锚点）。
+     *
+     * <p>🔴 为什么不直接用行下标：阅读资产的行缓存会随「数据刷新 / `reload`」整体重建
+     * （`AssetSection.stamp` 变 ⇒ `laid()` 重算，排序可能变），而长按要等 550ms —— 中间真发生过
+     * 一次刷新的话，`bookIdAt(idx)` 会指到**另一本书**（把别人的书移出统计 = 用户可见的错）。
+     * 按下时立刻把 id 定住，长按到点只认这个 id；`null` 时才回退用行下标。
+     */
+    private String longBookId;
+    private static final int LP_NONE = 0;
+    /** 墨单：长按无价行 ⇒ 录价键盘。 */
+    private static final int LP_BILL_PRICE = 1;
+    /** 阅读资产：长按**书名区** ⇒ 从统计中移出（可在墨台设置里逐个恢复）。 */
+    private static final int LP_ASSET_TITLE = 2;
+    /** 阅读资产：长按**原价/「免费」区** ⇒ 录价键盘（两区按 x 分列，互不重叠）。 */
+    private static final int LP_ASSET_PRICE = 3;
     /** 长按是否**已经**触发（触发后这一次抬手不再当"点击"处理）。 */
     private boolean longFired;
     /** 数字键盘模态：按下时键盘已开 ⇒ 整段手势只归键盘。 */
@@ -134,16 +168,36 @@ public final class DeskPageView extends View {
     /** 长按判定时长 —— 墨屏上手指停留普遍比手机久，取 550ms 比 400ms 稳。 */
     private static final int LONG_PRESS_MS = 550;
 
-    /** 长按到点 ⇒ 开数字键盘（🔴 键盘是**自绘**的：覆盖窗里塞不进 `View`/`EditText`）。 */
+    /** 长按到点 ⇒ 开数字键盘 / 移出统计（🔴 键盘是**自绘**的：覆盖窗里塞不进 `View`/`EditText`）。 */
     private final Runnable longPressRun = new Runnable() {
         @Override
         public void run() {
-            if (pendingPriceIdx < 0) return;
+            if (longKind == LP_NONE) return;
+            final int kind = longKind;
             final int idx = pendingPriceIdx;
+            final String bid0 = longBookId;
             longFired = true;
-            billSection.openPad(idx);
+            longKind = LP_NONE;
             pendingPriceIdx = -1;
-            CardDebug.note(getContext(), "墨单：长按无价行 ⇒ 打开录价键盘 idx=" + idx);
+            longBookId = null;
+            if (kind == LP_BILL_PRICE) {
+                billSection.openPad(idx);
+                CardDebug.note(getContext(), "墨单：长按无价行 ⇒ 打开录价键盘 idx=" + idx);
+            } else if (kind == LP_ASSET_PRICE) {
+                if (bid0 != null) assetSection.openPad(bid0);
+                else assetSection.openPad(idx);
+                CardDebug.note(getContext(), "阅读资产：长按价格区 ⇒ 打开录价键盘 row=" + idx + " bookId=" + bid0);
+            } else if (kind == LP_ASSET_TITLE) {
+                // 🆕 W2 A2：长按书名 ⇒ 移出阅读资产统计 —— **必须有可见反馈**（禁静默）：
+                //    提示条 + 该行立刻从列表与合计里消失（`hideBook` 内部 reload）。
+                final String bookId = (bid0 != null) ? bid0 : assetSection.bookIdAt(idx);
+                final String title = assetSection.titleOf(bookId);
+                if (assetSection.hideBook(getContext(), bookId)) {
+                    showTip(getContext().getString(R.string.toast_asset_hidden, title));
+                    CardDebug.note(getContext(), "阅读资产：长按书名移出 bookId=" + bookId);
+                    remeasure(getWidth(), getHeight());
+                }
+            }
             invalidate();
         }
     };
@@ -267,6 +321,14 @@ public final class DeskPageView extends View {
 
     @Override
     protected void onDraw(Canvas c) {
+        drawPage(c);
+        // 🆕 第七批 W2（task-72）：提示条**永远压在最上层** —— 页面本体有三个 return
+        //    （壁纸态 / 设置态 / 列表态），所以提示画在这里而不是各个 return 之前。
+        drawTip(c, getWidth(), getHeight());
+    }
+
+    /** 页面本体（原 `onDraw` 内容，一字未改，只被 {@link #onDraw} 包了一层以便收尾画提示）。 */
+    private void drawPage(Canvas c) {
         int w = getWidth(), h = getHeight();
         if (w <= 0 || h <= 0) return;
 
@@ -291,6 +353,9 @@ public final class DeskPageView extends View {
             return;
         }
         renderer.draw(c, w, h, unit, scrollY, updatedLabel);
+        // 🆕 第七批 W2（task-66）：阅读资产的录价键盘画在**所有分区之上** —— 分区按 `desk_order`
+        //    顺序绘制，后面的分区会盖住前面的（墨单的键盘画在自身分区内、靠"它在最前面"侥幸不被盖）。
+        assetSection.drawPad(c, w, h, unit, wp);
     }
 
     // ══════════════════════ 🆕 2026-10-10：态切换 ══════════════════════
@@ -329,7 +394,7 @@ public final class DeskPageView extends View {
         // 🆕 2026-10-10 第四轮 ①：**在哪个菜单类别点生成，就出哪个类别的海报**
         final int v = billSection.view();
         if (m == null || s <= 0L) {
-            toast(getContext().getString(R.string.desk_wallpaper_none));
+            showTip(getContext().getString(R.string.desk_wallpaper_none));
             return;
         }
         mode = MODE_WALLPAPER;
@@ -394,12 +459,20 @@ public final class DeskPageView extends View {
 
     /** 保存当前预览（后台压缩落盘 → 回主线程报结果）。 */
     private void saveWallpaper() {
-        if (preview == null || previewBusy) return;
+        if (preview == null || previewBusy) {
+            // 🆕 第七批 W2（task-72）：这条分支原本**静默 return** —— 卡片诊断 (A) 指出它是
+            //    唯一"连提示都没有"的路径（保存按钮已按下，却什么都不发生）。
+            //    现在一律给屏上可见提示：生成中（或还没有错误文案，`previewErr` 缺省是空串）
+            //    ⇒ 固定文案；已失败 ⇒ 逐字回显 `previewErr`。
+            showTip(previewBusy || previewErr == null || previewErr.length() == 0
+                    ? getContext().getString(R.string.desk_wallpaper_save_wait) : previewErr);
+            return;
+        }
         final Bitmap bmp = preview;
         final String m = previewMode;
         final long s = previewStart;
         final Context app = getContext().getApplicationContext();
-        toast(getContext().getString(R.string.desk_wallpaper_saving));
+        showTip(getContext().getString(R.string.desk_wallpaper_saving));
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -408,11 +481,11 @@ public final class DeskPageView extends View {
                     @Override
                     public void run() {
                         if (r.err != null) {
-                            toast(r.err);
+                            showTip(r.err);
                         } else if (r.uri != null) {
-                            toast(getContext().getString(R.string.desk_wallpaper_saved));
+                            showTip(getContext().getString(R.string.desk_wallpaper_saved));
                         } else {
-                            toast(getContext().getString(R.string.desk_wallpaper_saved_priv,
+                            showTip(getContext().getString(R.string.desk_wallpaper_saved_priv,
                                     r.fallbackPath == null ? "?" : r.fallbackPath));
                         }
                     }
@@ -434,6 +507,8 @@ public final class DeskPageView extends View {
      */
     private void shareWallpaper() {
         if (preview == null || previewBusy) {
+            // 🆕 第七批 W2（task-72）：与「保存到相册」同一纪律 —— 静默 return 一律改成可见提示。
+            showTip(getContext().getString(R.string.desk_wallpaper_save_wait));
             return;
         }
         if (savedUri != null) {                 // 本页「保存到相册」已点过 ⇒ 直接分享
@@ -444,7 +519,7 @@ public final class DeskPageView extends View {
         final String m = previewMode;
         final long s = previewStart;
         final Context app = getContext().getApplicationContext();
-        toast(getContext().getString(R.string.desk_wallpaper_sharing));
+        showTip(getContext().getString(R.string.desk_wallpaper_sharing));
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -460,7 +535,7 @@ public final class DeskPageView extends View {
                             startShare(r.uri);
                         } else {
                             // 落盘失败（只剩私有目录）⇒ 如实说，绝不假装分享出去了
-                            toast(r.err != null ? r.err
+                            showTip(r.err != null ? r.err
                                     : getContext().getString(R.string.desk_wallpaper_share_none));
                         }
                     }
@@ -485,15 +560,66 @@ public final class DeskPageView extends View {
             CardDebug.note(getContext(), "墨单壁纸：起分享面板 uri=" + uri);
         } catch (Throwable t) {
             CardDebug.note(getContext(), "墨单壁纸：分享失败 " + t.getClass().getSimpleName());
-            toast(getContext().getString(R.string.desk_wallpaper_share_none));
+            showTip(getContext().getString(R.string.desk_wallpaper_share_none));
         }
     }
 
-    private void toast(String s) {
-        try {
-            Toast.makeText(getContext(), s, Toast.LENGTH_LONG).show();
-        } catch (Throwable ignored) {
+    /**
+     * 屏上自绘提示（🆕 第七批 W2 · task-72）。**不再用系统 `Toast`**。
+     *
+     * <p>🔴 实测（task-64 ⑤ 诊断）：墨台的宿主是**无障碍 Service**（不是 Activity），
+     * 系统 `Toast` 被立刻回收 —— logcat 逐字
+     * `W NotificationService: Toast already killed. pkg=com.inkread.weekread`；
+     * 保存后 4 张截图与预览帧**同为 140,765 B（零 toast 像素）** ⇒ 用户判成"点了没反应"。
+     * 改成画布自绘：文本交给 {@link #drawTip}，{@link #TIP_MS} 后自动消失。
+     *
+     * <p>顺带把 task-66 A2（长按书名移出统计）的反馈也接到这条路上 —— 它原先走 `Toast`，
+     * 真机上同样不可见 ⇒「禁静默」在实测层面并未达成。
+     */
+    private void showTip(String s) {
+        if (s == null || s.length() == 0) return;
+        tipText = s;
+        removeCallbacks(tipHide);
+        postDelayed(tipHide, TIP_MS);
+        postInvalidate();
+    }
+
+    /**
+     * 🆕 task-72：提示条画在**最上层**（由 {@link #onDraw} 收尾调用，三个 return 都经过）。
+     *
+     * <p>几何（实测基准 480×800、`unit = 1.2`；`btnH = unit*34f`、`btnY = h − unit*14f − btnH`）：
+     * 蓝牙分享提示墨迹占 `[btnY − 19u, btnY − 6u]`，预览框下沿 `availBot = btnY − 24u`。
+     * 提示条**底边 = `h − unit*74f` ＝ `btnY − 26u`**、高 `unit*22f`、字号 `unit*13f`
+     * ⇒ 与蓝牙提示顶留 `unit*7f`（≈8px）、与预览下沿留 `unit*2f`，与底部三个按钮
+     * （`[btnY, btnY + unit*34f]`）**零重叠**；反白（黑底白字）在墨水屏上最醒目。
+     */
+    private void drawTip(Canvas c, int w, int h) {
+        if (tipText == null || w <= 0 || h <= 0) return;
+        final float pad = w * InsightRenderer.PAD_X_RATIO;
+        final float boxH = unit * 22f;
+        final float bot = h - unit * 74f;
+        final float inner = w - pad * 2f - unit * 8f;
+        tipPaint.setStyle(Paint.Style.FILL);
+        tipPaint.setTypeface(null);
+        tipPaint.setFakeBoldText(false);
+        tipPaint.setTextAlign(Paint.Align.LEFT);
+        tipPaint.setColor(0xFF000000);
+        c.drawRect(pad, bot - boxH, w - pad, bot, tipPaint);
+        float sz = 13f * unit;
+        tipPaint.setColor(0xFFFFFFFF);
+        tipPaint.setTextSize(sz);
+        while (tipPaint.measureText(tipText) > inner && sz > 9f * unit) {
+            sz -= 0.3f;
+            tipPaint.setTextSize(sz);
         }
+        String show = tipText;
+        if (tipPaint.measureText(show) > inner) {                 // 极小屏兜底：截断加省略号
+            int n = show.length();
+            while (n > 4 && tipPaint.measureText(show.substring(0, n) + "…") > inner) n--;
+            show = show.substring(0, n) + "…";
+        }
+        Paint.FontMetrics fm = tipPaint.getFontMetrics();
+        c.drawText(show, pad + unit * 4f, bot - boxH / 2f - (fm.ascent + fm.descent) / 2f, tipPaint);
     }
 
     // ══════════════════════ 壁纸预览态：画 ══════════════════════
@@ -513,7 +639,11 @@ public final class DeskPageView extends View {
             InsightRenderer.drawCenteredIn(c, w, barH, btnY - barH, unit, wp, msg);
         } else {
             float availTop = barH + unit * 10f;
-            float availBot = btnY - unit * 10f;
+            // 🆕 第七批 W2（task-66）B①：预览框下沿**必须让开**蓝牙分享提示那一行。
+            //    实测（480×800，unit=1.2）：提示基线在 `btnY − 6u − descent` ⇒ 提示墨迹占
+            //    `[btnY − 19u, btnY − 6u]`，旧的 `btnY − 10u` 会让预览白底压住提示约 9u。
+            //    改 `− 24u` ⇒ 与提示顶留 5u（=6px）净空；预览按 `sc` 自适应缩放，不截断内容。
+            float availBot = btnY - unit * 24f;
             float availW = w - pad * 2f;
             float availH = availBot - availTop;
             if (availH < unit * 20f) availH = unit * 20f;
@@ -725,17 +855,40 @@ public final class DeskPageView extends View {
                 // 🔴 2026-10-11（TASK-086 第六批B / D25）：原「落在排行区 ⇒ 手势只驱动区内滚」的
                 //    `dragRank` 判定已删除 ——「阅读资产」没有内滚，列表态滑动恒为整页滚动。
                 // 🆕 TASK-086：数字键盘是**模态** —— 开着时整段按下只归键盘（不滚、不点、不返回）
-                padModal = (mode == MODE_LIST) && billSection.padOpen();
+                padModal = (mode == MODE_LIST) && (billSection.padOpen() || assetSection.padOpen());
                 if (padModal) return true;
                 // 🆕 TASK-086：长按无价书目行 ⇒ 自绘数字键盘（从按下这一刻起算）
+                // 🆕 第七批 W2（task-66）：阅读资产同样两处可长按，**按 x 严格分列**：
+                //    书名区（左）= 移出统计；原价/「免费」区（右）= 录价键盘。
                 pendingPriceIdx = -1;
+                longKind = LP_NONE;
+                longBookId = null;
                 longFired = false;
                 if (mode == MODE_LIST) {
                     final float bt = billTop();
                     if (bt >= 0f) {
                         pendingPriceIdx = billSection.hitPriceRow(downX, downY, getWidth(), unit, bt);
-                        if (pendingPriceIdx >= 0) postDelayed(longPressRun, LONG_PRESS_MS);
+                        if (pendingPriceIdx >= 0) longKind = LP_BILL_PRICE;
                     }
+                    if (longKind == LP_NONE) {
+                        final float at = assetTop();      // -1f = 分区不在分区表；滚出屏上方时为负值，仍需可命中
+                        if (at != -1f) {
+                            int row = assetSection.hitRow(downX, downY, getWidth(), unit, at, true);
+                            if (row >= 0) {
+                                longKind = LP_ASSET_PRICE;
+                            } else {
+                                row = assetSection.hitRow(downX, downY, getWidth(), unit, at, false);
+                                if (row >= 0) longKind = LP_ASSET_TITLE;
+                            }
+                            if (longKind != LP_NONE) {
+                                pendingPriceIdx = row;
+                                // 🔴 立刻把书 id 定住（见 `longBookId` 注释）：550ms 里若发生一次刷新，
+                                //    行下标会指到别的书 —— 那是「把别人的书移出统计」的可见错误。
+                                longBookId = assetSection.bookIdAt(row);
+                            }
+                        }
+                    }
+                    if (longKind != LP_NONE) postDelayed(longPressRun, LONG_PRESS_MS);
                 }
                 // 🔴 2026-10-11（TASK-18）：设置态的「按住白纱滑条 ⇒ 只拖滑条」分支已随白纱删除
                 //     ⇒ 设置态与列表态共用同一套滚动手势（不再有"按住即拖"的特例）。
@@ -745,9 +898,11 @@ public final class DeskPageView extends View {
                 totDx = e.getX() - downX;
                 totDy = e.getY() - downY;
                 // 🆕 TASK-086：手指一动就不算长按；长按已开键盘 ⇒ 移动也归键盘（吃掉）
-                if (pendingPriceIdx >= 0) {
+                if (longKind != LP_NONE) {
                     removeCallbacks(longPressRun);
                     pendingPriceIdx = -1;
+                    longKind = LP_NONE;
+                    longBookId = null;
                 }
                 if (longFired) return true;
                 if (mode == MODE_WALLPAPER) return true;      // 预览态不滚
@@ -780,10 +935,14 @@ public final class DeskPageView extends View {
                 if (longFired) {
                     longFired = false;
                     pendingPriceIdx = -1;
+                    longKind = LP_NONE;
+                    longBookId = null;
                     axis = AXIS_NONE;
                     return true;
                 }
                 pendingPriceIdx = -1;
+                longKind = LP_NONE;
+                longBookId = null;
 
                 // ── 壁纸预览态：只有「保存 / 分享 / 关闭 / 返回 ›」四个动作 ──
                 if (mode == MODE_WALLPAPER) {
@@ -814,8 +973,11 @@ public final class DeskPageView extends View {
                             final boolean changed = settings.activate(it);
                             // 🆕 诉求 ②：「应用」的结果立刻弹一条（墨屏重绘慢，光靠面板里的状态行太迟）
                             final String tip = settings.consumeToast();
-                            if (tip != null) toast(tip);
+                            if (tip != null) showTip(tip);
                             if (changed) {
+                                // 🆕 第七批 W2（task-66）：设置里改了「只在架」或恢复了隐藏书目 ⇒
+                                //    阅读资产必须**本地重算**（`reload` 零网络；不含 `AssetRefresher`）。
+                                assetSection.reload(getContext());
                                 remeasure(getWidth(), getHeight());
                                 invalidate();
                             }
@@ -827,10 +989,16 @@ public final class DeskPageView extends View {
 
                 // ── 列表态 ──
                 // 🆕 TASK-086：数字键盘**优先级最高**（模态）—— 开着时只有键位/关闭两种结局
-                if (up && billSection.padOpen()) {
-                    int key = billSection.hitPad(e.getX(), e.getY(), getWidth(), getHeight(), unit);
+                if (up && (billSection.padOpen() || assetSection.padOpen())) {
+                    // 🆕 第七批 W2（task-66）：阅读资产的录价键盘与墨单**共用** `PricePad` 实现，
+                    //    但各自持有实例 ⇒ 这里按"谁开着"路由（同一时刻只可能一个开着）。
+                    final boolean assetPad = assetSection.padOpen();
+                    int key = assetPad
+                            ? assetSection.hitPad(e.getX(), e.getY(), getWidth(), getHeight(), unit)
+                            : billSection.hitPad(e.getX(), e.getY(), getWidth(), getHeight(), unit);
                     if (key >= 0) {
-                        billSection.padPress(key);
+                        if (assetPad) assetSection.padPress(key);
+                        else billSection.padPress(key);
                         // 🆕 收口 F1（2026-10-10）：键盘**关闭**这一下会真正改到行数据
                         //   （确定 = 录价/改价/清除；取消 = 无改动）⇒ 必须重排版。
                         //   🔴 为什么只在这一下做：数字键只改 `padText`，与行文本无关，
@@ -839,7 +1007,9 @@ public final class DeskPageView extends View {
                         //      缓存**的 ⇒ 只 `invalidate()` 会把**旧**行数据重画一遍
                         //      （审查 `验证记录/202` G1 实测「点确定后当前帧逐字节不变」）。
                         //      数据侧的 `invalidateRows()` 在 `padPress` 里已调，这里补"高度/可滚"。
-                        if (!billSection.padOpen()) remeasure(getWidth(), getHeight());
+                        //   🆕 W2：阅读资产侧的手填价还会改变**排序（原价/收入降序）**与合计
+                        //      ⇒ `AssetSection.padPress` 内部已 `reload`（重算价格链），这里同样补高度。
+                        if (!billSection.padOpen() && !assetSection.padOpen()) remeasure(getWidth(), getHeight());
                         invalidate();
                     }
                     axis = AXIS_NONE;

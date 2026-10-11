@@ -5,6 +5,7 @@ import com.inkread.weekread.core.BookStore;
 import com.inkread.weekread.core.CardDebug;
 import com.inkread.weekread.core.CardPrefs;
 import com.inkread.weekread.core.PeriodRange;
+import com.inkread.weekread.core.PagePrefs;
 import com.inkread.weekread.core.StatsStore;
 import com.inkread.weekread.core.TodoItem;
 import com.inkread.weekread.core.TodoStore;
@@ -787,7 +788,12 @@ final class OverlayController {
         if (hitView != null) hitView.setVisibility(show ? View.VISIBLE : View.GONE);
         if (titleView != null) titleView.setVisibility(show ? View.VISIBLE : View.GONE);
         // 🆕 TASK-080：「打开墨台」四种形态都可见（它是墨台的常驻入口）⇒ 只跟卡片显隐走。
-        if (deskView != null) deskView.setVisibility(show ? View.VISIBLE : View.GONE);
+        // 🆕 第七批 W1（用户 2026-10-12 拍板 ④）：**再叠总开关** —— 「启用墨台」关掉后桌面卡片不再
+        //    显示墨台入口（`PagePrefs.isDeskEnabled`，默认 true）。🔴 只影响"入口可见性"，
+        //    墨台的快照保留与账单计算照旧（关掉再打开即可看到最新数据）。
+        if (deskView != null) {
+            deskView.setVisibility((show && PagePrefs.isDeskEnabled(ctx)) ? View.VISIBLE : View.GONE);
+        }
         // 「打开」只在本书形态存在：周/月形态下它要完全让开，不然会吃掉右下角的桌面手势
         String cardMode = StatsStore.getCardPeriod(ctx);
         boolean bookMode = PeriodRange.BOOK.equals(cardMode);

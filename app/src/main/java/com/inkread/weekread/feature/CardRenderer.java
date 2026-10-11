@@ -3,6 +3,7 @@ package com.inkread.weekread.feature;
 import com.inkread.weekread.R;
 import com.inkread.weekread.core.CardSpec;
 import com.inkread.weekread.core.NoteStore;
+import com.inkread.weekread.core.PagePrefs;
 import com.inkread.weekread.core.PeriodRange;
 import com.inkread.weekread.core.PeriodStats;
 import com.inkread.weekread.core.RankFilter;
@@ -450,8 +451,17 @@ final class CardRenderer {
      * <p>顺带把矩形回写进 {@code host.deskBox}（**View 内坐标**）：App 全屏档没有透明窗，
      * 点击靠 {@code CardInteraction.touch()} 的画布命中，命中区必须与画出来的框严格一致。
      * 桌面档那份屏幕坐标由 {@link CardSpec#deskBoxLeft()} 给，两边共用同一组常量 ⇒ 天然重合。
+     *
+     * <p>🆕 第七批 W1（用户 2026-10-12 拍板 ④）：**总开关关掉时整个不画**，并把
+     * {@code host.deskBox} 清成空矩形 —— 否则按钮不画但命中矩形还在，点了会有幽灵响应
+     * （`CardInteraction.touch()` 的画布命中会照旧吃掉这一下）。只影响这一个按钮的可见性
+     * 与命中框；按钮几何常量、其它抬头元素、{@code CardSpec} 都不动。
      */
     private void drawDeskButton(Canvas c, float x, float y, float w, float h, float titleSize) {
+        if (!PagePrefs.isDeskEnabled(host.getContext())) {
+            host.deskBox.set(0f, 0f, 0f, 0f);
+            return;
+        }
         host.deskBox.set(x, y, x + w, y + h);
 
         host.p.setStyle(Paint.Style.STROKE);

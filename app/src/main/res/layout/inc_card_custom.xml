@@ -22,6 +22,19 @@
         android:textColor="#FF000000"
         android:textSize="14sp" />
 
+    <!-- 🆕 第七批 W1（用户 2026-10-12 拍板 ④）：墨台总开关 —— 从「墨台 → 设置」**搬到 APP 设置 → 自定义**，
+         紧跟「仅一页模式」下方；默认打开。关掉后桌面卡片不再显示墨台入口，但墨台的**快照保留与计算
+         照旧进行**（方便重新打开后快速上手）。文案复用既有 `label_desk_enabled`（不新增字符串）；
+         勾选态由 SettingsPageController 读写 `PagePrefs.is/setDeskEnabled`。 -->
+    <CheckBox
+        android:id="@+id/cb_desk_enabled"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:buttonTint="#FF000000"
+        android:text="@string/label_desk_enabled"
+        android:textColor="#FF000000"
+        android:textSize="14sp" />
+
     <!-- TASK-012：刷新绑定 —— 点「更新于…」按勾选一并补发（只写偏好，不触发卡片重绘） -->
     <TextView
         android:layout_width="match_parent"

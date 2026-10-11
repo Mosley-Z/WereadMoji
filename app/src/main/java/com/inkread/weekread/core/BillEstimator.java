@@ -203,6 +203,16 @@ public final class BillEstimator {
         if (marked > 0) {
             CardDebug.noteV(c, "bill: 期末值存疑改标估算 " + mode + " 行数=" + marked);
         }
+        // ⓪′ 🆕 task-73（第七批 W1-patch-2）：**「期初值可信度」标注 pass** —— 与上面同构，
+        //    紧跟其后（同样**必须**在锚点 ①/曲线 ③ 之前）。
+        //    起因：`progressStartPct` 也可能是"生成那一刻"从 `ProgressLog` 读到的一条**合成**快照
+        //    （2026-10-10 那次无条件 `put` 把"现在"写进旧期；`task-64` 诊断）。这种期初被当成真值 ⇒
+        //    相邻两期的增额首尾不相消 ⇒ **A15（逐本 Σ增额 ≡ 末期累计）破**、同屏自相矛盾
+        //    （2026-06 已按估算显示，2026-07 却仍假设期初 = 那个合成值）。判据见 `markStartTrust`。
+        final int markedStart = markStartTrust(c, mode, win, byPeriod, dirty);
+        if (markedStart > 0) {
+            CardDebug.noteV(c, "bill: 期初值存疑改标估算 " + mode + " 行数=" + markedStart);
+        }
         Map<String, Boolean> seen = new HashMap<String, Boolean>();
         for (int w = 0; w < win.size(); w++) {
             long pk = win.get(w).longValue();
@@ -410,6 +420,83 @@ public final class BillEstimator {
         }
         if (cleared > 0) {
             CardDebug.noteV(c, "bill: 当期期末不再标估算 " + mode + " 清除行数=" + cleared);
+        }
+        return n;
+    }
+
+    /**
+     * 🆕 task-73（第七批 W1-patch-2，2026-10-12）：**「期初值可信度」标注 pass** ——
+     * 与 {@link #markEndTrust} 同构、同位置（紧随其后、先于锚点 ① 与曲线 ③）。
+     *
+     * <p>要解决的问题：{@link Bill.Item#progressStartPct} 的值同样可能来自两个地方 ——
+     * <ol>
+     *   <li>**真期界快照**：生成该期时从 {@link ProgressLog} 取到"上一期期末"（`task-71` 加了 `:g1`
+     *       代际戳之后，只有这种条目才算数）；或上一期那一行本身就是"刚结束期抓到的真期末"
+     *       （{@link Bill.Item#progressEndKnown}）且与期初值一致（拍板② 的合法兜底）；</li>
+     *   <li>**"生成那一刻"的合成值**：2026-10-10 那次**无条件** `ProgressLog.put` 把"现在"写进了旧期
+     *       ⇒ `task-64` 诊断的合成快照；或旧版把"现在"当上期期末回填。</li>
+     * </ol>
+     * 第 ② 类值被当成真期初用 ⇒ 相邻两期增额首尾不相消 ⇒ **A15（逐本 Σ增额 ≡ 末期累计）破**，
+     * 且同屏自相矛盾（例：2026-06 已按估算 38 显示，2026-07 却仍假设期初 = 那个合成 96 ⇒ 增额 ¥0）。
+     *
+     * <p>判据（不看"现在"、可离线复核）—— 对每一期行 {@code x}、{@code prevStart = 上一期起始}：
+     * <pre>
+     *   可信（不动） ⟺ ① ProgressLog.at(c, bid, prevStart) >= 0
+     *                 ② 上一期同书行存在 且 prev.progressEndKnown 且 prev.progressPct == x.progressStartPct
+     *   其余        ⇒ x.progressStartEst = true（交给 ③ 的期初支按"上一期期末"链式重算）
+     * </pre>
+     *
+     * <p>🆕 task-48 口径沿用：**当期豁免**（当期行的期初不标估算；旧构建标错的清掉）——当期本来就是
+     * "至今"值，标 `≈` 只会制造噪声。
+     *
+     * <p>🔴 只碰 {@code progressStartEst} 这一个布尔，**从不改任何进度数值**（改值归曲线 ③）；
+     * `progressStartPct < 0`（无值）与已是估算的行不动。
+     *
+     * @return 被**标注**的行数（留痕用；当期清除的旧标记单独打日志）
+     */
+    private static int markStartTrust(Context c, String mode, List<Long> win, Map<Long, Bill> byPeriod,
+                                      List<Long> dirty) {
+        int n = 0;
+        int cleared = 0;
+        for (int w = 0; w < win.size(); w++) {
+            final long p = win.get(w).longValue();
+            Bill x = byPeriod.get(Long.valueOf(p));
+            if (x == null || x.items == null) continue;
+            boolean rowDirty = false;
+            // task-48（#2③）：当期豁免 —— 与期末同口径
+            final boolean cur = PeriodRange.isCurrent(mode, p);
+            for (int i = 0; i < x.items.size(); i++) {
+                Bill.Item it = x.items.get(i);
+                if (it == null) continue;
+                if (cur) {
+                    if (it.progressStartEst) {          // 旧构建标错了 ⇒ 清掉（不改数值）
+                        it.progressStartEst = false;
+                        rowDirty = true;
+                        cleared++;
+                    }
+                    continue;
+                }
+                if (it.progressStartPct < 0) continue;  // 无值：曲线 ③ 本来就会估
+                if (it.progressStartEst) continue;      // 已标 ⇒ 不重复标
+                String bid = it.bookId == null ? "" : it.bookId;
+                if (bid.length() > 0) {
+                    final long prevStart = PeriodRange.shift(mode, p, -1);
+                    if (ProgressLog.at(c, bid, prevStart) >= 0) continue;      // ① 期界快照（:g1）
+                    Bill.Item prev = itemOf(byPeriod, prevStart, bid);
+                    if (prev != null && prev.progressEndKnown
+                            && prev.progressPct == it.progressStartPct) {
+                        continue;                                              // ② 拍板② 的合法兜底
+                    }
+                }
+                it.progressStartEst = true;             // ③ 其余 ⇒ 只能当估算
+                rowDirty = true;
+                n++;
+            }
+            Long pk = Long.valueOf(p);
+            if (rowDirty && !dirty.contains(pk)) dirty.add(pk);
+        }
+        if (cleared > 0) {
+            CardDebug.noteV(c, "bill: 当期期初不再标估算 " + mode + " 清除行数=" + cleared);
         }
         return n;
     }

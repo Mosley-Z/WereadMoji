@@ -6,11 +6,16 @@ import android.graphics.Paint;
 import android.graphics.RectF;
 
 import com.inkread.weekread.R;
+import com.inkread.weekread.core.AssetStore;
 import com.inkread.weekread.core.PagePrefs;
 import com.inkread.weekread.ui.InkTheme;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * 🆕 2026-10-10（用户诉求 ①）：**墨台的设置态** —— 纯 `Canvas` 自绘 + 命中。
@@ -23,15 +28,20 @@ import java.util.List;
  * <p>⇒ 结论：只能用**自绘控件**（本项目已有先例：软锁 PIN 键盘 {@code ui/KeyPadView}
  * 就是在同类覆盖窗里自绘 + 命中的，已验证可行）。
  *
- * <h3>内容（老设置页「墨台」分区的等价搬运 + 两轮用户拍板）</h3>
+ * <h3>内容（老设置页「墨台」分区的等价搬运 + 三轮用户拍板）</h3>
  * <pre>
- *   墨台
- *     [✓] 启用墨台
  *   内容模块
  *     [✓] 墨单                    [↑] [↓]
  *     …（按 PagePrefs 顺序，6 行）
  *     （提示：勾选决定是否显示；↑↓ 调整顺序…）
+ *   阅读资产
+ *     [ ] 只统计书架上的书
+ *     （提示：只作用于阅读资产…）
+ *     已移出统计的书：书名 [恢复] … [全部恢复]（空则「暂无移出的书」）
  * </pre>
+ * 🔴 2026-10-12（用户指令 ④「启用墨台的开关不放在墨台-设置内，只放 APP 内设置-自定义」）：原第一组
+ * 「墨台」标题 +「[✓] 启用墨台」整行**已删除** ⇒ 墨台-设置里不再有该开关；`PagePrefs.is/setDeskEnabled`
+ * 未动，APP 设置 → 自定义（`SettingsPageController` 的 `cb_desk_enabled`）是它**唯一**的入口。
  * 🔴 2026-10-11（TASK-18 · 用户 2026-10-10 指令①第 6 条「放弃墨台的壁纸，改为纯白色，
  * 删除相关设置」）：原先的**「背景」整组已删除** —— 纯白 / 自定义（固定路径
  * `Pictures/墨台背景.jpg`）、「应用」按钮、结果状态行、`label_desk_bg_tip`，以及
@@ -79,9 +89,16 @@ final class DeskSettings {
     //    「背景」整组删除；编号不回收、不复用（避免与旧日志/截图里的 kind 值混淆）。
     private static final int K_SEP    = 0;   // 1px 分隔线（不可点）
     private static final int K_HEAD   = 1;   // 分组大标题（不可点）
-    private static final int K_TOGGLE = 2;   // 「启用墨台」整行可点
+    // 🔴 2026-10-12（用户指令 ④）：原 `K_TOGGLE = 2`（「启用墨台」整行可点）随墨台-设置里的该行
+    //    **退役**；编号 **2 不回收、不复用**（与 5–8 同规矩，避免和旧日志/截图里的 kind 值混淆）。
     private static final int K_MOD    = 3;   // 模块行左侧标签区（可点 ⇒ 切换勾选）
     private static final int K_MOD_BT = 4;   // 模块行的 ↑ / ↓ 小按钮（可点）
+    // 🆕 第七批 W2（task-66）：阅读资产分组（编号继续往下排，**不复用** 5–8）
+    private static final int K_ASSET_SHELF = 9;   // 「只统计书架上的书」（整行可点 ⇒ 切换）
+    private static final int K_ASSET_HID   = 10;  // 已移出的书：左侧书名 + 右侧「恢复」按钮（r = 按钮区）
+    private static final int K_ASSET_ALL   = 11;  // 「全部恢复」按钮行（r = 按钮区）
+    /** 🆕 W2：资产组右侧按钮宽（×unit）——「全部恢复」4 个字也放得下。 */
+    private static final float ASSET_BTN_UNITS = 78f;
 
     /** 行（画与命中共用）。{@code r} 为**内容局部坐标**（y 从内容顶算，不含滚动）。 */
     static final class Item {
@@ -144,15 +161,16 @@ final class DeskSettings {
         List<Item> out = new ArrayList<Item>();
         float y = PAD_TOP_UNITS * unit;
 
-        // ── ① 墨台 ──
-        y = head(out, y, headH, "墨台", w, unit);
-        Item tg = row(out, K_TOGGLE, pad, right, y, rowH);
-        tg.a = ctx.getString(R.string.label_desk_enabled);
-        tg.on = PagePrefs.isDeskEnabled(ctx);
-        y += rowH;
-        y = sep(out, y, unit);
+        // 🔴 2026-10-12（用户指令 ④「启用墨台的开关不放在墨台-设置内，只放 APP 内设置-自定义」）：
+        //    原「① 墨台」整组（分组标题 `墨台` + 「[✓] 启用墨台」整行 + 其后那条分隔线）**整体删除** ——
+        //    该开关的**唯一入口**改为 APP 设置 → 自定义（`SettingsPageController` 的 `cb_desk_enabled`）。
+        //    `PagePrefs.is/setDeskEnabled` **本身未动**：`CardA11yService` / `OverlayController` /
+        //    `CardRenderer` / `DeskPageView` 都还在读它。
+        //    版面预算随之减少 96×unit px（= 45 标题 + 35 行 + 16 分隔；unit=1.2 时 115.2px），
+        //    item 也少 3 个（1×K_HEAD + 1×K_TOGGLE + 1×K_SEP）⇒ 下方所有分组的分区编号整体上移。
+        //    本方法开头**不再有 head()**：内容顶就是「内容模块」标题（不留"空分组标题"）。
 
-        // ── ② 内容模块 ──
+        // ── ① 内容模块 ──（原「① 墨台」组已删 ⇒ 编号上移：原 ② ⇒ ①）
         y = head(out, y, headH, ctx.getString(R.string.label_desk_modules), w, unit);
         String[] order = PagePrefs.getDeskOrder(ctx);
         int mask = PagePrefs.getDeskOnMask(ctx);
@@ -181,10 +199,59 @@ final class DeskSettings {
 
         // 🔴 2026-10-11（TASK-18）：原「③ 背景」整组（纯白 / 自定义 / 「应用」按钮 / 结果状态行 /
         //    白纱文字行 + 滑条）已按用户指令①第 6 条删除 —— 墨台背景恒纯白，设置页不再有这一组。
-        //    ⇒ 设置页现在只有两组：① 墨台（总开关）② 内容模块。本方法末尾不再 `sep()` 收尾，
+        //    ⇒ 设置页现在只有两组：① 内容模块 ② 阅读资产（原「① 墨台」总开关组已于 2026-10-12
+        //      按用户指令 ④ 删除，见本方法开头注释）。本方法末尾不再 `sep()` 收尾，
         //      避免留一条"分组线下面什么都没有"的视觉尾巴（那正是验收要防的空白分组）。
+
+        // ── ② 🆕 第七批 W2（task-66）阅读资产 ──（原 ③ ⇒ ②：删「墨台」组后编号上移）
+        //    A1：**独立**勾选「只统计书架上的书」（只作用于阅读资产，不共用 `rank_shelf_only`，见 W1 冻结 API）。
+        //    A3：长按移出的书在这里**逐个恢复**（书名优先、缺则 id）+「全部恢复」+ 空态文案。
+        y = sep(out, y, unit);
+        y = head(out, y, headH, ctx.getString(R.string.label_asset_group), w, unit);
+        Item sh = row(out, K_ASSET_SHELF, pad, right, y, rowH);
+        sh.a = ctx.getString(R.string.label_asset_shelf_only);
+        sh.on = PagePrefs.isAssetShelfOnly(ctx);
+        y += rowH;
+        y = note(out, ctx.getString(R.string.label_asset_shelf_only_tip), y, w, unit);
+        y = head(out, y, headH, ctx.getString(R.string.label_asset_hidden), w, unit);
+        y = note(out, ctx.getString(R.string.label_asset_hidden_tip), y, w, unit);
+        final Set<String> hidden = PagePrefs.assetHiddenIds(ctx);
+        if (hidden == null || hidden.isEmpty()) {
+            y = note(out, ctx.getString(R.string.label_asset_hidden_empty), y, w, unit);
+        } else {
+            final float btw = ASSET_BTN_UNITS * unit;
+            List<String> ids = new ArrayList<String>(hidden);
+            Collections.sort(ids);                       // 集合无序 ⇒ 排序后展示才稳定（墨屏尤其重要）
+            Map<String, String> titles = assetTitles(ctx);
+            for (int i = 0; i < ids.size(); i++) {
+                String id = ids.get(i);
+                String t = titles.get(id);
+                if (t == null || t.length() == 0) t = id;    // 本地缓存缺书名 ⇒ 回退 id（可辨识）
+                Item hr = row(out, K_ASSET_HID, right - btw, right, y, rowH);
+                hr.id = id;
+                hr.a = t;                                    // 左侧书名（画时按按钮前宽度截断）
+                hr.b = ctx.getString(R.string.btn_asset_restore);
+                y += rowH;
+            }
+            Item all = row(out, K_ASSET_ALL, right - btw, right, y, rowH);
+            all.a = ctx.getString(R.string.btn_asset_restore_all);
+            y += rowH;
+        }
         items = out;
         return out;
+    }
+
+    /** 🆕 W2：`bookId → 书名`（本地资产缓存；缺则调用方回退 id）。**零网络**。 */
+    private static Map<String, String> assetTitles(Context c) {
+        Map<String, String> m = new HashMap<String, String>();
+        List<AssetStore.Book> all = AssetStore.all(c);
+        if (all == null) return m;
+        for (int i = 0; i < all.size(); i++) {
+            AssetStore.Book b = all.get(i);
+            if (b == null || b.id == null) continue;
+            if (b.title != null && b.title.length() > 0) m.put(b.id, b.title);
+        }
+        return m;
     }
 
     private static Item row(List<Item> out, int kind, float l, float r, float y, float h) {
@@ -297,12 +364,6 @@ final class DeskSettings {
                     p.setTypeface(null);
                     break;
 
-                case K_TOGGLE: {
-                    text(it, c, pad + BOX_UNITS * unit + GAP_UNITS * unit, cy, SZ_ROW * unit, INK, false);
-                    checkBox(c, pad, cy, BOX_UNITS * unit, it.on);
-                    break;
-                }
-
                 case K_MOD: {
                     text(it, c, pad + BOX_UNITS * unit + GAP_UNITS * unit, cy, SZ_ROW * unit,
                             it.on ? INK : GRAY, it.on);
@@ -312,6 +373,32 @@ final class DeskSettings {
 
                 case K_MOD_BT:
                     arrowBtn(c, it, unit, cy);
+                    break;
+
+                // 🆕 第七批 W2（task-66）：阅读资产组
+                case K_ASSET_SHELF:
+                    // 与 K_MOD 同一视觉：左侧勾选框 + 右移的标签
+                    text(it, c, pad + BOX_UNITS * unit + GAP_UNITS * unit, cy, SZ_ROW * unit, INK, false);
+                    checkBox(c, pad, cy, BOX_UNITS * unit, it.on);
+                    break;
+
+                case K_ASSET_HID: {
+                    // 左侧书名（截到按钮前，长书名不压按钮）+ 右侧「恢复」按钮
+                    p.setStyle(Paint.Style.FILL);
+                    p.setTypeface(null);
+                    p.setFakeBoldText(false);
+                    p.setColor(GRAY);
+                    p.setTextAlign(Paint.Align.LEFT);
+                    p.setTextSize(SZ_ROW * unit);
+                    Paint.FontMetrics hm2 = p.getFontMetrics();
+                    final float lmax = it.r.left - pad - unit * 8f;
+                    c.drawText(BillSection.fit(p, it.a, lmax), pad, cy - (hm2.ascent + hm2.descent) / 2f, p);
+                    outlineTextBtn(c, it, unit, cy, it.b);
+                    break;
+                }
+
+                case K_ASSET_ALL:
+                    outlineTextBtn(c, it, unit, cy, it.a);
                     break;
 
                 default:
@@ -383,6 +470,31 @@ final class DeskSettings {
         p.setTextAlign(Paint.Align.LEFT);
     }
 
+    /**
+     * 🆕 第七批 W2（task-66）：**带文字的描边小按钮**（「恢复」/「全部恢复」）。
+     *
+     * <p>与 {@link #arrowBtn} 同一套视觉语言（1px 直角描边 + 居中文字、墨水屏禁圆角），差别只有
+     * 两点：① 横向铺满 {@code it.r}（不是正方形）；② 文字取 {@code label} 参数（{@code it.b} 给
+     * 的是模块行的 ↑↓，这里要显示按钮文案）。命中区就是 {@code it.r}，由 {@link #hitItem} 统一判。
+     */
+    private void outlineTextBtn(Canvas c, Item it, float unit, float cy, String label) {
+        float side = Math.min(it.r.height() * 0.72f, BTN_UNITS * unit);
+        float t = cy - side / 2f;
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(1f);
+        p.setColor(it.enabled ? INK : LINE);
+        c.drawRect(it.r.left + 0.5f, t + 0.5f, it.r.right - 0.5f, t + side - 0.5f, p);
+        p.setStyle(Paint.Style.FILL);
+        p.setTypeface(null);
+        p.setFakeBoldText(false);
+        p.setColor(it.enabled ? INK : LIGHT);
+        p.setTextAlign(Paint.Align.CENTER);
+        p.setTextSize(SZ_SMALL * unit * 1.15f);
+        Paint.FontMetrics fm = p.getFontMetrics();
+        c.drawText(label, (it.r.left + it.r.right) / 2f, cy - (fm.ascent + fm.descent) / 2f, p);
+        p.setTextAlign(Paint.Align.LEFT);
+    }
+
     // ══════════════════════ 命中 ══════════════════════
 
     /**
@@ -423,11 +535,6 @@ final class DeskSettings {
     boolean activate(Item it) {
         if (it == null) return false;
         switch (it.kind) {
-            case K_TOGGLE:
-                PagePrefs.setDeskEnabled(ctx, !it.on);
-                invalidateCache();
-                return true;
-
             case K_MOD:
                 PagePrefs.setModuleOn(ctx, it.id, !it.on);
                 invalidateCache();
@@ -435,6 +542,23 @@ final class DeskSettings {
 
             case K_MOD_BT:
                 PagePrefs.moveModule(ctx, it.id, "↑".equals(it.b) ? -1 : +1);
+                invalidateCache();
+                return true;
+
+            // 🆕 第七批 W2（task-66）阅读资产组
+            case K_ASSET_SHELF:
+                PagePrefs.setAssetShelfOnly(ctx, !it.on);
+                invalidateCache();
+                return true;
+
+            case K_ASSET_HID:
+                // 逐个恢复：书名行右侧「恢复」按钮（命中区 = it.r = 按钮区）
+                PagePrefs.unhideAssetBook(ctx, it.id);
+                invalidateCache();
+                return true;
+
+            case K_ASSET_ALL:
+                PagePrefs.clearAssetHidden(ctx);
                 invalidateCache();
                 return true;
 

@@ -4,6 +4,7 @@ import com.inkread.weekread.core.BillScheduler;
 import com.inkread.weekread.core.CardDebug;
 import com.inkread.weekread.core.CardPrefs;
 import com.inkread.weekread.core.LockPrefs;
+import com.inkread.weekread.core.PagePrefs;
 import com.inkread.weekread.net.NoteSync;
 
 import android.accessibilityservice.AccessibilityService;
@@ -153,11 +154,19 @@ public class CardA11yService extends AccessibilityService {
      * 🔴 服务未连上 / 窗口未建时静默无操作（与 {@link #sync()} 同纪律，绝不因调用方早到而崩）。
      */
     public static void showDesk() {
-        if (sInstance != null && sInstance.desk != null) sInstance.desk.show();
         // 🆕 第六批A（D2，2026-10-11）：**开墨台**是一次"可达时机"（用户特意来看账单，最该是最新的）
         //    ⇒ 顺带做一次账单幂等补齐（跨期落定 / 月去进行中账 / 当期节流刷新都在里面）。
         //    `ensureBills` 自带并发闸 + 后台线程 ⇒ 立即返回，不挡墨台的显示。
+        // 🔴 第七批 W1-patch（review F1 实测，2026-10-12）：这一句**必须在下面那道"总开关早退"之前**。
+        //    原先它排在 `return` 之后 ⇒ 关掉「启用墨台」时，这一次调用的账单落定会被一起跳过，
+        //    与用户拍板口径（早退只挡窗口显示；快照保留与账单计算照旧）不符。这里只挪位置，未改判断。
         if (sInstance != null) BillScheduler.ensureBills(sInstance);
+        // 🆕 第七批 W1（用户 2026-10-12 拍板 ④）：总开关关掉后，桌面卡片**不再显示墨台入口**
+        //    ⇒ 即使有残留调用点（或竞态早到的触摸）也一律不挂窗。这是"入口显隐"的第二道闸，
+        //    第一道在 `OverlayController` 的 `deskView` 可见性判据、第三道在 `DeskPageView` 的空态。
+        //    🔴 只挡"显示"（窗口不挂），不挡上面的 `ensureBills`。
+        if (sInstance != null && !PagePrefs.isDeskEnabled(sInstance)) return;
+        if (sInstance != null && sInstance.desk != null) sInstance.desk.show();
     }
 
     /** 关闭墨台。 */

@@ -227,22 +227,47 @@ public final class BillWallpaper {
     private static void draw(Context c, Canvas cv, int W, int H, Bill b, Poster r, int view) {
         // 基础字号 = 屏高 / 800（S4 ⇒ 1.0）；全部尺跟着它走 ⇒ 换分辨率不失衡
         final float s = H / 800f;
-        final float sTitle  = 30f * s;
-        final float sSerial = 18f * s;
-        final float sSub    = 20f * s;
-        final float sBody   = 22f * s;
-        final float sMeta   = 16f * s;
-        final float sSmall  = 15f * s;
+        final float sTitle  = BillSection.SZ_TITLE  * s;  // 抬头标题 —— 旧 30f*s，逐值对齐墨单 SZ_TITLE
+        final float sSerial = BillSection.SZ_SERIAL * s;  // 抬头单号 —— 旧 18f*s，逐值对齐墨单 SZ_SERIAL
+        final float sSub    = BillSection.SZ_BODY   * s;  // 副行 —— 旧 20f*s，逐值对齐墨单副行的 SZ_BODY
         /**
-         * 🆕 2026-10-11（TASK-086 第六批B ⑦）：**合计块专用字号** —— 用户要求「合计三行字号调小」。
+         * 🔴 2026-10-12（第七批 W2 / task-66 ⑤④，用户拍板**方案 B**）：正文族**收敛到墨单尺** ——
+         * 直接复用同包墨单的三条常量（`feature/BillSection.java:68-69` `SZ_BODY = 15f` /
+         * `SZ_SMALL = 12f`、`:71` `LH = 1.7f`、`:144` `PRICE_COL_W = 62f`）⇒ 两个表面**共用同一份尺**。
          *
-         * <p>🔴 「用海报自己的尺」= 仍按本方法的基础字号 `s`（屏高/800）缩放，只是取一个更小的系数
-         * （18 &lt; `sBody` 的 22），**不动**墨单侧的任何字号 ⇒ A11「与墨单逐字一致」不受影响：
-         * 变的是**版面**（海报合计块的字号），文字 / 金额 / 口径仍全部来自同一批 `BillMoney`。
+         * <p>改前：正文 22f、元信息 16f、小字 15f、合计 18f、表头沿用元信息 16f、`lineH 1.55f`
+         * （旧值见 `验证记录/232_…§5.1` 换算表）。
+         *
+         * <p>A11「与墨单口径逐字一致」**不受影响**：文字 / 金额 / 算法 / 口径全部来自同一批
+         * `BillMoney`，改的只是字号与行距。表头与合计在墨单侧同为 `SZ_BODY`（表头 `:976`、
+         * 合计行 `:1103`）⇒ 这里也用 `SZ_BODY`（新增 `sHead` 以免与元信息 12f 混用）。
+         *
+         * <p>🔴 2026-10-12 同日追加（Lead 裁定：抬头族**按「与墨台同名常量逐一对齐」**，不用
+         * ×0.682 的整页比例）：抬头三行各自锚到墨单同名常量，海报侧**不再留自带字号数字** ——
+         * <ul>
+         *   <li>{@code sTitle} 30f → {@link BillSection#SZ_TITLE}（18f）：墨单抬头标题行 `:959`；</li>
+         *   <li>{@code sSerial} 18f → {@link BillSection#SZ_SERIAL}（12f）：墨单单号常量（该常量在
+         *       本轮之前**零引用** —— 墨单 masthead 实为单号+标题同行、同用 `SZ_TITLE`；取 12f 与
+         *       `SZ_SMALL` 同值 ⇒ 与「单号也走小字档」的观感一致）；</li>
+         *   <li>{@code sSub} 20f → {@link BillSection#SZ_BODY}（15f）：**逐字同源**的依据 —— 本行字符串
+         *       （`kindLabel + " · " + rangeLabel + " · " + bookCount + " 本" + 时长`，见本文件 `:318-320`）
+         *       与墨单 `feature/BillSection.java:964-966` **完全相同**，墨单以 `Row.line(sub, null,
+         *       SZ_BODY * scB)` 绘制（`:967`）⇒ 海报副行取 `SZ_BODY`；</li>
+         *   <li>落款（{@code footer()}）18f → {@code SZ_SMALL}（12f）：该行含
+         *       {@code kindLabel + " " + serialOf}（**单号**）⇒ 属裁定所说的「提示小字/单号」类。</li>
+         * </ul>
+         *
+         * <p>⚠️ 左右边距 `pad = 34f * s` **本轮不动**（墨单侧为 `w * PAD_X_RATIO`）：收它会连带改
+         * 装饰与条码几何、超出用户诉求 ⇒ 232 记「预留」：日后仍觉书名不够完整时把 `pad` 收到与墨单
+         * 同值（24 ⇒ 可用宽 412→432px，约 +2 字），**下一轮再议**。
          */
-        final float sTotal  = 18f * s;
+        final float sBody   = BillSection.SZ_BODY  * s;   // 正文 / 书名 / 金额（墨单 SZ_BODY）
+        final float sHead   = BillSection.SZ_BODY  * s;   // 表头（墨单表头同为 SZ_BODY）
+        final float sMeta   = BillSection.SZ_SMALL * s;   // 元信息 · 作者 · 时长（墨单 SZ_SMALL）
+        final float sSmall  = BillSection.SZ_SMALL * s;   // 摘录 / 备注 / 提示 / 落款（墨单 SZ_SMALL）
+        final float sTotal  = BillSection.SZ_BODY  * s;   // 合计块（墨单合计行同为 SZ_BODY）
         final float pad     = 34f * s;
-        final float lineH   = 1.55f;
+        final float lineH   = BillSection.LH;             // 行距照墨单（原海报自有 1.55f）
 
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
         p.setTextAlign(Paint.Align.LEFT);
@@ -276,8 +301,13 @@ public final class BillWallpaper {
         //    ⇒ 同一期墨单在屏幕上和壁纸上逐字一致（A11）。
         final String algo = MenuPrefs.paidAlgo(c);
         final boolean paidCol = excerpt && !MenuPrefs.PAID_OFF.equals(algo);
-        /** 单列宽（原价 / 收入各占一格；右对齐）。 */
-        final float pCol = s * 88f;
+        /**
+         * 单列宽（原价 / 收入各占一格；右对齐）—— ⑤④ 后**直接取墨单列宽** `PRICE_COL_W`（62f）。
+         *
+         * <p>旧值 `88f * s`。改后与墨单的比例关系**逐值相同**：海报 `62 / 15 = 4.13`，
+         * 墨台 `(62·unit) / (15·unit) = 4.13` ⇒ 金额列能容纳的字形数与墨台一致，不会因为列变窄截断金额。
+         */
+        final float pCol = BillSection.PRICE_COL_W * s;
 
         float y = 22f * s + pad;
 
@@ -322,22 +352,26 @@ public final class BillWallpaper {
             return;
         }
 
-        // ⑤ 表头（沿用菜单隐喻：🆕 TASK-086 ⇒ 4 列 `品类 │ 主厨 │ 原价 │ 收入`）+ 分隔线
+        // ⑤ 表头（沿用菜单隐喻：🆕 TASK-086 ⇒ 4 列 `序号 │ 品类 │ 原价 │ 收入`）+ 分隔线
         //    —— 🔴 **只在摘录菜单画**（读书菜单不显示价格列）
         //    🆕 TASK-12：收入列关（`paidCol == false`）时「原价」移到**最右列**（与收入列同 x），
         //    与 `BillSection.Row#draw` 改后的锚点**同一规则**（A11：海报必须与墨台屏幕逐字一致）。
         //    🔴 2026-10-11（TASK-086 第六批B ⑥）：用户可见「收入」统一改叫**收入**（Java 标识符不动）。
+        //    🆕 第七批 W2（task-66 · 用户「只改表头文字」）：左列「品类」⇒**序号**、中列「主厨」⇒**品类**
+        //    （与墨台 `BillSection` 表头同步；**只改字，不动任何坐标**）。
+        //    🆕 第七批 W2（task-66 ⑤④ 方案 B）：表头字号由 `sMeta`(16f) 换成 **`sHead`**(15f) ——
+        //    墨单表头用的就是 `SZ_BODY`（`BillSection.java:976`）⇒ 同尺。
         if (excerpt) {
             p.setTypeface(Typeface.MONOSPACE);
             p.setColor(GRAY);
-            p.setTextSize(sMeta);
-            cv.drawText("品类", left, y + sMeta, p);
+            p.setTextSize(sHead);
+            cv.drawText("序号", left, y + sHead, p);
             p.setTextAlign(Paint.Align.RIGHT);
-            if (paidCol) cv.drawText("收入", right, y + sMeta, p);
-            cv.drawText("原价", paidCol ? (right - pCol) : right, y + sMeta, p);
+            if (paidCol) cv.drawText("收入", right, y + sHead, p);
+            cv.drawText("原价", paidCol ? (right - pCol) : right, y + sHead, p);
             p.setTextAlign(Paint.Align.LEFT);
-            cv.drawText("主厨", left + avail * 0.34f, y + sMeta, p);
-            y += sMeta * lineH;
+            cv.drawText("品类", left + avail * 0.34f, y + sHead, p);
+            y += sHead * lineH;
             y = sep(cv, p, left, right, y, s);
         }
 
@@ -353,7 +387,9 @@ public final class BillWallpaper {
         tailH += sTotal * lineH * tLines;           // 账单合计（摘录 1–3 行 / 读书菜单 1 行）
         // 🔴 2026-10-11（第六批B ⑦）：条形码高度 ×2 ⇒ `barsH(s)` 已翻倍，这里**无需再乘**（它自己重算）。
         if (excerpt) tailH += barsH(s);             // 🆕 #4：合计下方铺满内容宽的装饰条形码一行
-        tailH += sSmall * lineH * 2f;               // 落款 + 水印
+        //    🆕 第七批 W2（task-66 · 用户⑤）：底部小字「由「墨台」生成 · 仅在本机使用」已按用户指令
+        //    **整行删除** ⇒ 这里只剩「落款」1 行（原来按 2 行预留，多留的那行会把书目区提前挤掉）。
+        tailH += sSmall * lineH * 1f;               // 落款（水印行已删）
         tailH += s * 30f;
         final float limit = H - 22f * s - pad - tailH;
 
@@ -411,8 +447,11 @@ public final class BillWallpaper {
                 final String dtxt = paidCol ? BillMoney.paidText(c, it, algo) : null;
                 p.setTextAlign(Paint.Align.RIGHT);
                 // 🆕 TASK-086 第三批 · task-35：与 `feature/BillSection.Row#draw` **同口径** ——
-                //    金额列改为「按需轻微横向压缩」而不是直接截断（预算 `pCol - 4s = 84s` ÷ 0.6em/字形
-                //    = 6.36 字形 ⇒ 7 字形必被截）。A11 硬要求两表面同形制 ⇒ 上下两处规则一字不差。
+                //    金额列改为「按需轻微横向压缩」而不是直接截断（预算 `pCol - 4s = 58s` ÷ 0.6em/字形
+                //    = 6.44 字形 ⇒ 7 字形以上必被压缩）。A11 硬要求两表面同形制 ⇒ 上下两处规则一字不差。
+                //    🆕 第七批 W2（task-66 ⑤④）：列宽收到墨单 `PRICE_COL_W`(62f)、字号收到 15f 后，
+                //    本预算**逐值等同墨台**（墨台 62·unit − 4·unit = 69.6px ÷ 10.8px = 6.44 字形，
+                //    旧海报 84s ÷ 13.2 = 6.36 字形）⇒ 金额可容纳量不降反微升。
                 final float moneyMax = pCol - s * 4f;
                 final float scPay = (dtxt != null) ? InkTheme.moneyScaleX(p, dtxt, moneyMax) : 1f;
                 final String dfit = (dtxt != null) ? (scPay < 1f ? dtxt : fit(p, dtxt, moneyMax)) : null;
@@ -430,9 +469,17 @@ public final class BillWallpaper {
                 p.setTextAlign(Paint.Align.LEFT);
                 // 🔴 同 `BillSection.Row#draw` 的上机教训：标题可用宽 = min(列式界, 原价**实际墨迹**左沿 − 间隔)。
                 //    只按列宽推会在「收入关」时把标题放进价格列里 ⇒ 画出来糊成乱码（A11 要求两边一致）。
+                //    🆕 第七批 W2（task-66 ⑤①「书名更完整，尽量和墨台屏幕对齐」）：两处间隔由 `s*10f`
+                //    收紧到与 `BillSection.Row#draw` **同值**（列式界 `−8f*s`、墨迹界 `−6f*s`，原来各多留 2–4f*s）
+                //    ⇒ 同样的列宽能多显示 0.3–0.5 个字。
+                //    🔴 2026-10-12（Lead 复核**订正我的错误判断**）：书名显示少与序号前缀**无关** ——
+                //    两侧前缀逐字相同（此处与墨台 `BillSection.java:1022` 都是 `no + "  " + title`，
+                //    `no` 也都是 `String.format(Locale.US, "NO.%02d", i + 1)`）⇒ 真因是**字号**：
+                //    可用宽 412px 下 22f ≈ 31 字符/行、15f ≈ 46 字符/行。⑤④ 方案 B 已按此收敛字号
+                //    （见本方法开头 `sBody` 注释与 `验证记录/232_…§5.1` 换算表）。
                 final float used = pCol * ((dtxt != null) ? 2f : 1f);
-                float titleMax = avail - used - s * 10f;
-                final float titleMaxInk = priceX - p.measureText(pfit) - left - s * 10f;
+                float titleMax = avail - used - s * 8f;
+                final float titleMaxInk = priceX - p.measureText(pfit) - left - s * 6f;
                 if (titleMaxInk < titleMax) titleMax = titleMaxInk;
                 cv.drawText(fit(p, no + "  " + nz(it.title), titleMax), left, y + sBody, p);
             } else {
@@ -500,9 +547,12 @@ public final class BillWallpaper {
             //   🔴 金额仍**只来自 `BillMoney`**（同一套 `paidCount/totalPaidFen/totalEstimated`）
             //   ⇒ A11「与墨单同源同词」不变：差的只是**版面**（墨单 1 行 / 海报 2–3 行）。
             //   第 1 行：左「合计」+ 右「(本期)阅读 H 小时」；第 2/3 行：右对齐金额段（可缺）。
-            //   🔴 2026-10-11（第六批B ⑦）：三行字号由 `sBody`(22) 收到 `sTotal`(18)，行距同步收紧。
+            //   🔴 2026-10-11（第六批B ⑦）：三行字号曾由 `sBody`(22) 收到 `sTotal`(18)，行距同步收紧。
+            //   🆕 2026-10-12（第七批 W2 · task-66 ⑤④ 方案 B）：`sTotal` 与 `sBody` 现同取墨单
+            //   `SZ_BODY`(15f) ⇒ 合计块与正文同尺（墨单合计行同为 `SZ_BODY`，`BillSection.java:1103`）；
+            //   首行基线由 `sBody` 改写本块自己的 `sTotal`（改后两值相同，纯粹为不再跨常量耦合）。
             p.setTextAlign(Paint.Align.LEFT);          // 显式声明（不依赖上一段的状态）
-            cv.drawText("合计", left, ty + sBody, p);
+            cv.drawText("合计", left, ty + sTotal, p);
             p.setTextAlign(Paint.Align.RIGHT);
             String hoursTxt = totalHours(b, algo);
             cv.drawText(fit(p, hoursTxt, avail * 0.72f), right, ty + sTotal, p);
@@ -524,7 +574,18 @@ public final class BillWallpaper {
         footer(cv, p, W, H, s, b);
     }
 
-    /** 落款：`微读墨记 · 周结 2026-W40`（居中）+ 一行小字如实说明。 */
+    /**
+     * 落款：`微读墨记 · 周结 2026-W40`（居中）。
+     *
+     * <p>🆕 第七批 W2（task-66 · 用户⑤「底部小字…确认删除」）：原先落款下方还有一行
+     * {@code 由「墨台」生成 · 仅在本机使用} 的小字，**已整行删除**（含它用到的
+     * {@code setFakeBoldText(false)/MONOSPACE/LIGHT/13f*s} 设置块）。
+     *
+     * <p>🔴 2026-10-12（第七批 W2 / task-66 ⑤④ · Lead 裁定「抬头族与落款逐项对齐墨台同名常量」）：
+     * 字号由海报自带的 {@code 18f * s} 换成墨单同名的 {@link BillSection#SZ_SMALL}（**12f**）——
+     * 本行含「单号」（{@code Bill.serialOf}）⇒ 属裁定所说的「提示小字/单号」类。若日后要恢复
+     * 署名层级的视觉重量，只需把这一行改回 {@link BillSection#SZ_TITLE}（18f）。
+     */
     private static void footer(Canvas cv, Paint p, int W, int H, float s, Bill b) {
         float base = H - 22f * s - 34f * s;
         p.setStyle(Paint.Style.FILL);
@@ -532,16 +593,12 @@ public final class BillWallpaper {
         p.setTypeface(Typeface.SERIF);
         p.setFakeBoldText(true);
         p.setColor(INK);
-        p.setTextSize(18f * s);
+        p.setTextSize(BillSection.SZ_SMALL * s);
         cv.drawText("微读墨记 · " + Bill.kindLabel(b.mode) + " " + Bill.serialOf(b.mode, b.periodStart),
                 W / 2f, base, p);
-        p.setFakeBoldText(false);
-        p.setTypeface(Typeface.MONOSPACE);
-        p.setColor(LIGHT);
-        p.setTextSize(13f * s);
-        cv.drawText("由「墨台」生成 · 仅在本机使用", W / 2f, base + 22f * s, p);
         p.setTextAlign(Paint.Align.LEFT);
         p.setTypeface(null);
+        p.setFakeBoldText(false);
     }
 
     /** 画一条 1px 分隔线并推进 y（返回新的 y）。🆕 task-48（#5）：与墨单同族 ⇒ 用票据横线色

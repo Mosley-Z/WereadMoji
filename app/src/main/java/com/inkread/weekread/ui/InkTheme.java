@@ -120,7 +120,16 @@ public final class InkTheme {
     public static final int MONO_INK = 0xFF000000;
     /** 单色 · 淡墨：次要文字 / 结构线（= 手机端「淡墨」；墨水屏端深灰）。 */
     public static final int MONO_INK2 = 0xFF3C3C3C;
-    /** 单色 · 提示：占位 / 禁用 / 未选中（= 手机端「提示」；墨水屏端浅灰）。 */
+    /**
+     * 单色 · 提示：占位 / 禁用（= 手机端「提示」；墨水屏端浅灰 `#9A9A9A`）。
+     *
+     * <p>🔴 第七批 W1 注释订正（2026-10-12，仅注释、零行为改动）：这里**不是**「未选中页签色」。
+     * 墨屏端未选中页签用的是 {@link #INK2}（`#6B6459`）——
+     * `ui/SegTabView.java`（mono 分支 `colGray = InkTheme.INK2`）与
+     * `feature/BillSection.java:109`（`TAB_OFF = InkTheme.INK2`）两处同概念同色；
+     * 原因（task-29 实测）：`#9A9A9A` 白底仅 2.82:1、`#A8A8A8` 2.38:1，不满足用户拍板的
+     * 「小字不得浅灰」（`docs/03 §1 第 3 条`，按 `:9` 统一），而 `INK2` 三种真实底色全部 ≥ 4.83:1。
+     */
     public static final int MONO_INK3 = 0xFF9A9A9A;
     /** 单色 · 界线：分隔线 / 描边（= 手机端「界线」）。 */
     public static final int MONO_LINE = 0xFFD8D8D8;

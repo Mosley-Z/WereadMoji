@@ -5,6 +5,7 @@ import com.inkread.weekread.a11y.CardA11yService;
 import com.inkread.weekread.core.AchievementPrefs;
 import com.inkread.weekread.core.CardPrefs;
 import com.inkread.weekread.core.FeatureGate;
+import com.inkread.weekread.core.PagePrefs;
 import com.inkread.weekread.core.StatsStore;
 import com.inkread.weekread.feature.NoteExport;
 import com.inkread.weekread.feature.WeekCardView;
@@ -301,6 +302,27 @@ public class SettingsPageController {
                 CardA11yService.sync();
             }
         });
+
+        // 🆕 第七批 W1（用户 2026-10-12 拍板 ④）：「启用墨台」总开关 —— **从「墨台 → 设置」搬到这里**，
+        //    紧跟「仅一页模式」下方（`inc_card_custom.xml` 里 `cb_single_page` 之后）。
+        //    🔴 语义：只管"桌面卡片上要不要显示墨台入口"，**不影响墨台的快照保留与账单计算**
+        //       （`BillScheduler` / `AssetRefresher` / `NoteSync` 的时机与口径一字未动）⇒
+        //       关掉再打开能直接看到最新数据，不存在"关了以后数据断档"。
+        //    🔴 空安全：`inc_card_custom.xml` 由 settings_layout / page_settings / page_lab 三份布局共用，
+        //       理论上都在；仍按 TASK-062 的教训做 null 判定（phone 走 SettingsActivity 时不得 NPE）。
+        //    旧开关行（墨台内 `DeskSettings` 的 `K_TOGGLE` 行）由 W2 删除本卡不动它。
+        final CheckBox cbDeskEnabled = (CheckBox) host.findViewById(R.id.cb_desk_enabled);
+        if (cbDeskEnabled != null) {
+            cbDeskEnabled.setChecked(PagePrefs.isDeskEnabled(host));
+            cbDeskEnabled.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+                @Override
+                public void onCheckedChanged(CompoundButton b, boolean checked) {
+                    PagePrefs.setDeskEnabled(host, checked);
+                    // 与卡片总开关同款既有路径：立刻重算一次显隐（不看则桌面卡片不再显示墨台入口）
+                    CardA11yService.sync();
+                }
+            });
+        }
 
         // ── TASK-012 刷新绑定：三个勾选 = bind_targets 位掩码 ──
         // 只写偏好，不 CardA11yService.sync()、不重绘 —— 下次点「更新于…」时才读它。

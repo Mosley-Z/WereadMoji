@@ -63,12 +63,18 @@ import java.util.List;
 final class BillSection implements InsightRenderer.Section {
 
     // ── 尺（与洞察页正文同档，保证"同一 App 同一观感"）──
-    private static final float SZ_TITLE  = 18f;   // 账单标题（墨单）
-    private static final float SZ_SERIAL = 12f;   // 单号
-    private static final float SZ_BODY   = 15f;   // 正文
-    private static final float SZ_SMALL  = 12f;   // 作者 / meta / 提示
+    //    🔴 2026-10-12（第七批 W2 / task-66 ⑤④ 方案 B）：`SZ_BODY` / `SZ_SMALL` / `LH` 由 `private`
+    //    **放宽为包内可见** —— 同包的海报 `feature/BillWallpaper.java` 按用户拍板「与墨台同尺」
+    //    直接复用这三条（**值一字未改**），两个表面从此共用同一份尺、不可能各自漂移。
+    //    🔴 同日追加（Lead 裁定：抬头族**按「与墨台同名常量逐一对齐」**，不用 ×0.682 的整页比例）：
+    //    `SZ_TITLE` / `SZ_SERIAL` 一并放宽为包内可见（**值一字未改**：18f / 12f），供海报抬头族
+    //    与落款复用 ⇒ 海报侧不再留任何"自带数字"的字号。
+    static final float SZ_TITLE  = 18f;   // 账单标题（同包 `BillWallpaper` 复用：抬头标题）
+    static final float SZ_SERIAL = 12f;   // 单号（同包 `BillWallpaper` 复用：抬头单号）
+    static final float SZ_BODY   = 15f;   // 正文（同包 `BillWallpaper` 复用）
+    static final float SZ_SMALL  = 12f;   // 作者 / meta / 提示（同包 `BillWallpaper` 复用）
     /** 行距倍率（×字号）。 */
-    private static final float LH = 1.7f;
+    static final float LH = 1.7f;         // 同包 `BillWallpaper` 复用
 
     private static final int INK   = 0xFF000000;
     private static final int GRAY  = 0xFF3C3C3C;
@@ -134,19 +140,18 @@ final class BillSection implements InsightRenderer.Section {
     private static final float WP_W_UNITS       = 62f;
     private static final float WP_H_UNITS       = 1.85f;
 
-    // ── 🆕 TASK-086：价格两列 / 收入算法控件 / 数字键盘的尺（画与命中共用同一批） ──
-    /** 「收入」列宽（×unit）—— 右对齐在分区右内边距；「原价」列落在它**左侧**同等宽度处。 */
-    private static final float PRICE_COL_W      = 62f;
+    // ── 🆕 TASK-086：价格两列 / 收入算法控件（数字键盘的尺已随 task-66 抽到 `PricePad`） ──
+    /**
+     * 「收入」列宽（×unit）—— 右对齐在分区右内边距；「原价」列落在它**左侧**同等宽度处。
+     *
+     * <p>🆕 task-66：改包内可见 —— {@code AssetSection} 的「长按价格区」用它算**书名区/价格区的
+     * 分界**（`right − 2·PRICE_COL_W·unit`）。两处必须是**同一条列宽**，故只留这一份定义。
+     */
+    static final float PRICE_COL_W      = 62f;
     /** 「收入算法：增额 ▾」整块宽（×unit）。 */
     private static final float ALGO_W_UNITS     = 118f;
     /** 周期条里 `‹ 单号 ›` 与 `[周|月]` 之间的间隔（×unit）。 */
     private static final float NAV_GAP_UNITS    = 10f;
-    /** 数字键盘：面板占宽比 / 行高 / 标题高（×unit）。 */
-    private static final float PAD_W_RATIO      = 0.70f;
-    private static final float PAD_KEY_H_UNITS  = 36f;
-    private static final float PAD_TITLE_H_UNITS = 34f;
-    /** 键盘按键码（与 `ui/KeyPadView` 的数字键盘同构，但**这是自绘版**：覆盖窗里塞不进 View）。 */
-    static final int PK_DOT = 10, PK_DEL = 11, PK_OK = 12, PK_CANCEL = 13;
 
     // ── 行的种类 ──
     private static final int K_SEP  = 0;   // 1px 分隔线
@@ -167,9 +172,12 @@ final class BillSection implements InsightRenderer.Section {
     // ── 🆕 TASK-086：两个**瞬时态**（都不落盘 —— 弹层不是配置） ──
     /** 收入算法下拉框是否展开。 */
     private boolean algoOpen;
-    /** 数字键盘正在编辑的书目下标（-1 = 键盘关着）；{@link #padText} 是正在输入的"元"字符串。 */
-    private int padItem = -1;
-    private String padText = "";
+    /**
+     * 🆕 手动录价数字键盘。task-66 起它是**共享实现**（{@link PricePad}，墨单与「阅读资产」共用一份，
+     * 起因：用户第七批要求资产表也能「长按价格区 ⇒ 手填原价」，自绘键盘只能有一份）。
+     * 打开状态/输入串都在它内部；本类只负责「命中墨单的哪一行」与「落盘后重建行」。
+     */
+    private final PricePad pad = new PricePad();
 
     private List<Row> rows;                  // 逻辑行（refresh 时失效重建）
     private List<Row> laidRows;              // 折行后的最终行
@@ -188,8 +196,7 @@ final class BillSection implements InsightRenderer.Section {
         this.view = MenuPrefs.view(c);
         this.bill = pickBill();
         this.algoOpen = false;          // 🆕 TASK-086：弹层是瞬时态，每次呼出都归零
-        this.padItem = -1;
-        this.padText = "";
+        this.pad.close();
         invalidateRows();
     }
 
@@ -543,7 +550,7 @@ final class BillSection implements InsightRenderer.Section {
 
     // ══════════════════════ 🆕 TASK-086：手动录价（长按无价行 ⇒ 自绘数字键盘） ══════════════════════
 
-    boolean padOpen() { return padItem >= 0; }
+    boolean padOpen() { return pad.isOpen(); }
 
     /**
      * 打开键盘编辑第 {@code idx} 行。
@@ -571,17 +578,13 @@ final class BillSection implements InsightRenderer.Section {
         //      免费行（0）/ 未知行（-1）/ **已手填价的免费或未知行**都开放；
         //      有真实市场价（> 0）的行照旧不给键盘 —— 原设计意图与拍板①都保住。
         if (it.marketPriceFen > 0) return;      // 🔴 有真实市场价 ⇒ 不开放（原设计意图保留）
-        padItem = idx;
-        // 已录过就回填（便于改价），否则从空开始
-        int cur = MenuPrice.fen(ctx, it.bookId);
-        padText = (cur > 0) ? String.format(java.util.Locale.US, "%.2f", cur / 100.0).replaceAll("0+$", "")
-                .replaceAll("\\.$", "") : "";
+        // 已录过就回填（便于改价），否则从空开始 —— 回填与"元"文本格式化都在 `PricePad` 内
+        pad.open(it.bookId, it.title, MenuPrice.fen(ctx, it.bookId));
         algoOpen = false;
     }
 
     void closePad() {
-        padItem = -1;
-        padText = "";
+        pad.close();
     }
 
     /**
@@ -620,173 +623,58 @@ final class BillSection implements InsightRenderer.Section {
         return -1;
     }
 
-    /** 键盘面板矩形（屏幕坐标；**画与命中共用**）。 */
-    private RectF padPanel(float w, float vh, float unit) {
-        float pw = w * PAD_W_RATIO;
-        float ph = PAD_TITLE_H_UNITS * unit + 5f * PAD_KEY_H_UNITS * unit + unit * 12f;
-        float l = (w - pw) / 2f;
-        float t = (vh - ph) / 2f;
-        if (t < unit * 8f) t = unit * 8f;
-        return new RectF(l, t, l + pw, t + ph);
-    }
-
-    /** 某个键的矩形；{@code key} 用 {@link #PK_DOT} 等常量或 0–9。 */
-    private RectF padKeyRect(float w, float vh, float unit, int key) {
-        RectF panel = padPanel(w, vh, unit);
-        float pad = unit * 10f;
-        float colsW = panel.width() - pad * 2f;
-        float colW = colsW / 3f;
-        float top0 = panel.top + PAD_TITLE_H_UNITS * unit;
-        if (key == PK_OK || key == PK_CANCEL) {
-            float half = colsW / 2f;
-            float y = top0 + 4f * PAD_KEY_H_UNITS * unit;
-            if (key == PK_CANCEL) return new RectF(panel.left + pad, y, panel.left + pad + half, y + PAD_KEY_H_UNITS * unit);
-            return new RectF(panel.left + pad + half, y, panel.right - pad, y + PAD_KEY_H_UNITS * unit);
-        }
-        int row, col;
-        if (key >= 1 && key <= 9) { row = (key - 1) / 3; col = (key - 1) % 3; }
-        else if (key == 0) { row = 3; col = 1; }
-        else if (key == PK_DOT) { row = 3; col = 0; }
-        else if (key == PK_DEL) { row = 3; col = 2; }
-        else return new RectF();
-        float l = panel.left + pad + col * colW;
-        float y = top0 + row * PAD_KEY_H_UNITS * unit;
-        return new RectF(l + unit * 3f, y + unit * 3f,
-                l + colW - unit * 3f, y + PAD_KEY_H_UNITS * unit - unit * 3f);
-    }
-
-    /** 键盘命中：返回命中的键码（0–9 / {@link #PK_DOT} / {@link #PK_DEL} / {@link #PK_OK} / {@link #PK_CANCEL}）；{@code -1} = 没中。 */
+    /**
+     * 键盘命中：返回命中的键码（0–9 / {@link PricePad#PK_DOT} / {@link PricePad#PK_DEL} /
+     * {@link PricePad#PK_OK} / {@link PricePad#PK_CANCEL}）；{@code -1} = 没中。
+     *
+     * <p>🆕 task-66：面板矩形与 12 键排布已抽到 {@link PricePad}（**画与命中共用同一份** ⇒
+     * 不存在两套尺漂移的可能）。
+     */
     int hitPad(float x, float y, float w, float vh, float unit) {
-        if (padItem < 0) return -1;
-        int[] keys = { 1, 2, 3, 4, 5, 6, 7, 8, 9, PK_DOT, 0, PK_DEL, PK_CANCEL, PK_OK };
-        if (!padPanel(w, vh, unit).contains(x, y)) return -1;
-        for (int i = 0; i < keys.length; i++) {
-            if (padKeyRect(w, vh, unit, keys[i]).contains(x, y)) return keys[i];
-        }
-        return -1;
+        return pad.hit(x, y, w, vh, unit);
     }
 
     /**
      * 按一个键。
      *
      * <p>🔴 **只有「确定」落盘**（{@link MenuPrice#set}，键 = `bookId`）；其余都是瞬时编辑。
-     * 🔴 录入单位是**元**（可两位小数），存的是**分** ⇒ 收尾一行四舍五入，绝不出现半分的浮点残渣。
      * <p>🆕 **收口 F3（2026-10-10）**：删空 + 点「确定」= **清除**该行手填价
      * （`MenuPrice.set(..., -1)` ⇒ `ed.remove(bookId)`），该行自然回落到「免费 / `—`」。
-     * 🔴 零 UI 改动（不动 12 键几何，避免墨屏布局风险）。
      * <p>🆕 **收口 F1（2026-10-10）**：落盘/清除后必须 {@link #invalidateRows()} ——
      * 行文本（`Row.c3` 原价、收入列、合计、以及表头下的提示小字）都是 `laid()` 期
      * **算好并缓存**的（缓存键 `cw/cu`），只 `invalidate()` 重画的是**旧**行数据。
+     * <p>🆕 task-66：输入串编辑与「元 ⇒ 分」的解析都搬进 {@link PricePad}（**共享实现**），
+     * 本方法只剩宿主的两个动作 —— 落盘 / 清除 + 重建行。
      */
     void padPress(int key) {
-        if (padItem < 0 || ctx == null || bill == null) return;
-        if (key >= 0 && key <= 9) {
-            if (padText.length() < 8) {
-                if (padText.indexOf('.') < 0 && padText.length() >= 4) return;   // 上限 ¥9999
-                padText = padText + key;
-            }
-            return;
+        if (ctx == null || bill == null) return;
+        final int r = pad.press(key);
+        if (r == PricePad.R_EDIT) return;
+        if (r == PricePad.R_CANCEL) { pad.close(); return; }
+        final String bid = pad.bookId();
+        if (r == PricePad.R_CLEAR) {
+            // 🆕 F3：空输入 + 「确定」= 清除该行手填价（回落到市场价口径：免费 / —）
+            MenuPrice.set(ctx, bid, -1);
+            CardDebug.noteV(ctx, "墨单清除手动价：bookId=" + bid);
+        } else {
+            final int fen = pad.resultFen();
+            MenuPrice.set(ctx, bid, fen);
+            CardDebug.noteV(ctx, "墨单手动价：bookId=" + bid + " ⇒ " + BillMoney.yuan(fen));
         }
-        if (key == PK_DOT) {
-            if (padText.length() == 0) padText = "0";
-            if (padText.indexOf('.') < 0 && padText.length() < 6) padText = padText + ".";
-            return;
-        }
-        if (key == PK_DEL) {
-            if (padText.length() > 0) padText = padText.substring(0, padText.length() - 1);
-            return;
-        }
-        if (key == PK_CANCEL) { closePad(); return; }
-        if (key == PK_OK) {
-            if (padText.length() == 0) {
-                // 🆕 F3：空输入 + 「确定」= 清除该行手填价（回落到市场价口径：免费 / —）
-                String bid = bill.items.get(padItem).bookId;
-                MenuPrice.set(ctx, bid, -1);
-                CardDebug.noteV(ctx, "墨单清除手动价：bookId=" + bid);
-                invalidateRows();            // 🆕 F1：行文本/合计/提示都要重建
-                closePad();
-                return;
-            }
-            try {
-                double yuan = Double.parseDouble(padText);
-                int fen = (int) Math.round(yuan * 100.0);
-                if (fen < 0) fen = 0;
-                MenuPrice.set(ctx, bill.items.get(padItem).bookId, fen);
-                CardDebug.noteV(ctx, "墨单手动价：bookId=" + bill.items.get(padItem).bookId
-                        + " ⇒ " + BillMoney.yuan(fen));
-                invalidateRows();            // 🆕 F1：同上（录价/改价后当场重算）
-            } catch (Throwable ignored) {
-            }
-            closePad();
-        }
+        invalidateRows();            // 🆕 F1：同上（录价/改价/清除后当场重算）
+        pad.close();
     }
 
-    /** 画数字键盘（**最后画**，压在内容之上）。 */
+    /**
+     * 画数字键盘（**最后画**，压在内容之上）。
+     *
+     * <p>🆕 task-66：面板、12 键、标题行的绘制整体搬进 {@link PricePad}（**共享实现**，
+     * 墨单与「阅读资产」同一份像素级几何）。这里只补两件宿主信息：标题文案（读资源
+     * `R.string.menu_price_manual_title`）与书名。
+     */
     private void drawPad(Canvas c, float w, float vh, float unit, Paint p) {
-        if (padItem < 0 || ctx == null || bill == null) return;
-        RectF panel = padPanel(w, vh, unit);
-        p.setStyle(Paint.Style.FILL);
-        p.setColor(0xFFFFFFFF);
-        c.drawRect(panel, p);
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(1.5f);
-        p.setColor(0xFF000000);
-        c.drawRect(panel.left + 0.75f, panel.top + 0.75f, panel.right - 0.75f, panel.bottom - 0.75f, p);
-        p.setStyle(Paint.Style.FILL);
-
-        // 标题行：书名 + 正在输入的值
-        Bill.Item it = bill.items.get(padItem);
-        p.setTypeface(InkTheme.serif());
-        p.setFakeBoldText(true);
-        p.setTextSize(SZ_BODY * unit);
-        p.setColor(0xFF000000);
-        p.setTextAlign(Paint.Align.LEFT);
-        Paint.FontMetrics fm = p.getFontMetrics();
-        float ty = panel.top + PAD_TITLE_H_UNITS * unit * 0.52f;
-        // 🆕 task-11(b)（2026-10-10）：标题改为**读资源**。此前这里是硬编码字面量、而
-        //    `res/values/strings.xml` 里的 `menu_price_manual_title` 全仓**零引用**（死键）……
-        //    现在单一来源 = `strings.xml`，改文案只改一处（与 `menu_price_manual_hint` 同规矩）。
-        //    🔴 `ctx` 在本方法开头已做非空早退（见上），这里是安全解引用。
-        c.drawText(ctx.getString(R.string.menu_price_manual_title), panel.left + unit * 10f,
-                ty - (fm.ascent + fm.descent) / 2f, p);
-        p.setFakeBoldText(false);
-        p.setTypeface(Typeface.MONOSPACE);
-        p.setTextAlign(Paint.Align.RIGHT);
-        String shown = (padText.length() == 0) ? "—" : ("¥" + padText);
-        c.drawText(shown, panel.right - unit * 10f, ty - (fm.ascent + fm.descent) / 2f, p);
-        p.setTextAlign(Paint.Align.LEFT);
-        p.setTypeface(InkTheme.serif());
-        p.setTextSize(SZ_SMALL * unit);
-        p.setColor(GRAY);
-        c.drawText(fit(p, nz(it.title), panel.width() - unit * 20f),
-                panel.left + unit * 10f, ty + unit * 15f, p);
-
-        // 键位
-        int[] keys = { 1, 2, 3, 4, 5, 6, 7, 8, 9, PK_DOT, 0, PK_DEL, PK_CANCEL, PK_OK };
-        String[] labs = { "1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "←", "取消", "确定" };
-        for (int i = 0; i < keys.length; i++) {
-            RectF r = padKeyRect(w, vh, unit, keys[i]);
-            boolean primary = (keys[i] == PK_OK);
-            p.setStyle(Paint.Style.FILL);
-            p.setColor(primary ? 0xFF000000 : 0xFFFFFFFF);
-            c.drawRect(r, p);
-            p.setStyle(Paint.Style.STROKE);
-            p.setStrokeWidth(1f);
-            p.setColor(0xFF000000);
-            c.drawRect(r.left + 0.5f, r.top + 0.5f, r.right - 0.5f, r.bottom - 0.5f, p);
-            p.setStyle(Paint.Style.FILL);
-            p.setTypeface(Typeface.MONOSPACE);
-            p.setFakeBoldText(primary);
-            p.setColor(primary ? 0xFFFFFFFF : 0xFF000000);
-            float sz = (keys[i] == PK_OK || keys[i] == PK_CANCEL) ? 16f * unit : 20f * unit;
-            p.setTextSize(sz);
-            p.setTextAlign(Paint.Align.CENTER);
-            Paint.FontMetrics kf = p.getFontMetrics();
-            c.drawText(labs[i], r.centerX(), r.centerY() - (kf.ascent + kf.descent) / 2f, p);
-        }
-        p.setTextAlign(Paint.Align.LEFT);
-        p.setFakeBoldText(false);
-        p.setTypeface(null);
+        if (!pad.isOpen() || ctx == null) return;
+        pad.draw(c, w, vh, unit, p, ctx.getString(R.string.menu_price_manual_title), pad.title());
     }
 
     // ══════════════════════ 量高 / 画 ══════════════════════
@@ -1086,13 +974,15 @@ final class BillSection implements InsightRenderer.Section {
 
             out.add(Row.sep());
             if (excerptMenu && !bill.placeholder) {
-                // 表头沿用菜单隐喻（Q11）：🆕 TASK-086 ⇒ **4 列** `品类 │ 主厨 │ 原价 │ 收入`
-                //（收入列关着 ⇒ 回落 3 列 `品类 │ 主厨 │ 原价`，列位与条目行严格对齐）
+                // 表头沿用菜单隐喻（Q11）：🆕 TASK-086 ⇒ **4 列** `序号 │ 品类 │ 原价 │ 收入`
+                //（收入列关着 ⇒ 回落 3 列 `序号 │ 品类 │ 原价`，列位与条目行严格对齐）
                 // 🔴 2026-10-11（TASK-086 第六批B ⑥）：用户可见「收入」统一改叫**收入**（Java 标识符不动）。
-                Row h = Row.line("品类", paidCol ? "收入" : null, SZ_BODY * scB);
+                // 🔴 2026-10-12（第七批 W2 / B④）：用户只改字 ——「品类」→「序号」、「主厨」→「品类」。
+                //     列位/**列宽**/右对齐锚点一字未动（`Row` 几何与 `PRICE_COL_W` 都没碰）。
+                Row h = Row.line("序号", paidCol ? "收入" : null, SZ_BODY * scB);
                 h.color = GRAY;
                 h.mono = bMono;
-                h.c2 = "主厨";
+                h.c2 = "品类";
                 h.c3 = "原价";
                 out.add(h);
                 // 🔴 第二条分隔线**只在表头真的画了**时才加 —— 否则占位账会出现
@@ -1458,7 +1348,8 @@ final class BillSection implements InsightRenderer.Section {
     }
 
     /** 按**实测宽度**截断 + 省略号（中文与数字宽度差很大 ⇒ 不能按字数估）。 */
-    private static String fit(Paint p, String s, float maxW) {
+    // 🆕 task-66：改包内可见 —— `PricePad` 的书名提示行需要同一套截断（只留这一份实现）。
+    static String fit(Paint p, String s, float maxW) {
         if (s == null) return "";
         if (maxW <= 0f) return "";
         if (p.measureText(s) <= maxW) return s;
@@ -1497,6 +1388,9 @@ final class BillSection implements InsightRenderer.Section {
         String c3;
         /** 🆕 TASK-086：这一行属于哪个书目（`items` 下标；-1 = 不是书目行）—— 长按录价的命中锚点。 */
         int itemIdx = -1;
+        /** 🆕 第七批 W2（task-66）：这一行属于哪本书（`AssetStore.Book.id`；`null` = 非书目行）——
+         *  阅读资产「长按书名移出统计 / 长按『免费』录价」的命中锚点（按行取 id，不再排平行表）。 */
+        String bookId;
         float size;             // 基础字号（×unit）
         int color = INK;
         boolean bold, serif, mono;
@@ -1643,7 +1537,7 @@ final class BillSection implements InsightRenderer.Section {
                 final float inkLim = priceX - p.measureText(cs) - unit * 6f;
                 if (inkLim < lim) lim = inkLim;
                 if (c2 != null) {
-                    // 表头：中列「主厨」（左侧给「品类」，右侧让给价格两列）
+                    // 表头：中列「品类」（左侧给「序号」，右侧让给价格两列）
                     float mid = left + (right - left) * 0.34f;
                     c.drawText(fit(p, c2, lim - mid), mid, base, p);
                     c.drawText(fit(p, a, mid - left - unit * 4f), x, base, p);
@@ -1651,7 +1545,7 @@ final class BillSection implements InsightRenderer.Section {
                     c.drawText(fit(p, a, lim - x), x, base, p);
                 }
             } else if (b != null && c2 != null) {
-                // 表头三段：品类（左）/ 主厨（中）/ 价格（右）
+                // 表头三段：序号（左）/ 品类（中）/ 价格（右）
                 p.setTextAlign(Paint.Align.RIGHT);
                 String bs = fit(p, b, (right - left) * 0.3f);
                 c.drawText(bs, right, base, p);

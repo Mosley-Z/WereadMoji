@@ -54,6 +54,16 @@
     <string name="label_desk_enabled">启用墨台</string>
     <string name="label_desk_modules">内容模块</string>
     <string name="label_desk_modules_tip">勾选决定是否显示；↑ ↓ 调整顺序。顺序即墨台自上而下的顺序，关掉的模块不占高度。</string>
+    <!-- 🆕 第七批 W2（task-66）：阅读资产分组的**独立**勾选 + 长按移出 / 设置内逐个恢复 -->
+    <string name="label_asset_group">阅读资产</string>
+    <string name="label_asset_shelf_only">只统计书架上的书</string>
+    <string name="label_asset_shelf_only_tip">只作用于墨台「阅读资产」的列表与合计，与应用设置里的同名开关各自独立；书架清单缺失时按「不过滤」处理。</string>
+    <string name="label_asset_hidden">已移出统计的书</string>
+    <string name="label_asset_hidden_empty">（暂无移出的书）</string>
+    <string name="label_asset_hidden_tip">在墨台上长按书名可把这本书移出统计（长按原价/「免费」区则可手填原价）；在这里逐个恢复，或一次全部恢复。</string>
+    <string name="btn_asset_restore">恢复</string>
+    <string name="btn_asset_restore_all">全部恢复</string>
+    <string name="toast_asset_hidden">已移出阅读资产：%1$s（可在墨台设置 →「阅读资产」里恢复）</string>
     <!-- 🆕 2026-10-10（用户诉求 ⑤⑥）：墨单头部的「生成壁纸」与「周/月」切换、壁纸保存反馈 -->
     <string name="menu_gen_wallpaper">生成壁纸</string>
     <string name="menu_mode_week">周</string>
@@ -81,6 +91,8 @@
     <string name="desk_wallpaper_saving">正在保存…</string>
     <string name="desk_wallpaper_saved">已保存到相册 Pictures/微读墨记</string>
     <string name="desk_wallpaper_saved_priv">已保存到应用目录：%1$s</string>
+    <!-- 🆕 第七批 W2（task-72）：保存/分享的**静默早退**分支也要可见反馈（原先什么都不提示）。 -->
+    <string name="desk_wallpaper_save_wait">壁纸还没准备好，请稍后再试</string>
     <!-- TASK-048：原 `insight_placeholder`（"洞察页（开发中）…"）已随占位 TextView 一并删除 ——
          洞察页改为 InsightPageView 自绘（分区标题/空态文案按本项目惯例硬编码在渲染器里，
          与 CardRenderer 一致），此处不再需要该字符串。 -->

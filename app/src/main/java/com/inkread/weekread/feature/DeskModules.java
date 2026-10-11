@@ -4,19 +4,14 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 
-import com.inkread.weekread.core.NoteStats;
-import com.inkread.weekread.core.NoteStore;
 import com.inkread.weekread.core.PagePrefs;
-import com.inkread.weekread.core.PeriodRange;
-import com.inkread.weekread.core.PeriodStats;
-import com.inkread.weekread.core.StatsStore;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
 /**
- * 🆕 TASK-076：**墨台模块注册表** —— 5 个模块的**唯一登记处**（定稿设计 §3.1）。
+ * 🆕 TASK-076：**墨台模块注册表** —— 本版 **2 个**模块的**唯一登记处**（定稿设计 §3.1）。
  *
  * <p>注册表与本包内的渲染器/容器一起构成"加模块只改一处"的闭环：
  * <pre>
@@ -28,8 +23,8 @@ import java.util.List;
  * <p>🔴 **数据全部读本地缓存**（`StatsStore` / `NoteStore` / `AssetStore` / `BillStore`）⇒ 零网络请求
  * （定稿设计 §2.3）。缓存为空时画**各自的空态**（不是崩、不是白屏）。
  *
- * <p>🆕 本卡（076）已落地 5 个真实模块（`rank` / `profile` / `note` / `annual`）；
- * `bill`（TASK-077）已换成真账单。共 **5 个**模块。
+ * <p>🆕 本卡（076）落地的 5 个模块里，**`bill`（TASK-077）与 `rank`（TASK-086 第六批B）** 是真模块；
+ * 其余三个已在后续批次下线（见下）。
  *
  * <p>🆕 TASK-086 第六批B（用户 ③ / ⑤）：
  * <ul>
@@ -39,6 +34,12 @@ import java.util.List;
  *       {@code PagePrefs} 删除（**位 4 不复用**）；手机端待办页与卡片池的「待办」不受影响（D25）。
  *       原实现已归档到 `_archive/废案/2026-10-11_待办摘要模块/`。</li>
  * </ul>
+ *
+ * <p>🆕 第七批 W1（2026-10-12 用户拍板）：`profile`（阅读画像）/ `note`（今日一签）/
+ * `annual`（年度视图）**三个模块内部类整体删除**（原 ③ / ④ / ⑤）—— 对应 `PagePrefs` 的
+ * `MOD_*` / `BIT_*`（16/32/64 不复用）/ `moduleName` 分支同步下线，老配置由净化逻辑零迁移丢掉。
+ * ⚠️ 洞察页**不受影响**：`InsightRenderer.profileSection` / `annualSection` /
+ * `aggregateCategories` / `aggregateAuthors` / `judgePortrait` 仍由 `ui/InsightPageView` 在用。
  */
 final class DeskModules {
 
@@ -48,17 +49,12 @@ final class DeskModules {
     private static final float LINE_UNITS = 2.1f;
     private static final int GRAY = 0xFF3C3C3C;
 
-    // 🔴 「今日一签」**不做行数截断**（不设 NOTE_MAX_LINES）：定稿设计未规定截断，而卡片侧
-    //    `CardLayout.layoutNote` 的截断是"原文段 / 想法段"分段封顶、且卡片档另有「展开▽」可看全文；
-    //    墨台只有一块文字区，按总行数硬截会把末尾的「—— 书名」署名一起截掉（有引文无出处，更差）。
-    //    墨台本身可纵向滚动 ⇒ 长一签只影响占高，不构成排版缺陷。
+    // ⚠️ 第七批 W1：原「今日一签」模块（唯一使用本尺的正文模块之一）已删除；
+    //    本尺与下面的 `TextSection` 作为**通用小区块**保留（下线成本低、后续文字型模块可直接复用）。
 
     private static final List<DeskModule> ALL = Arrays.<DeskModule>asList(
             new BillModule(),
-            new RankModule(),
-            new ProfileModule(),
-            new NoteModule(),
-            new AnnualModule());
+            new RankModule());
 
     private DeskModules() {
     }
@@ -91,11 +87,9 @@ final class DeskModules {
      */
     static BillSection billSection() { return BillModule.SECTION; }
 
-    /** 注册年数（`registTime` 手算；-1 = 未知）—— 口径与 `MainActivity.yearsOf` **一致**。 */
-    private static int yearsOf(PeriodStats st) {
-        if (st == null || st.registTimeMs <= 0) return -1;
-        return PeriodRange.yearOf(0) - PeriodRange.yearOf(st.registTimeMs / 1000L);
-    }
+    // 🔴 第七批 W1 删除：`private static int yearsOf(PeriodStats)`（原 `:92-96`）
+    //    它只为已下线的「年度视图」模块服务（口径与 `shell/MainActivity.yearsOf` 一致，
+    //    但**两者无调用关系**，全树 grep 确认删后零引用）⇒ 纯死代码，随三模块一起下线。
 
     // ══════════════════════ ① 阅读账单（TASK-077）══════════════════════
 
@@ -131,60 +125,15 @@ final class DeskModules {
         }
     }
 
-    // ══════════════════════ ③ 阅读画像（♻️ 复用 profileSection）══════════════════════
-
-    private static final class ProfileModule implements DeskModule {
-        public String id() { return PagePrefs.MOD_PROFILE; }
-
-        public InsightRenderer.Section build(Context c) {
-            // 口径 = 累计档（`StatsStore` 本地缓存；与洞察页的"画像"分区同源，零新增请求）。
-            PeriodStats st = StatsStore.loadOverall(c);
-            int noteChars = NoteStore.totalIdeaChars(c);
-            int years = yearsOf(st);
-            return InsightRenderer.profileSection(
-                    InsightRenderer.aggregateCategories(
-                            st == null ? null : st.preferCategory, InsightRenderer.RADAR_TOP_N),
-                    InsightRenderer.aggregateAuthors(
-                            st == null ? null : st.preferAuthor, InsightRenderer.AUTHOR_TOP_N),
-                    st == null ? null : st.preferTime,
-                    "累计", "暂无阅读画像",
-                    InsightRenderer.judgePortrait(
-                            st == null ? null : st.preferCategory, noteChars, years));
-        }
-    }
-
-    // ══════════════════════ ④ 今日一签（读 NoteStore）══════════════════════
-
-    private static final class NoteModule implements DeskModule {
-        public String id() { return PagePrefs.MOD_NOTE; }
-
-        public InsightRenderer.Section build(Context c) {
-            // 🔴 只读**本地池**（`NoteStore.pick(c,false)` 是抽一条已缓存内容，不发请求）。
-            NoteStats pick = NoteStore.pick(c, false);
-            List<String> lines = new ArrayList<String>();
-            if (pick != null) {
-                String text = pick.hasIdea() ? pick.ideaText : pick.markText;
-                if (text == null || text.trim().length() == 0) text = pick.markText;
-                if (text != null && text.trim().length() > 0) {
-                    lines.add("「" + text.trim().replaceAll("\\s+", " ") + "」");
-                }
-                String from = pick.title;
-                if (from != null && from.length() > 0) lines.add("—— " + from);
-            }
-            return new TextSection(PagePrefs.moduleName(id()), lines, "暂无本记");
-        }
-    }
-
-    // ══════════════════════ ⑤ 年度视图（♻️ 复用 annualSection）══════════════════════
-
-    private static final class AnnualModule implements DeskModule {
-        public String id() { return PagePrefs.MOD_ANNUAL; }
-
-        public InsightRenderer.Section build(Context c) {
-            PeriodStats ann = StatsStore.loadAnnual(c, PeriodRange.yearOf(PeriodRange.nowSec()));
-            return InsightRenderer.annualSection(ann, "暂无年度数据");
-        }
-    }
+    // ══════════════════════ ③④⑤ 已删除（第七批 W1，用户 2026-10-12 拍板）══════════════════════
+    //
+    // 原 `ProfileModule`（阅读画像）/ `NoteModule`（今日一签）/ `AnnualModule`（年度视图）三个内部类
+    // 已整块删除，配套的 `PagePrefs.MOD_PROFILE` / `MOD_NOTE` / `MOD_ANNUAL` 与
+    // `BIT_PROFILE = 16` / `BIT_NOTE = 32` / `BIT_ANNUAL = 64` 同步下线（**三位不复用**，同 D24 口径）。
+    //
+    // 🔴 只删"墨台模块"，**洞察页不受影响**：`InsightRenderer.profileSection` / `annualSection` /
+    //    `aggregateCategories` / `aggregateAuthors` / `judgePortrait` 仍由 `ui/InsightPageView` 在用，
+    //    不得跟着删。手机端待办页 / 卡片池的对应内容同样与本注册表无关。
 
     // ══════════════════════ 通用小区块（标题 + 若干行 / 空态）══════════════════════
 

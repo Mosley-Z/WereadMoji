@@ -5,11 +5,14 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
 
+import com.inkread.weekread.R;
 import com.inkread.weekread.core.AssetRefresher;
 import com.inkread.weekread.core.AssetStore;
 import com.inkread.weekread.core.Bill;
 import com.inkread.weekread.core.BillMoney;
 import com.inkread.weekread.core.BillStore;
+import com.inkread.weekread.core.BookStore;
+import com.inkread.weekread.core.CardDebug;
 import com.inkread.weekread.core.MenuPrefs;
 import com.inkread.weekread.core.MenuPrice;
 import com.inkread.weekread.core.NoteStore;
@@ -39,7 +42,8 @@ import java.util.Set;
  * {@link InsightRenderer.RankSection} 继续保留、不受影响（D17）。
  *
  * <p>数据面（D9）：{@link AssetStore} 是本地缓存（`/shelf/sync` 全量书架 + 逐本 `/book/getprogress`
- * 的 `progress` / `recordReadingTime` / `finishTime`），由 {@link AssetRefresher#ensure} 在
+ * 的 `progress` / `readingTime`（优先；≤0 时回退 `recordReadingTime`，见 {@link AssetRefresher} 第六批B 修复）
+ * / `finishTime`），由 {@link AssetRefresher#ensure} 在
  * **本月卡片刷新的同一时机**增量续补（D19）。本类**只读缓存 + 本地价格索引**，自身**零网络**。
  *
  * <p>版式：完全复用 {@link BillSection.Row}（同包、同一套行渲染 —— D14「与周/月菜单一致」）。
@@ -129,6 +133,9 @@ final class AssetSection implements InsightRenderer.Section {
 
     private final RectF[] chipRects = { new RectF(), new RectF(), new RectF() };
     private final RectF toggleRect = new RectF();
+
+    /** 🆕 W2：手填原价键盘（与墨单**共用同一实现**；本类只做宿主侧的开/关、落盘与重算）。 */
+    private final PricePad pad = new PricePad();
 
     // ══════════════════════ 数据 ══════════════════════
 
@@ -220,6 +227,118 @@ final class AssetSection implements InsightRenderer.Section {
         return true;
     }
 
+    // ══════════════════════ 🆕 第七批 W2（task-66）：长按移出 / 长按录价 ══════════════════════
+
+    /** 🆕 W2：本地重算（**零网络**、不触发 {@link AssetRefresher}）—— 设置项或手填价改完后调用。 */
+    void reload(Context c) {
+        ctx = (c == null) ? null : c.getApplicationContext();
+        items.clear();
+        if (ctx != null) load(ctx);
+        stamp++;
+    }
+
+    /**
+     * 🆕 W2：长按命中书目**主行**（返回行下标；`-1` = 未命中）。两个区域**按 x 分列、互不重叠**：
+     * <ul>
+     *   <li><b>摘录皮肤</b>（画价格两列）：书名区 `x ∈ [left, split)`、价格区 `x ∈ [split, right]`，
+     *       其中 `split = right − 2·{@link BillSection#PRICE_COL_W}·unit`（与行渲染用**同一常量**）；</li>
+     *   <li><b>读书皮肤</b>（不画价格列）：整行 `[left, right]` 都是书名区；`priceZone = true` 恒 `-1`。</li>
+     * </ul>
+     * y 判据 = 该行矩形上下各外扩 `3·unit`（与墨单 `hitPriceRow` 同一宽容度）。
+     */
+    int hitRow(float x, float y, float w, float unit, float top, boolean priceZone) {
+        if (items.isEmpty() || ctx == null) return -1;
+        laid(w, unit);
+        if (rows == null || rows.isEmpty()) return -1;
+        final boolean excerpt = (MenuPrefs.view(ctx) == MenuPrefs.VIEW_EXCERPT);
+        if (priceZone && !excerpt) return -1;                 // 读书皮肤没有价格列 ⇒ 无价格区
+        final float left = w * InsightRenderer.PAD_X_RATIO;
+        final float right = w - left;
+        final float split = right - 2f * BillSection.PRICE_COL_W * unit;
+        float yy = top + InsightRenderer.secHeadH(unit);
+        for (int i = 0; i < rows.size(); i++) {
+            BillSection.Row r = rows.get(i);
+            final float rh = r.h(unit);
+            if (r.bookId != null) {                            // 只认书目**主行**（meta / 摘录行 bookId 为 null）
+                final boolean inX = priceZone ? (x >= split && x <= right)
+                        : (excerpt ? (x >= left && x < split) : (x >= left && x <= right));
+                if (inX && y >= yy - unit * 3f && y <= yy + rh + unit * 3f) return i;
+            }
+            yy += rh;
+        }
+        return -1;
+    }
+
+    /** 🆕 W2：行下标 ⇒ 书 id（`null` = 该行不是书目主行）。 */
+    String bookIdAt(int rowIdx) {
+        if (rows == null || rowIdx < 0 || rowIdx >= rows.size()) return null;
+        return rows.get(rowIdx).bookId;
+    }
+
+    /** 🆕 W2：书 id ⇒ 书名（本地缓存优先；缺则回 id 本身 —— 提示与设置页共用）。 */
+    String titleOf(String id) {
+        if (id == null || id.length() == 0) return "";
+        for (int i = 0; i < items.size(); i++) {
+            Book b = items.get(i);
+            if (id.equals(b.id) && b.title != null && b.title.length() > 0) return b.title;
+        }
+        return id;
+    }
+
+    /** 🆕 W2：把一本书移出阅读资产统计（幂等；落盘在 `PagePrefs`，见 W1 冻结 API）。 */
+    boolean hideBook(Context c, String id) {
+        if (c == null || id == null || id.length() == 0) return false;
+        final boolean ok = PagePrefs.hideAssetBook(c, id);
+        if (ok) reload(c);
+        return ok;
+    }
+
+    // ── 🆕 W2：手填原价（键盘与墨单**共用** {@link PricePad}；落盘仍走 `core/MenuPrice`）──
+
+    boolean padOpen() { return pad.isOpen(); }
+
+    void closePad() { pad.close(); }
+
+    /** 打开录价键盘（`rowIdx` = 长按命中的书目主行）。 */
+    void openPad(int rowIdx) {
+        if (rows == null || rowIdx < 0 || rowIdx >= rows.size()) return;
+        openPad(rows.get(rowIdx).bookId);
+    }
+
+    /**
+     * 🆕 W2：按**书 id** 打开录价键盘 —— 宿主在「按下」那一刻就把 id 定住（行下标会随数据刷新漂移，
+     * 见 `DeskPageView.longBookId`）。
+     */
+    void openPad(String bookId) {
+        if (ctx == null || bookId == null || bookId.length() == 0) return;
+        pad.open(bookId, titleOf(bookId), MenuPrice.fen(ctx, bookId));
+    }
+
+    int hitPad(float x, float y, float w, float vh, float unit) { return pad.hit(x, y, w, vh, unit); }
+
+    /** 键盘按键（与墨单同口径：`R_CLEAR` ⇒ 清除手填价；`R_COMMIT` ⇒ 写入 `MenuPrice`）。 */
+    void padPress(int key) {
+        final int r = pad.press(key);
+        if (r == PricePad.R_EDIT) return;
+        if (r == PricePad.R_CANCEL) { pad.close(); return; }
+        final String bid = pad.bookId();
+        if (r == PricePad.R_CLEAR) {
+            MenuPrice.set(ctx, bid, -1);
+            CardDebug.noteV(ctx, "阅读资产清除手动价：bookId=" + bid);
+        } else if (r == PricePad.R_COMMIT) {
+            MenuPrice.set(ctx, bid, pad.resultFen());
+            CardDebug.noteV(ctx, "阅读资产手动价：bookId=" + bid + " ⇒ " + BillMoney.yuan(pad.resultFen()));
+        }
+        pad.close();
+        reload(ctx);              // 价格链重算（可能改变排序 / 合计）
+    }
+
+    /** 🆕 W2：把打开的录价键盘画在**所有分区之上**（由 `DeskPageView` 在 `renderer.draw` 之后调用）。 */
+    void drawPad(Canvas c, float w, float vh, float unit, Paint p) {
+        if (!pad.isOpen() || ctx == null) return;
+        pad.draw(c, w, vh, unit, p, ctx.getString(R.string.menu_price_manual_title), pad.title());
+    }
+
     // ══════════════════════ 命中（三键 / 展开）══════════════════════
 
     /**
@@ -252,12 +371,21 @@ final class AssetSection implements InsightRenderer.Section {
     private void load(Context c) {
         List<AssetStore.Book> all = AssetStore.all(c);
         buildLedgerIndex(c);                                    // 🆕 价格链索引（零网络，换料时建一次）
+        // 🆕 第七批 W2（task-66）A1：**独立**的「只统计书架上的书」（只作用于阅读资产，不共用
+        //    `rank_shelf_only`）—— 口径**同 `core/RankFilter#apply`**：开关关 ⇒ 不过滤；
+        //    `BookStore.shelfIds` 返回 `null`（文件缺失/读失败 ⇒ 「还不知道」）⇒ 不过滤（等后台补拉）；
+        //    空集 ≠ null（`BookStore` 文档：空集 = 真的没有书）⇒ 照常过滤；**顺序不变**。
+        final Set<String> shelf = PagePrefs.isAssetShelfOnly(c) ? BookStore.shelfIds(c) : null;
+        // 🆕 A2：长按书名移出统计的书 ⇒ **不进列表、不进合计**（合计按本表逐本累加，见 addTotal）。
+        final Set<String> hidden = PagePrefs.assetHiddenIds(c);
         // 🔴 D14 换皮修复：摘录文本**不在换料期烘焙**（`load` 与皮肤无关），改由 `laid()` 按
         //    **当前皮肤**现算 —— 否则切到读书皮肤后第三行仍画着摘录期的旧文本（227 §10 缺陷②）。
         for (int i = 0; i < all.size(); i++) {
             AssetStore.Book s = all.get(i);
             if (s == null || s.id == null) continue;
             if (s.sec <= MIN_SEC) continue;                     // D9：≤10 分钟不进资产表
+            if (hidden != null && hidden.contains(s.id)) continue;   // A2：已长按移出统计
+            if (shelf != null && !shelf.contains(s.id)) continue;    // A1：只在架（清单未知时 shelf==null）
             Book b = new Book();
             b.id = s.id;
             b.title = s.title;
@@ -400,6 +528,7 @@ final class AssetSection implements InsightRenderer.Section {
         if (excerpt) {
             BillSection.Row r = BillSection.Row.line(no + ". " + nz(b.title), income, SZ_BODY);
             r.c3 = price;                        // 右起第二列（原价），与墨单同列宽
+            r.bookId = b.id;                     // 🆕 W2：长按命中锚点（x 左半 = 书名区，右半 = 价格区）
             out.add(r);
             out.add(meta(b));
             if (b.note != null) {
@@ -409,7 +538,9 @@ final class AssetSection implements InsightRenderer.Section {
                 out.add(t);
             }
         } else {
-            out.add(BillSection.Row.wrap(no + ". 「" + nz(b.title) + "」", SZ_BODY, 2));
+            BillSection.Row r = BillSection.Row.wrap(no + ". 「" + nz(b.title) + "」", SZ_BODY, 2);
+            r.bookId = b.id;                     // 🆕 W2：读书皮肤**无价格列** ⇒ 整行都是书名区
+            out.add(r);
             out.add(meta(b));
         }
     }
