@@ -21,11 +21,13 @@ import com.inkread.weekread.remote.HidKeymap;
 import com.inkread.weekread.remote.HidLink;
 import com.inkread.weekread.remote.RemoteLinkManager;
 import com.inkread.weekread.remote.RemoteProtocol;
+import com.inkread.weekread.remote.ShakeDetector;
 import com.inkread.weekread.ui.ConnectPageView;
 import com.inkread.weekread.ui.FlipKeyView;
 import com.inkread.weekread.ui.InkTheme;
 import com.inkread.weekread.ui.KeyboardPageView;
 import com.inkread.weekread.ui.KeyPadView;
+import com.inkread.weekread.ui.ShakePageView;
 import com.inkread.weekread.ui.StatusChipView;
 
 import java.util.List;
@@ -46,6 +48,11 @@ import java.util.concurrent.Executors;
  * <p>🆕 TASK-061 补「键盘」页：底栏扩为**四页**（翻页 / 按键 / 键盘 / 连接）—— 键盘页把**手机文本**
  *   逐字符"打"进墨水屏输入框（{@link KeyboardPageView} + {@link HidKeymap}），支持
  *   **整段发送**与**实时同步**两种模式；🔴 HID 协议层**仅 ASCII 可发**，中文/emoji 跳过并**如实计数**。
+ * <p>🆕 TASK-084 补「晃动」页：底栏扩为**五页**（翻页 / 按键 / 键盘 / 晃动 / 连接，D1 拍板插在
+ *   键盘之后、连接之前）—— 页内 1:1 复刻「实验室 → 晃动翻页（手机端）」块（总开关 / 灵敏度三档 /
+ *   四动作 4×3 / 自证映射行 + 通道门控提示条 + 可折叠说明卡 + 「本机晃动」折叠区），
+ *   读写**实验室页同一批 {@link CardPrefs} 键**（{@link ShakePageView} 只抛语义事件，映射在本类）
+ *   ⇒ 两侧双向同步。🔴 **不含**「响应方向两轴」（2026-10-10 第三轮整组删除，见 验证记录/198）。
  *
  * <p>🔴 **只服务手机端**（{@code install_role=phone}）；阅读器端不实例化本类、本布局，行为零差异。
  * <p>🔴 **发送三条路**：翻页仍走 {@link RemoteLinkManager#sendCommand(int)}（HID 优先分派，一行不改）；
@@ -67,6 +74,18 @@ public class ConsoleActivity extends Activity {
     private static final int PAGE_KEYBOARD = 2;
     /** 连接页（自检 / 日志）。 */
     private static final int PAGE_CONNECT = 3;
+    /** 🆕 TASK-084：晃动页（第 5 格）——底栏顺序 = 翻页/按键/键盘/晃动/连接，内容区索引不动（连接仍是 3）。 */
+    private static final int PAGE_SHAKE = 4;
+
+    // ── 🆕 TASK-084：通道门控的「连接方式」派生口径 ──
+    //    🔴 与 LabPageController.currentConnMode() **同一套真值**（蓝牙 > 热点 > 关闭），
+    //       两处若漂移，"为什么实验室页说得能发、遥控台说得不能"就会自相矛盾。
+    /** 连接方式 = 关闭。 */
+    private static final int CONN_OFF = 0;
+    /** 连接方式 = 热点连接（{@code remote_role ≠ 关闭}）。 */
+    private static final int CONN_HOTSPOT = 1;
+    /** 连接方式 = 蓝牙连接（HID 外设通道）。 */
+    private static final int CONN_BT = 2;
 
     /** 🆕 TASK-061：逐字符发送时 down→up 的保持时长（ms，≥4；间隔另由偏好控制）。 */
     private static final int TYPING_HOLD_MS = 8;
@@ -81,14 +100,20 @@ public class ConsoleActivity extends Activity {
     private View keypadPage;
     private View keyboardPage;
     private View connectScroll;
+    /** 🆕 TASK-084：晃动页的滚动容器（与连接页同款 ScrollView 口径）。 */
+    private View shakeScroll;
     private View nav;
     private View topbar;
     private View root;
     private ConnectPageView connectPage;
+    /** 🆕 TASK-084：晃动页（第 5 格）—— 自绘页视图，本类负责把语义事件映射到 CardPrefs 与 ShakeDetector。 */
+    private ShakePageView shakePage;
     private TextView navFlip;
     private TextView navKeypad;
     private TextView navKeyboard;
     private TextView navConnect;
+    /** 🆕 TASK-084：底栏「晃动」入口。 */
+    private TextView navShake;
     /** 当前页（四页互斥显示）。 */
     private int page = PAGE_FLIP;
 
@@ -136,10 +161,13 @@ public class ConsoleActivity extends Activity {
         keyboardPage = findViewById(R.id.console_keyboard);
         connectScroll = findViewById(R.id.console_connect_scroll);
         connectPage = (ConnectPageView) findViewById(R.id.console_connect);
+        shakeScroll = findViewById(R.id.console_shake_scroll);
+        shakePage = (ShakePageView) findViewById(R.id.console_shake);
         navFlip = (TextView) findViewById(R.id.console_nav_flip);
         navKeypad = (TextView) findViewById(R.id.console_nav_keypad);
         navKeyboard = (TextView) findViewById(R.id.console_nav_keyboard);
         navConnect = (TextView) findViewById(R.id.console_nav_connect);
+        navShake = (TextView) findViewById(R.id.console_nav_shake);
 
         // 🆕 TASK-040：连接页——「让本机可被发现」由本 Activity 发 startActivityForResult
         connectPage.setListener(new ConnectPageView.Listener() {
@@ -172,6 +200,13 @@ public class ConsoleActivity extends Activity {
             @Override
             public void onClick(View v) {
                 showPage(PAGE_KEYBOARD);
+            }
+        });
+        // 🆕 TASK-084：底栏「晃动」入口（D1 拍板：键盘之后 / 连接之前）
+        navShake.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showPage(PAGE_SHAKE);
             }
         });
 
@@ -212,6 +247,56 @@ public class ConsoleActivity extends Activity {
                 Toast.makeText(ConsoleActivity.this,
                         on ? R.string.console_kb_realtime_on : R.string.console_kb_realtime_off,
                         Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        // 🆕 TASK-084：晃动页 —— View 只抛**语义事件**，落盘 / 通知检测器全在本类（shell 负责翻译）
+        //   🔴🔴 全部写的是**实验室页同一批 CardPrefs 键**（用户追加要求「所有选项自动同步到实验室」）
+        //      ⇒ 任一侧改动即时对另一侧生效；本类**不缓存、不镜像**。
+        shakePage.setListener(new ShakePageView.Listener() {
+            @Override
+            public void onShakeEnabled(boolean on) {
+                CardPrefs.setShakeEnabled(ConsoleActivity.this, on);
+                ShakeDetector.sync(ConsoleActivity.this);   // 总开关关 ⇒ 立即停采样（G2 即时生效）
+                refreshShake();
+            }
+
+            @Override
+            public void onSensitivity(int level) {
+                CardPrefs.setShakeSens(ConsoleActivity.this, level);
+                ShakeDetector.reload(ConsoleActivity.this);  // 档位变了 ⇒ 重建采样参数
+                refreshShake();
+            }
+
+            @Override
+            public void onActDirChanged(int act, int dir) {
+                CardPrefs.setShakePeerActDir(ConsoleActivity.this, act, dir);
+                // ShakeDetector.fire 每次现读方向 ⇒ 无需 reload，只回填自证行
+                refreshShake();
+            }
+
+            @Override
+            public void onLocalEnabled(boolean on) {
+                CardPrefs.setShakeLocalEnabled(ConsoleActivity.this, on);
+                ShakeDetector.sync(ConsoleActivity.this);   // 本机晃动另开一条采样实例
+                refreshShake();
+            }
+
+            @Override
+            public void onLocalMode(int mode) {
+                CardPrefs.setShakeLocalMode(ConsoleActivity.this, mode);
+                refreshShake();
+            }
+
+            @Override
+            public void onLocalActDirChanged(int act, int dir) {
+                CardPrefs.setShakeLocalActDir(ConsoleActivity.this, act, dir);
+                refreshShake();
+            }
+
+            @Override
+            public void onOpenConnect() {
+                showPage(PAGE_CONNECT);   // 点门控提示条 ⇒ 跳「连接」页（docs/11 §5.3 / 验收 A8）
             }
         });
 
@@ -270,6 +355,8 @@ public class ConsoleActivity extends Activity {
         }
         applyTheme();          // TASK-041：设置页可能改过深色偏好，回前台重着色
         applyFlipPrefs();      // 设置页可能改过（若将来暴露），回前台重灌一次
+        // 🆕 TASK-084：设置页 / 实验室页可能改过晃动相关偏好或连接方式 ⇒ 重算捕获层，再整体回填
+        ShakeDetector.sync(this);
         refresh();
     }
 
@@ -318,6 +405,49 @@ public class ConsoleActivity extends Activity {
         if (page == PAGE_CONNECT && connectPage != null) {
             connectPage.refresh();     // 🆕 TASK-040：连接页在前台时同步刷新
         }
+        refreshShake();   // 🆕 TASK-084：HID / 通道状态一变即重算门控条与本页回填
+    }
+
+    // ── 🆕 TASK-084：遥控台「晃动」页（第 5 格）──────────────────────────────────
+
+    /**
+     * 派生当前「连接方式」—— 与 {@code LabPageController.currentConnMode()} **同一套真值**
+     * （蓝牙 &gt; 热点 &gt; 关闭）。🔴 只读派生，绝不在此改偏好（连接方式在设置页 / 连接页改）。
+     */
+    private int currentConnMode() {
+        if (CardPrefs.isBtControlEnabled(this)) return CONN_BT;
+        if (CardPrefs.getRemoteRole(this) != CardPrefs.REMOTE_ROLE_OFF) return CONN_HOTSPOT;
+        return CONN_OFF;
+    }
+
+    /**
+     * 按 **{@code CardPrefs} 真值**组装 {@link ShakePageView.State} 并回填本页（幂等）。
+     *
+     * <p>🔴🔴 **同一份配置原则**（用户追加要求原话：「保证所有选项会自动同步到实验室的翻页中。」）：
+     * 「总开关 / 灵敏度三档 / 四动作 4×3 / 本机开关 / 本机 4×3 / 翻页方式」全部读写**实验室页同一批键**
+     * （{@code remote_shake_enabled} / {@code remote_shake_sens} / {@code shake_pdir_*} /
+     * {@code shake_local_enabled} / {@code shake_local_mode} / {@code shake_ldir_*}）——
+     * 本方法**每次现读、不缓存、不镜像**，故任一侧改动即时对另一侧生效。
+     */
+    private void refreshShake() {
+        if (shakePage == null) return;
+        ShakePageView.State s = new ShakePageView.State();
+        int conn = currentConnMode();
+        s.gate = (conn == CONN_OFF) ? ShakePageView.GATE_OFF : ShakePageView.GATE_OK;
+        s.gateArg = (conn == CONN_BT)
+                ? getString(R.string.lab_conn_short_bt) : getString(R.string.lab_conn_short_hotspot);
+        s.enabled = CardPrefs.isShakeEnabled(this);
+        s.sens = CardPrefs.getShakeSens(this);
+        for (int i = 0; i < 4; i++) {
+            s.dir[i] = CardPrefs.getShakePeerActDir(this, i);
+        }
+        s.sensorOk = shakePage.hasUsableAccelerometer();
+        s.localEnabled = CardPrefs.isShakeLocalEnabled(this);
+        s.localMode = CardPrefs.getShakeLocalMode(this);
+        for (int i = 0; i < 4; i++) {
+            s.localDir[i] = CardPrefs.getShakeLocalActDir(this, i);
+        }
+        shakePage.setState(s);
     }
 
     /**
@@ -349,6 +479,9 @@ public class ConsoleActivity extends Activity {
         // 连接页 / 键盘页：子视图着色定死在 buildUi ⇒ 重建（未构建过则跳过）
         if (connectPage != null) connectPage.rebuild();
         if (keyboard != null) keyboard.rebuild();   // 🆕 TASK-061
+        // 🆕 TASK-084：晃动页着色同样定死在 buildUi ⇒ 重建（rebuild() 内部会重放最近一次 State，
+        //   故切深色不丢选中态；随后 refresh() 再按真值兜一遍）
+        if (shakePage != null) shakePage.rebuild();
 
         // 自绘 View 重画
         if (chip != null) chip.invalidate();
@@ -360,10 +493,12 @@ public class ConsoleActivity extends Activity {
 
     /** 底部导航选中态着色（供 {@link #showPage} 与 {@link #applyTheme} 共用）。 */
     private void applyNavColors() {
-        if (navFlip == null || navConnect == null || navKeypad == null || navKeyboard == null) return;
+        if (navFlip == null || navConnect == null || navKeypad == null
+                || navKeyboard == null || navShake == null) return;
         navFlip.setTextColor(page == PAGE_FLIP ? InkTheme.bamboo(this) : InkTheme.ink2(this));
         navKeypad.setTextColor(page == PAGE_KEYPAD ? InkTheme.bamboo(this) : InkTheme.ink2(this));
         navKeyboard.setTextColor(page == PAGE_KEYBOARD ? InkTheme.bamboo(this) : InkTheme.ink2(this));
+        navShake.setTextColor(page == PAGE_SHAKE ? InkTheme.bamboo(this) : InkTheme.ink2(this));
         navConnect.setTextColor(page == PAGE_CONNECT ? InkTheme.bamboo(this) : InkTheme.ink2(this));
     }
 
@@ -376,8 +511,10 @@ public class ConsoleActivity extends Activity {
         keypadPage.setVisibility(p == PAGE_KEYPAD ? View.VISIBLE : View.GONE);
         keyboardPage.setVisibility(p == PAGE_KEYBOARD ? View.VISIBLE : View.GONE);
         connectScroll.setVisibility(p == PAGE_CONNECT ? View.VISIBLE : View.GONE);
+        shakeScroll.setVisibility(p == PAGE_SHAKE ? View.VISIBLE : View.GONE);   // 🆕 TASK-084
         applyNavColors();
         if (p == PAGE_CONNECT && connectPage != null) connectPage.refresh();
+        if (p == PAGE_SHAKE) refreshShake();     // 🆕 TASK-084：进页即按真值回填（含门控条）
     }
 
     @Override

@@ -1,6 +1,7 @@
 package com.inkread.weekread.ui;
 
 import android.content.Context;
+import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.util.TypedValue;
 
@@ -228,6 +229,49 @@ public final class InkTheme {
     /** 等宽（数字 / 版本用 —— 科技感来源）。 */
     public static Typeface mono() {
         return Typeface.MONOSPACE;
+    }
+
+    // ── 金额串排版（🆕 TASK-086 第三批 · task-35）──
+
+    /**
+     * 金额列**允许的最大横向压缩比例**（下限）。
+     *
+     * <p>🔴 不是"设计偏好"，是**算出来的**：墨屏实付 / 原价列预算 = {@code pcw - 2u = 72.0px}
+     * （`PRICE_COL_W=62f × unit=1.2`），等宽字体推进量实测 **10.75px/字形（连 `.` 也一样）**
+     * ⇒ 只放得下 **6 字形**；带 `≈` 的 7 字形（如 `≈¥12.74` = 75.3px）差 ≈3.3px，会被 `fit()`
+     * 截成 `≈¥12.…`（A18「形制仅一项」破形，2026-10-11 真机 `T27h` 实测）。
+     *
+     * <p>本项目金额可达 **9 字形**：手填价上限 ¥9999（`MenuPrice`）⇒ `≈¥9999.99` = 96.8px
+     * ⇒ 墨屏需 0.74、海报（预算 `pCol - 4s = 84s`、字号 `sBody = 22s`、同 0.6em/字形）需 0.71。
+     * ⇒ 下限取 **0.68** 恰好覆盖两个表面的可达最坏值；再往下（不可能出现的长度）才交回截断。
+     *
+     * <p>🔴 已验收列几何（`PRICE_COL_W = 62f`、原价右锚 `right - pcw = 381.6`、实付右锚 456）
+     * **一律不动** —— 加宽列会推翻 `验证记录/206`（task-12）的列位判据。
+     */
+    public static final float MONEY_MIN_SCALE_X = 0.68f;
+
+    /**
+     * 金额串「按需轻微横向压缩」的比例 —— 用**压缩**代替**截断**（TASK-086 第三批 · task-35）。
+     *
+     * <p>用法（两个表面同口径）：{@code float sc = InkTheme.moneyScaleX(p, s, maxW);}
+     * <ul>
+     *   <li>返回 {@code 1f} ⇒ 调用方照旧 {@code fit(p, s, maxW)} 绘制：**放得下 ⇒ `fit` 原样返回**，
+     *       **压到下限仍放不下 ⇒ `fit` 截断**。两种情形都与改造前**逐字节一致**；</li>
+     *   <li>返回 {@code <1f}（且 ≥ {@link #MONEY_MIN_SCALE_X}）⇒ 调用方在 {@code p.setTextScaleX(sc)}
+     *       下把**完整**串画出来（画完**必须**复位 {@code setTextScaleX(1f)}，paint 是复用的）。</li>
+     * </ul>
+     *
+     * <p>🔴 只作用于**金额串**：标题 / 正文的可用宽仍按**未压缩**宽度计算 ⇒ 标题版面零变化，
+     * 且压缩后墨迹只会更窄 ⇒ 不会与标题重叠（方向保守）。
+     * <p>本方法与**色板**无关（类头"墨水屏端一行不碰"指的是色板）：墨屏
+     * `feature/BillSection`、海报 `feature/BillWallpaper` 与手机端都可调用 —— 两个表面必须同口径（A11）。
+     */
+    public static float moneyScaleX(Paint p, String s, float maxW) {
+        if (p == null || s == null || s.length() == 0 || maxW <= 0f) return 1f;
+        float w = p.measureText(s);
+        if (w <= maxW || w <= 0f) return 1f;              // 本来就放得下 ⇒ 零变化
+        float sc = maxW / w;
+        return sc < MONEY_MIN_SCALE_X ? 1f : sc;          // 压到下限仍放不下 ⇒ 交回调用方截断
     }
 
     // ── 尺寸换算 ──

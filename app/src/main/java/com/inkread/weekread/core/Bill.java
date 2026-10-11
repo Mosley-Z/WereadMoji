@@ -125,6 +125,27 @@ public final class Bill {
          * ⇒ 旧账（无此键）读出来是 {@code -1}，由 {@link BillMoney#paidFen} 的回落分支接管。
          */
         public int progressEndPct = -1;
+
+        /**
+         * 🆕 TASK-086 第三批（2026-10-11 · 方案文档 `§20.10` 定稿）：{@link #progressEndPct}
+         * 是**估算值**（锚点法，见 {@link BillEstimator}），**不是该期的真快照**。
+         *
+         * <p>唯一用途 = 形制：渲染侧据它给**实付金额**加 `≈` 前缀（A18：**仅此一项**，
+         * 不加最浅灰 / 不画期界细线 / 不加表尾图例 / 不加周期选择器后缀）。
+         * 🔴 老账无此键 ⇒ 读回 {@code false} ⇒ 行为与本批之前**逐字一致**。
+         *
+         * <p>口径链（`§20.5`）：某期是"精确"还是"估算"**只由该期有没有真快照唯一决定**；
+         * 估算值一旦被真快照覆盖（= 该期被重新生成时命中取值链）⇒ 同位变精确、摘掉 `≈`（A16）。
+         */
+        public boolean progressEndEst = false;
+
+        /**
+         * 🆕 同上：{@link #progressStartPct} 是**估算值**（锚点法算出的"上一期期末"）。
+         *
+         * <p>算法 A（增额）的金额 = 两端进度之差 ⇒ 只要有一端是估算，该行金额就标 `≈`
+         * （见 {@link BillMoney#paidEstimated}）。
+         */
+        public boolean progressStartEst = false;
     }
 
     // ══════════════════════ 口径 ══════════════════════
@@ -188,8 +209,8 @@ public final class Bill {
      * 序列化为 JSON（落 `SharedPreferences` 的就是它）。
      *
      * <p>🔴 **条件写**：`progressPct` / `marketPriceFen` / `progressStartPct` / `progressEndPct`
-     * / `progressEndKnown` 只有"本对象里真的有值"时才写进 JSON（缺省不写 ⇒ 老账/无值行回落"未知"，
-     * 体积极小）。
+     * / `progressEndKnown` / `progressEndEst` / `progressStartEst` 只有"本对象里真的有值"时才写进 JSON
+     * （缺省不写 ⇒ 老账/无值行回落"未知"，体积极小）。
      * 配合 {@link BillStore#save} 的**整体覆盖**语义，这条约定意味着：
      * <b>调用方必须在落盘前把"本次没取到"的字段从旧账继承回来</b>（`-1` 在 `fromJson` 里
      * 与"没这个字段"等价，缺字段就会被读成缺省）—— 实现在
@@ -225,6 +246,9 @@ public final class Bill {
                 // 🆕 task-13：**该期期末累计**（累计档用它；缺省不写 ⇒ 老账读回 -1，由 paidFen 回落）
                 if (it.progressEndPct >= 0) j.put("progressEndPct", it.progressEndPct);
                 if (it.progressEndKnown) j.put("progressEndKnown", true);
+                // 🆕 第三批：估算标记（缺省不写 ⇒ 老账读回 false = "精确"，与本批之前逐字一致）
+                if (it.progressEndEst) j.put("progressEndEst", true);
+                if (it.progressStartEst) j.put("progressStartEst", true);
                 arr.put(j);
             }
             o.put("items", arr);
@@ -278,6 +302,9 @@ public final class Bill {
                     it.progressEndPct = j.has("progressEndPct")
                             ? j.optInt("progressEndPct", -1) : -1;
                     it.progressEndKnown = j.optBoolean("progressEndKnown", false);
+                    // 🆕 第三批：估算标记（老账无键 ⇒ false = "精确"，A13 老账兼容不变）
+                    it.progressEndEst = j.optBoolean("progressEndEst", false);
+                    it.progressStartEst = j.optBoolean("progressStartEst", false);
                     b.items.add(it);
                 }
             }

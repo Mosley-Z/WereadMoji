@@ -17,6 +17,7 @@ import com.inkread.weekread.core.BillStore;
 import com.inkread.weekread.core.CardDebug;
 import com.inkread.weekread.core.MenuPrefs;
 import com.inkread.weekread.core.PeriodRange;
+import com.inkread.weekread.ui.InkTheme;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -401,10 +402,23 @@ public final class BillWallpaper {
                 final String ptxt = BillMoney.priceText(c, it);
                 final String dtxt = paidCol ? BillMoney.paidText(c, it, algo) : null;
                 p.setTextAlign(Paint.Align.RIGHT);
-                if (dtxt != null) cv.drawText(fit(p, dtxt, pCol - s * 4f), right, y + sBody, p);
-                final String pfit = fit(p, ptxt, pCol - s * 4f);
+                // 🆕 TASK-086 第三批 · task-35：与 `feature/BillSection.Row#draw` **同口径** ——
+                //    金额列改为「按需轻微横向压缩」而不是直接截断（预算 `pCol - 4s = 84s` ÷ 0.6em/字形
+                //    = 6.36 字形 ⇒ 7 字形必被截）。A11 硬要求两表面同形制 ⇒ 上下两处规则一字不差。
+                final float moneyMax = pCol - s * 4f;
+                final float scPay = (dtxt != null) ? InkTheme.moneyScaleX(p, dtxt, moneyMax) : 1f;
+                final String dfit = (dtxt != null) ? (scPay < 1f ? dtxt : fit(p, dtxt, moneyMax)) : null;
+                if (dfit != null) {
+                    p.setTextScaleX(scPay);
+                    cv.drawText(dfit, right, y + sBody, p);
+                    p.setTextScaleX(1f);
+                }
+                final float scPrice = InkTheme.moneyScaleX(p, ptxt, moneyMax);
+                final String pfit = (scPrice < 1f) ? ptxt : fit(p, ptxt, moneyMax);
                 final float priceX = (dtxt != null) ? (right - pCol) : right;   // 🔴 TASK-12：实付关 ⇒ 原价贴右
+                p.setTextScaleX(scPrice);
                 cv.drawText(pfit, priceX, y + sBody, p);
+                p.setTextScaleX(1f);
                 p.setTextAlign(Paint.Align.LEFT);
                 // 🔴 同 `BillSection.Row#draw` 的上机教训：标题可用宽 = min(列式界, 原价**实际墨迹**左沿 − 间隔)。
                 //    只按列宽推会在「实付关」时把标题放进价格列里 ⇒ 画出来糊成乱码（A11 要求两边一致）。
@@ -646,7 +660,9 @@ public final class BillWallpaper {
         if (MenuPrefs.PAID_OFF.equals(algo)) return null;
         if (BillMoney.paidCount(c, b.items, algo) <= 0) return null;    // 全算不出 ⇒ 不写（同墨单口径）
         long pay = BillMoney.totalPaidFen(c, b.items, algo);
-        String s = "读回 " + BillMoney.yuan(pay);
+        // 🆕 TASK-086 第三批（A18）：合计含估算行 ⇒ 整段前缀 `≈`（与 `BillSection#billTotalNote`
+        //    **同一套拼法** —— A11 靠这条守住：改一处必须改另一处）。
+        String s = (BillMoney.totalEstimated(c, b.items, algo) ? "≈" : "") + "读回 " + BillMoney.yuan(pay);
         float h = b.totalSec / 3600f;
         if (h > 0f) s += "，折合 " + BillMoney.yuan((int) Math.round(pay / h)) + "/小时";
         return s;

@@ -88,9 +88,25 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content" />
         </ScrollView>
+
+        <!-- 🆕 TASK-084：晃动页（第 5 格）—— 1:1 复刻「设置页 → 实验室 → 晃动翻页（手机端）」块，
+             与实验室页读写**同一份 core.CardPrefs**、复用**同一套 lab_shake_* 文案** ⇒ 两侧双向同步。
+             🔴 不含「响应方向两轴」（2026-10-10 第三轮整组删除，见 验证记录/198）。 -->
+        <ScrollView
+            android:id="@+id/console_shake_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone"
+            android:fillViewport="true">
+
+            <com.inkread.weekread.ui.ShakePageView
+                android:id="@+id/console_shake"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+        </ScrollView>
     </FrameLayout>
 
-    <!-- 底部导航（docs/09 §5.5）：翻页 / 按键 / 键盘 / 连接 -->
+    <!-- 底部导航（docs/09 §5.5）：翻页 / 按键 / 键盘 / 晃动 / 连接（TASK-084 由 4 格扩为 5 格） -->
     <LinearLayout
         android:id="@+id/console_nav"
         android:layout_width="match_parent"
@@ -127,6 +143,17 @@
             android:layout_weight="1"
             android:gravity="center"
             android:text="@string/console_nav_keyboard"
+            android:textColor="@color/ink_text2"
+            android:textSize="15sp" />
+
+        <!-- 🆕 TASK-084：晃动页入口（D1 拍板：键盘之后 / 连接之前） -->
+        <TextView
+            android:id="@+id/console_nav_shake"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="@string/console_nav_shake"
             android:textColor="@color/ink_text2"
             android:textSize="15sp" />
 

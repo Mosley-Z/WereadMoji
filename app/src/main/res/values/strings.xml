@@ -491,6 +491,18 @@
     <string name="console_nav_keypad">按键</string>
     <string name="console_nav_connect">连接</string>
     <string name="console_nav_keyboard">键盘</string>
+    <!-- 🆕 TASK-084：遥控台「晃动」页（V1.3.0-Beta）——
+         🔴 只新增**显示文案**：页内全部能力/配置复用 lab_shake_* 与同一份 core.CardPrefs（禁止新建同义配置键）。
+         🔴 后 3 条为 docs/11 §7.1 设计稿漏列项，已报 Lead 批准（2026-10-11），见 验证记录/213「设计稿缺口登记」。 -->
+    <string name="console_nav_shake">晃动</string>
+    <string name="console_shake_gate_ready">连接方式为「%1$s」，晃动可发出。</string>
+    <string name="console_shake_gate_off">连接方式为「关闭」—— 晃动不会发出翻页指令。</string>
+    <!-- 总开关文案（docs/11 §5.2 线框 + §六 #4；§7.2 把 lab_shake_label 指派给页标题 ⇒ 亦属设计稿漏列，Lead 批准） -->
+    <string name="console_shake_enable">启用晃动翻页</string>
+    <string name="fold_shake_peer">晃动翻页说明</string>
+    <!-- 门控条 %1$s 的短标签（长串 lab_conn_hotspot/lab_conn_bt 塞进 48dp 单行条会溢出） -->
+    <string name="lab_conn_short_hotspot">热点连接</string>
+    <string name="lab_conn_short_bt">蓝牙连接</string>
     <!-- 🆕 TASK-061：键盘页（整段发送 / 实时同步 / 常用键）—— 🔴 中文不可行，如实提示、不静默丢 -->
     <string name="console_kb_empty">输入框是空的：先输入要发送的文字</string>
     <string name="console_kb_sent">已发送 %1$d 个字符</string>

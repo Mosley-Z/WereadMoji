@@ -72,8 +72,24 @@ final class BillSection implements InsightRenderer.Section {
 
     private static final int INK   = 0xFF000000;
     private static final int GRAY  = 0xFF3C3C3C;
-    private static final int LIGHT = 0xFFA8A8A8;
+    private static final int LIGHT = 0xFFA8A8A8;   // 🔴 提示小字 / 禁用态用（task-29 **未动**，见 212）
     private static final int LINE  = 0xFFD8D8D8;
+
+    /**
+     * 🆕 task-29：页签**未选中**色。
+     *
+     * <p>旧值用的就是上面的 {@link #LIGHT}（`#A8A8A8`，168）—— 用户 #9「小字不得浅灰」点名的
+     * 「摘录菜单 / 读书菜单」未选中项。2026-10-11 真机取证（`T27a`，`x289-348` = 「读书菜单」）：
+     * 墨迹最暗 = **168**，与源码常量**精确吻合**；页签行**底色实测 = `#FFFFFF` 纯白（100% 采样点）**
+     * ⇒ 对比度 **2.38:1**，远低于 WCAG AA 正文 4.5:1。
+     *
+     * <p>改为复用**既有 token** `InkTheme.INK2`（`#6B6459`，不是自造新灰）：
+     * 白底 **5.85:1**、纸白底 `#F7F3EA` 5.28:1、纸 2 底 `#EFE9DC` 4.83:1 ⇒ **三种真实底色全部达标**。
+     * <p>🔴 只换颜色：字族（`InkTheme.serif()`）/ 字号（`12.5f × unit = 15.0px`）/ 字重（未选中仍常规、
+     * 选中才 `setFakeBoldText(true)`）/ 位置 / 下划线**一律不动**；选中态仍是纯黑 + 下划线 ⇒ 状态可辨
+     * （`INK` 0 vs `INK2` 约 107 灰阶，约 3.9:1）。
+     */
+    private static final int TAB_OFF = InkTheme.INK2;
 
     /** 空态文案（无任何账单）。 */
     private static final String EMPTY = "本期暂无账单";
@@ -1056,7 +1072,7 @@ final class BillSection implements InsightRenderer.Section {
             float cx = r.left + slot * i + slot / 2f;
             boolean on = (vis[i] == view);
             p.setFakeBoldText(on);
-            p.setColor(on ? INK : LIGHT);
+            p.setColor(on ? INK : TAB_OFF);          // 🆕 task-29：未选中 #A8A8A8 ⇒ INK2（2.38:1 ⇒ 5.85:1）
             c.drawText(labels[vis[i]], cx, base, p);
             if (on) {
                 p.setColor(INK);
@@ -1416,12 +1432,14 @@ final class BillSection implements InsightRenderer.Section {
      * </ol>
      * 🔴 H = 0 时**不写「折合」**（除零保护，且 0 小时读回任何钱都是噪声）；
      * 🔴 X 只累加**算得出来**的行（无价 / 无进度 / 首期无基线的不进合计 —— A7）。
+     * <p>🆕 TASK-086 第三批（A18）：合计里**只要有一行是估算值**（历史期锚点法），整段前缀 `≈`
+     * —— 行上标 `≈` 而合计不标会读成"合计是精确值"，自相矛盾；`BillWallpaper` 同规则同步（A11）。
      */
     private String billTotalNote(String algo) {
         if (MenuPrefs.PAID_OFF.equals(algo)) return null;
         if (BillMoney.paidCount(ctx, bill.items, algo) <= 0) return null;   // ② 全算不出 ⇒ 不写
         long pay = BillMoney.totalPaidFen(ctx, bill.items, algo);
-        String s = "读回 " + BillMoney.yuan(pay);
+        String s = (BillMoney.totalEstimated(ctx, bill.items, algo) ? "≈" : "") + "读回 " + BillMoney.yuan(pay);
         float h = bill.totalSec / 3600f;
         if (h > 0f) s += "，折合 " + BillMoney.yuan((int) Math.round(pay / h)) + "/小时";
         return s;
@@ -1758,11 +1776,25 @@ final class BillSection implements InsightRenderer.Section {
                 //    版面逐像素不变（同一份 `pcw`、同一份 `lim` 公式）。
                 final float pcw = PRICE_COL_W * unit;
                 p.setTextAlign(Paint.Align.RIGHT);
-                final String bs = (b != null) ? fit(p, b, pcw - unit * 2f) : null;
-                if (bs != null) c.drawText(bs, right, base, p);
-                final String cs = fit(p, c3, pcw - unit * 2f);
+                // 🆕 TASK-086 第三批 · task-35：金额列改为「按需轻微横向压缩」，不再直接截断。
+                //    根因（2026-10-11 真机量化）：预算 `pcw - 2u = 72.0px` ÷ 10.75px/字形 = 6.7 字形
+                //    ⇒ 7 字形必被 `fit()` 截成 `≈¥12.…`（`T27h` 实测，A18 形制破形）。
+                //    `sc == 1f` ⇒ 走原 `fit()`（放得下 ⇒ 原样返回；压到下限仍放不下 ⇒ 截断，与改造前一致）；
+                //    `sc < 1f` ⇒ 压缩绘制**完整**串。列宽 / 锚点 / 标题上限口径**全部不变**。
+                final float moneyMax = pcw - unit * 2f;
+                final float scPay = (b != null) ? InkTheme.moneyScaleX(p, b, moneyMax) : 1f;
+                final String bs = (b != null) ? (scPay < 1f ? b : fit(p, b, moneyMax)) : null;
+                if (bs != null) {
+                    p.setTextScaleX(scPay);
+                    c.drawText(bs, right, base, p);
+                    p.setTextScaleX(1f);
+                }
+                final float scPrice = InkTheme.moneyScaleX(p, c3, moneyMax);
+                final String cs = (scPrice < 1f) ? c3 : fit(p, c3, moneyMax);
                 final float priceX = (bs != null) ? (right - pcw) : right;   // 🔴 TASK-12：实付关 ⇒ 原价贴右
+                p.setTextScaleX(scPrice);
                 c.drawText(cs, priceX, base, p);
+                p.setTextScaleX(1f);
                 p.setTextAlign(Paint.Align.LEFT);
                 // 🔴 上机实测（2026-10-10，480×800）：`lim` **不能只按列宽推**。
                 //    实付**关**时 `lim = right − pcw − 8u ≈ 372`，而「原价」右对齐在 `right − pcw`、

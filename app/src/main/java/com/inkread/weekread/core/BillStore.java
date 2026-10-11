@@ -21,8 +21,34 @@ public final class BillStore {
 
     private static final String PREFS = "bills";
     private static final String PREFIX = "bill_";
-    /** 每个 mode 各留几期。 */
+    /** 每个 mode 各留几期（weekly 档；monthly 档见 {@link #KEEP_MONTHLY}）。 */
     public static final int KEEP = 12;
+
+    /**
+     * 🆕 `TASK-086` 第三批（A19）：**monthly 档**单独留 13 期 = 当月 + 前 12 个月。
+     *
+     * <p>🔴 为什么必须比 {@link #KEEP} 多 1：年回填的目标是"近 12 个月"
+     * （`BillScheduler.YEAR_BACKFILL_MONTHS = 12`），而它逐期填的是 `curStart` 之前第 1..12 个月
+     * ⇒ 当月那一期 + 12 个回填期 = **13 个键**。若仍按 12 留，写第 12 个月时会恰好触发
+     * {@link #prune}，把**刚写好的最老一期当场淘汰** ⇒ 净窗口只有"当月 + 前 11 个月"，
+     * 比承诺少一个月（Lead 2026-10-11 裁决：不能只登记，须最小修复）。
+     *
+     * <p>weekly 档维持 {@link #KEEP}：回填只按月做，weekly 没有"当月 + 前 12 周"的需求。
+     */
+    public static final int KEEP_MONTHLY = 13;
+
+    /** 该 mode 的保留期数：monthly ⇒ {@link #KEEP_MONTHLY}（13），其余 ⇒ {@link #KEEP}（12）。 */
+    private static int keepOf(String mode) {
+        return PeriodRange.MONTHLY.equals(mode) ? KEEP_MONTHLY : KEEP;
+    }
+
+    /**
+     * 🆕 `TASK-086` 第三批（A19）：**年回填水位线**的键。
+     *
+     * <p>🔴 键名**故意**不以 `bill_weekly_` / `bill_monthly_` 开头 ⇒ {@link #startsOf} 的
+     * `startsWith(prefix)` 扫描不会把它误当成一期账单。
+     */
+    private static final String K_YEAR_BACKFILLED = "bill_year_backfilled";
 
     private BillStore() {
     }
@@ -96,7 +122,7 @@ public final class BillStore {
     // ══════════════════════ 写 ══════════════════════
 
     /**
-     * 落一期账单 + 轮转（各 mode 留 {@link #KEEP} 期）。
+     * 落一期账单 + 轮转（各 mode 留 {@link #keepOf} 期：monthly 13 / weekly 12）。
      *
      * <p>🔴 <b>整体覆盖，不做任何合并</b>：同一 `(mode, periodStart)` 的旧记录会被
      * {@link Bill#toJson()} 的整串结果直接顶掉。而 `toJson()` 是**条件写**（没值的字段不写）
@@ -113,14 +139,15 @@ public final class BillStore {
         prune(c, b.mode);
     }
 
-    /** 该 mode 只留最近 {@link #KEEP} 期（按**期起点**降序保留；更老的连键删掉）。 */
+    /** 该 mode 只留最近 {@link #keepOf} 期（按**期起点**降序保留；更老的连键删掉）。 */
     static void prune(Context c, String mode) {
+        final int keep = keepOf(mode);
         List<Long> starts = startsOf(c, mode);
-        if (starts.size() <= KEEP) return;
+        if (starts.size() <= keep) return;
         SharedPreferences.Editor ed = sp(c).edit();
-        for (int i = KEEP; i < starts.size(); i++) ed.remove(keyOf(mode, starts.get(i)));
+        for (int i = keep; i < starts.size(); i++) ed.remove(keyOf(mode, starts.get(i)));
         ed.commit();
-        CardDebug.noteV(c, "bill prune: " + mode + " 保留 " + KEEP + " 期，删 " + (starts.size() - KEEP) + " 期");
+        CardDebug.noteV(c, "bill prune: " + mode + " 保留 " + keep + " 期，删 " + (starts.size() - keep) + " 期");
     }
 
     /** 清空全部账单（设置页 / 调试用）。 */
@@ -131,5 +158,24 @@ public final class BillStore {
     /** 某 mode 现有几期（断言用）。 */
     public static int count(Context c, String mode) {
         return startsOf(c, mode).size();
+    }
+
+    // ══════════════════ 年回填水位线（TASK-086 第三批 · A19） ══════════════════
+
+    /**
+     * 🆕 `TASK-086` 第三批（A19）：**当月 + 前 12 个月**（共 13 期）的**逐期回填**（`BillScheduler.maybeBackfillYear`）
+     * 是否已经**完整**跑过一次。
+     *
+     * <p>为什么需要水位线：回填是"一次性后台补历史"（用户拍板：首开无提示、后台自动回填、不阻塞渲染）
+     * ⇒ 跑完就该停，不能每次开 App 都重拉 13 次请求。**只在 13 期全部走完时**才置位
+     * （中途失败 ⇒ 下次继续补，见 `BillScheduler.maybeBackfillYear`）。
+     */
+    public static boolean yearBackfilled(Context c) {
+        return sp(c).getBoolean(K_YEAR_BACKFILLED, false);
+    }
+
+    /** 置年回填水位线。调用点唯一 = `BillScheduler.maybeBackfillYear`（13 期全走完那一刻）。 */
+    public static void markYearBackfilled(Context c) {
+        sp(c).edit().putBoolean(K_YEAR_BACKFILLED, true).commit();
     }
 }

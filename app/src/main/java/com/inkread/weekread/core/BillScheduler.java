@@ -50,6 +50,21 @@ public final class BillScheduler {
     private static final int BACKFILL_MAX = 4;
 
     /**
+     * 🆕 `TASK-086` 第三批（A19）：**年回填**往回补几个月（= 用户拍板的"近 12 个月"，`§20.10`）。
+     *
+     * <p>🔴 实际回填 **13 期 = 当月 + 前 12 个月**（循环 `i = 0 .. 该值`）—— 与
+     * {@link BillStore#KEEP_MONTHLY}（13）成对：承诺的窗口是"当月 + 前 12 个月"，少一个月会被
+     * `prune` 当场吃掉（见 `验证记录/212` 的"修复前/修复后"对照）。
+     *
+     * <p>为什么用"月"而不是"周"：月粒度正好覆盖"回查一年"，且一周一次的回填在**估算**上更细但
+     * 请求量 ×4（§20.8 落法写的是"月 ×12 ≈ 12 次"）⇒ 按定稿口径只回填月账。
+     */
+    private static final int YEAR_BACKFILL_MONTHS = 12;
+
+    /** 年回填每期之间的**限流**间隔（毫秒）—— 一次性补 13 期，别把接口打成连发（`§20.10` 分批限流）。 */
+    private static final long YEAR_BACKFILL_GAP_MS = 400L;
+
+    /**
      * 🔴 并发闸：服务创建与 {@code MainActivity.onStart} 是两个独立的调用点，
      * 可能在极短时间内各调一次。不闸的话两遍扫描会并发跑同一期（重复请求；落盘虽然幂等，
      * 但白烧流量）。用 CAS 保证**同一时刻只有一趟**在跑。
@@ -97,6 +112,71 @@ public final class BillScheduler {
         // 两个 mode 各自独立补，互不影响。
         fill(c, apiKey, PeriodRange.WEEKLY, now);
         fill(c, apiKey, PeriodRange.MONTHLY, now);
+        // 🆕 TASK-086 第三批（A19）：一次性把最近 12 个月补齐（**自动、无提示、不阻塞渲染**）
+        maybeBackfillYear(c, apiKey, now);
+        // 🆕 TASK-086 第三批（A15 自洽）：把两个 mode 的估算点**整条曲线**重算一遍 ——
+        //    `fill` 是"一期一期就地估算"，各期锚点/分母随数据增长而变 ⇒ 数列不 telescope
+        //    （2026-10-11 S4 实测 Σ增额 ¥98 ≠ 末期累计 ¥33.32）。这里用同一锚点基准写定全窗口，
+        //    并把**期初链到上一期期末** ⇒ 逐期增额首尾相消。纯本地、零请求。
+        BillEstimator.rebuild(c, PeriodRange.WEEKLY);
+        BillEstimator.rebuild(c, PeriodRange.MONTHLY);
+    }
+
+    /**
+     * 🆕 `TASK-086` 第三批（A19，`§20.8` / `§20.10` 定稿）：**一次性**年回填 —— 把**当月 + 前
+     * {@link #YEAR_BACKFILL_MONTHS} 个月**（共 13 期，循环 `i = 0 .. 12`）的**月账**补齐，好让估算点（`§20.4` 锚点法）拿得到
+     * 逐期的 `R_j`（= 各期账单里每本书的 `readTimeSec`）。
+     *
+     * <h3>为什么不复用 {@link #fill}</h3>
+     * `fill` 一碰到"已有"就 `break`（期与期连续 ⇒ 更早的期也都处理过），而年回填恰恰要**跳过已有的、
+     * 继续往更早补**（用户可能已有 3 期账）⇒ 必须 `continue`，且要跨过 {@link #BACKFILL_MAX} 的 4 期上限。
+     *
+     * <h3>一次性水位线</h3>
+     * 跑完 13 期才 {@link BillStore#markYearBackfilled}（中途某期数据拿不到 ⇒ **不置位**，
+     * 下次启动继续补）⇒ 稳态下每次开 App 只做一次 `getBoolean`（**零请求**）。
+     *
+     * <h3>请求预算与红线</h3>
+     * 每期 1 次 `/readdata/detail`（本地缓存已有则跳过）＋ 每期之间限流 {@link #YEAR_BACKFILL_GAP_MS}；
+     * 估算趟**不抓进度、不抓热门**（见 {@link #generateOne(Context, String, String, long, boolean)}）⇒
+     * 一次性成本 ≈ 13 次请求。🔴 全部发生在 `bill-ensure` 后台线程，**渲染侧依旧只读 `BillStore`**。
+     */
+    private static void maybeBackfillYear(Context c, String apiKey, long nowSec) {
+        // 实付关了 ⇒ 估算没人看，别占带宽（用户随时可以重新打开，那时再补）
+        if (MenuPrefs.PAID_OFF.equals(MenuPrefs.paidAlgo(c))) return;
+        if (BillStore.yearBackfilled(c)) return;                       // 已完整回填过 ⇒ 一次性
+        if (apiKey == null || apiKey.length() == 0) return;            // 没登录 ⇒ 拉不到，等下次
+
+        final long curStart = PeriodRange.startOf(PeriodRange.MONTHLY, nowSec);
+        int done = 0;
+        // 🔴 i 从 **0** 起（2026-10-11 修正）：口径是「**当月 + 前 12 个月**」⇒ 共
+        //    {@link #YEAR_BACKFILL_MONTHS} + 1 = 13 期；且只有把**当月**也落盘，store 里才会
+        //    真正出现 13 个 monthly 键，`KEEP_MONTHLY = 13` 的留档修复才**可被观测/可被演练**
+        //    （此前 i 从 1 起 ⇒ 只有 12 键，`prune` 恰好不触发，修复等于无法验证）。
+        for (int i = 0; i <= YEAR_BACKFILL_MONTHS; i++) {
+            long ps = PeriodRange.shift(PeriodRange.MONTHLY, curStart, -i);
+            if (ps <= 0) break;
+            if (BillStore.has(c, PeriodRange.MONTHLY, ps)) {           // 🔴 continue，**不是** break
+                done++;
+                continue;
+            }
+            // 🔴 估算趟只在**历史期**用（i > 0）：估算趟不抓进度 ⇒ 若把**当月**也按估算趟生成，
+            //    当月的行会全是 `pStart/pEnd = 空` ⇒ 月档当月退化成整片 `—`（2026-10-11 实测踩到）。
+            //    当月走**常规趟**（抓进度、拿真实"现在"的累计），历史期走估算趟。
+            if (!generateOne(c, apiKey, PeriodRange.MONTHLY, ps, i > 0)) break;   // 拿不到 ⇒ 本轮停，下次重试
+            done++;
+            try {
+                Thread.sleep(YEAR_BACKFILL_GAP_MS);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        if (done >= YEAR_BACKFILL_MONTHS + 1) {
+            BillStore.markYearBackfilled(c);
+            CardDebug.noteV(c, "bill: 年回填完成（当月 + 前 " + YEAR_BACKFILL_MONTHS + " 个月，估算点已就位）");
+        } else {
+            CardDebug.noteV(c, "bill: 年回填未完成 done=" + done + "/" + (YEAR_BACKFILL_MONTHS + 1) + "（下次启动续补）");
+        }
     }
 
     /**
@@ -133,6 +213,18 @@ public final class BillScheduler {
      *         false = **未能决定**（数据拿不到）⇒ 调用方应停止本轮并等下次重试
      */
     private static boolean generateOne(Context c, String apiKey, String mode, long periodStart) {
+        return generateOne(c, apiKey, mode, periodStart, false);
+    }
+
+    /**
+     * 同上；{@code estimatePass = true} 表示这是 **年回填的估算趟**（{@link #maybeBackfillYear}）。
+     *
+     * <p>🔴 估算趟与常规趟的**唯一**差别：历史期（`endKnown == false`）不抓进度、不抓热门 ——
+     * 那两样对"估算"无意义却要花掉 Top-N × 12 次请求（见本方法内 `needProgress` / `wantHot`）。
+     * 估算本身由 {@link BillEstimator} 用**已落盘账单里的阅读时长**算（零请求）。
+     */
+    private static boolean generateOne(Context c, String apiKey, String mode, long periodStart,
+                                       boolean estimatePass) {
         // ① 数据源：**本地缓存优先**（零请求）⇒ 缺了才拉接口
         PeriodStats st = StatsStore.load(c, mode, periodStart);
         if (st == null) {
@@ -177,14 +269,17 @@ public final class BillScheduler {
 
         String exMode = MenuPrefs.excerptMode(c);
         // 🔴 「仅我的内容」= 纯本地 ⇒ **一次热门请求都不发**（v5 拍板：默认档只读本地）
-        boolean wantHot = !MenuPrefs.EX_MINE.equals(exMode);
+        // 🆕 TASK-086 第三批：**年回填的估算趟**同样不抓热门 —— 回填只为"逐期 R_j（阅读时长，
+        //    来自 `/readdata/detail` 的 `readLongest`）+ 估算"（§20.8 请求预算：月 ×12 ≈ 12 次）；
+        //    每期再打 Top-N 次 `/book/bestbookmarks` 会把一次性成本抬到上百次（不值）。
+        boolean wantHot = !MenuPrefs.EX_MINE.equals(exMode) && !estimatePass;
         boolean wantProgress = MenuPrefs.showProgress(c);
         long endSec = periodEnd(mode, periodStart) - 1L;
 
         // 🆕 TASK-086：**实付**要用进度（算法 A 要期初+期末、算法 B 要期末）⇒
         //    实付列没关就必须逐本抓进度。接口仍是既有的 `/book/getprogress`（**零新增接口**），
         //    代价是"补齐一期"多 Top-N 次请求（N ≤ 8）—— 一期只发生一次，可接受。
-        final boolean needProgress = wantProgress
+        final boolean baseNeedProgress = wantProgress
                 || !MenuPrefs.PAID_OFF.equals(MenuPrefs.paidAlgo(c));
 
         // 🆕 TASK-086：本期是不是"刚刚结束的那一期" —— 只有它抓到的进度才等于**本期期末进度**。
@@ -192,6 +287,11 @@ public final class BillScheduler {
         final long curStart = PeriodRange.startOf(mode, PeriodRange.nowSec());
         final boolean endKnown = (periodStart == PeriodRange.shift(mode, curStart, -1));
         final long prevStart = PeriodRange.shift(mode, periodStart, -1);
+
+        // 🆕 TASK-086 第三批（A19 年回填）：**估算趟**里的**历史期**一律不抓进度 ——
+        //    抓到的"现在"不是该期期末（`endKnown == false`），估算走锚点法、根本不会采信它，
+        //    却要为此每本打一次 `/book/getprogress`（Top-N 次）⇒ 白烧带宽。
+        final boolean needProgress = baseNeedProgress && !(estimatePass && !endKnown);
 
         for (int i = 0; i < keep.size(); i++) {
             PeriodStats.Longest l = keep.get(i);
@@ -340,6 +440,10 @@ public final class BillScheduler {
                     }
                     if (it.progressStartPct < 0 && oit.progressStartPct >= 0) {
                         it.progressStartPct = oit.progressStartPct;
+                        // 🆕 TASK-086 第三批：**估算标记随值一起继承** —— 标记描述的是"这个值本身
+                        //    是算出来的还是快照"，属于值的一部分；丢标记会把 `≈` 弄丢（或反过来把
+                        //    精确值标成估算）。同 `progressEndKnown` 的口径：原样沿用，不臆造。
+                        it.progressStartEst = oit.progressStartEst;
                         inheritedFields++;
                     }
                     // 🆕 task-13：`progressEndPct` 是"该期**自己的**期末累计"，属**值本身**的语义
@@ -347,6 +451,7 @@ public final class BillScheduler {
                     //    从旧账同书继承是安全的；**不**继承会让累计档在老账上无故变 `—`。
                     if (it.progressEndPct < 0 && oit.progressEndPct >= 0) {
                         it.progressEndPct = oit.progressEndPct;
+                        it.progressEndEst = oit.progressEndEst;      // 🆕 第三批：同上（标记随值继承）
                         inheritedFields++;
                     }
                     if (it.marketPriceFen == BillMoney.UNKNOWN && oit.marketPriceFen != BillMoney.UNKNOWN) {
@@ -362,12 +467,21 @@ public final class BillScheduler {
                     + " 生效条目=" + b.items.size() + " 继承字段数=" + inheritedFields);
         }
 
+        // ══════════ 🆕 TASK-086 第三批：估算点回填（A15 / §20.4 锚点法）══════════
+        // 🔴 放在**继承之后、落盘之前**：
+        //    · 继承之后 —— 旧账里已有的真值先拿回来（估算只在**字段为空**时填，绝不覆盖真值 ⇒ A16 不回退）；
+        //    · 落盘之前 —— 估算结果随本期账单一起写进 `BillStore`，**渲染侧因此仍是纯算术、零请求**。
+        // 🔴 估算只补"缺期末（或期初）快照的历史期"，数据源 = **已落盘账单里的 `readTimeSec`**
+        //    （每 mode 留 12 期）⇒ 零新表、零新增接口。
+        int estRows = BillEstimator.fill(c, b);
+
         BillStore.save(c, b);
         CardDebug.noteV(c, "bill: 生成 " + mode + " " + periodStart + " 本数=" + b.items.size()
                 + " 有价=" + BillMoney.pricedCount(c, b.items) + "/" + b.items.size()
                 + " 实付合计=" + BillMoney.yuan(BillMoney.totalPaidFen(c, b.items, MenuPrefs.paidAlgo(c)))
                 + (endKnown ? "" : " (补旧期·期末进度不可信)")
-                + (b.placeholder ? " (占位)" : ""));
+                + (b.placeholder ? " (占位)" : "")
+                + (estRows > 0 ? " 估算行=" + estRows + "/" + b.items.size() : ""));
         return true;
     }
 

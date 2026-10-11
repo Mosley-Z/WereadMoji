@@ -106,7 +106,12 @@ public class SegTabView extends View {
         if (dark) {
             colInk = D_INK; colGray = D_GRAY; colSep = D_SEP; colBottom = D_BOTTOM;
         } else if (mono) {
-            colInk = InkTheme.MONO_INK;  colGray = InkTheme.MONO_INK3;
+            // 🆕 task-29：未选中页签色 `MONO_INK3(#9A9A9A)` ⇒ `INK2(#6B6459)`。
+            //    与 `feature/BillSection.TAB_OFF` **同一概念必须同一色**（用户 #9：小字不得浅灰）。
+            //    真机实测（`T27a`）：`#9A9A9A` 在白底仅 2.82:1、`#A8A8A8` 2.38:1；
+            //    `INK2` 白底 5.85:1 / 纸白 5.28:1 / 纸 2 底 4.83:1 ⇒ 全部达到 WCAG AA 4.5:1。
+            //    🔴 只换色：字族 / 字号（`18f × unit`）/ 字重 / 位置 / 下划线不动；选中态仍是纯黑 + 指示条。
+            colInk = InkTheme.MONO_INK;  colGray = InkTheme.INK2;
             colSep = InkTheme.MONO_LINE; colBottom = InkTheme.MONO_LINE;
         } else {
             colInk = INK; colGray = GRAY; colSep = 0xFFE0E0E0; colBottom = 0xFFD8D8D8;
