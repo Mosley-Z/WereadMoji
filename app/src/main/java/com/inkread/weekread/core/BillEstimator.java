@@ -194,6 +194,12 @@ public final class BillEstimator {
         if (byPeriod.isEmpty()) return 0;
 
         List<Long> dirty = new ArrayList<Long>();
+
+        // ⓪ 🆕 task-41：「期末值可信度」标注 pass —— **必须先于**锚点 ① 跑（顺序说明见该方法）。
+        final int marked = markEndTrust(c, win, byPeriod, dirty);
+        if (marked > 0) {
+            CardDebug.noteV(c, "bill: 期末值存疑改标估算 " + mode + " 行数=" + marked);
+        }
         Map<String, Boolean> seen = new HashMap<String, Boolean>();
         for (int w = 0; w < win.size(); w++) {
             long pk = win.get(w).longValue();
@@ -296,6 +302,54 @@ public final class BillEstimator {
         if (v < 0L) v = 0L;
         if (v > 100L) v = 100L;
         return (int) v;
+    }
+
+    /**
+     * 🆕 task-41（2026-10-11）：**「期末值可信度」标注 pass** —— 把"不是真期末"的
+     * {@link Bill.Item#progressEndPct} 标成估算值（{@code progressEndEst = true}）。
+     *
+     * <p>要解决的问题：`progressEndPct` 的**值**可能来自两个完全不同的地方 ——
+     * <ol>
+     *   <li>**真期界快照**：该期就是"刚结束的那一期"（{@link Bill.Item#progressEndKnown}），
+     *       或生成期从 {@link ProgressLog}（`bookId → 期初:期末累计`）里取到该期自己的期末累计；</li>
+     *   <li>**"生成那一刻的至今"**：该期当时**还在进行中**（典型 = 年回填 {@code i == 0} 的当期月账，
+     *       或旧版把"现在"写进 `progressPct`）⇒ 这个数**不是**期末值。</li>
+     * </ol>
+     * 第 ② 类值如果被当成真期末用，就是 {@code 验证记录/208} 的"用'现在'的进度回填历史期"那个坑
+     * （金额看着精确、其实偏小，且不带 `≈`）。
+     *
+     * <p>判据（**不看"现在"、不做时间比较** ⇒ 可离线复核、跑几遍结果一致）：第 ① 类之外的值一律标估算。
+     * 标注后：{@link BillMoney#paidFen} 的增额/累计都会走**估算支**、金额带 `≈`
+     * （{@link BillMoney#paidEstimated}），且本期不再被锚点 ① 选中（锚点自然退到更早的真快照期）。
+     *
+     * <p>🔴 只标 `progressEndEst`，**不改任何进度数值**（不编数）；`progressEndPct < 0`（无值）与已是估算的
+     * 行不动。
+     *
+     * @return 被标注的**行数**（留痕用）
+     */
+    private static int markEndTrust(Context c, List<Long> win, Map<Long, Bill> byPeriod,
+                                    List<Long> dirty) {
+        int n = 0;
+        for (int w = 0; w < win.size(); w++) {
+            final long p = win.get(w).longValue();
+            Bill x = byPeriod.get(Long.valueOf(p));
+            if (x == null || x.items == null) continue;
+            boolean rowDirty = false;
+            for (int i = 0; i < x.items.size(); i++) {
+                Bill.Item it = x.items.get(i);
+                if (it == null) continue;
+                if (it.progressEndPct < 0 || it.progressEndEst) continue;   // 无值 / 已标 ⇒ 不动
+                if (it.progressEndKnown) continue;                          // ① 刚结束期抓到的真期末
+                String bid = it.bookId == null ? "" : it.bookId;
+                if (bid.length() > 0 && ProgressLog.at(c, bid, p) >= 0) continue;   // ① 期界快照
+                it.progressEndEst = true;                                   // ② 只是"生成时至今" ⇒ 标估算
+                rowDirty = true;
+                n++;
+            }
+            Long pk = Long.valueOf(p);
+            if (rowDirty && !dirty.contains(pk)) dirty.add(pk);
+        }
+        return n;
     }
 
     /** 窗口里某一期这本书的那一行；没有（没进榜 / 该期账单缺失）⇒ null。 */

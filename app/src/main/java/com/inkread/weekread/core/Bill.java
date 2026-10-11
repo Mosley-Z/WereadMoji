@@ -97,9 +97,15 @@ public final class Bill {
         public int progressStartPct = -1;
 
         /**
-         * 「期末进度」是否**可信**（= 生成时这一期才刚结束）。
+         * 「期末进度」在**本次生成**时是否取到了真期末（= 生成时这一期才刚结束）。
          * 🔴 三周不开 App 后一次补 4 期时，更早那几期抓到的其实是"现在"的进度
-         * ⇒ 置 false ⇒ 算法 A 对这些期显示 `—`（宁可留白，不编假数）。
+         * ⇒ 置 false（宁可留白，不编假数）。
+         *
+         * <p>🆕 task-41（2026-10-11）：本字段的语义**收窄为"生成时机的 provenance"** —— 金额侧不再
+         * 拿它当"落盘的 {@link #progressEndPct} 可不可信"的判据（那是 task-13 引入 `progressEndPct`
+         * 之前的旧口径，会让"值其实是 {@link ProgressLog} 真期界快照、只是生成时机不对"的历史期
+         * 白丢一个可算的值）。现在：是否可信由 {@link #progressEndEst} 唯一表达，由
+         * {@link BillEstimator} 的期末值可信度 pass 负责标注；{@link BillMoney#paidFen} 则"有值就算"。
          */
         public boolean progressEndKnown = false;
 
@@ -119,7 +125,9 @@ public final class Bill {
          * </ol>
          *
          * <p>🔴 与 {@link #progressPct} 的分工：后者语义是"期末/**当前**"，补旧期时会写进"现在"的值
-         * （各期显示同一个数）；本字段只存**该期自己的**值。增额档（算法 A）不用本字段。
+         * （各期显示同一个数）；本字段只存**该期自己的**值。
+         * 🆕 task-41（2026-10-11）：**增额档（算法 A）也用本字段**（与累计档同源取期末），旧说明
+         * "增额档不用本字段"已作废 —— 见 {@link BillMoney#paidFen}。
          *
          * <p>序列化照 {@link #progressStartPct}：{@code >= 0} 才写、缺失读回 {@code -1}
          * ⇒ 旧账（无此键）读出来是 {@code -1}，由 {@link BillMoney#paidFen} 的回落分支接管。
@@ -129,6 +137,11 @@ public final class Bill {
         /**
          * 🆕 TASK-086 第三批（2026-10-11 · 方案文档 `§20.10` 定稿）：{@link #progressEndPct}
          * 是**估算值**（锚点法，见 {@link BillEstimator}），**不是该期的真快照**。
+         *
+         * <p>🆕 task-41（2026-10-11）：置位的来源有**两条** —— ①锚点法算出来的估算值；
+         * ②{@link BillEstimator} 的**期末值可信度 pass** 把"生成时该期还在进行中"
+         * （如年回填 `i == 0` 写的当期月账，其值语义是"至今"而非期末）的行也标成本字段。
+         * 两条都表示"这个数不是真期末"，渲染与判据一视同仁。
          *
          * <p>唯一用途 = 形制：渲染侧据它给**实付金额**加 `≈` 前缀（A18：**仅此一项**，
          * 不加最浅灰 / 不画期界细线 / 不加表尾图例 / 不加周期选择器后缀）。

@@ -194,10 +194,49 @@ public final class BillScheduler {
         for (int i = 1; i <= BACKFILL_MAX; i++) {
             long ps = PeriodRange.shift(mode, curStart, -i);
             if (ps <= 0) break;
-            if (BillStore.has(c, mode, ps)) break;                 // 已有 ⇒ 更早的期也已处理（连续性）
+            if (BillStore.has(c, mode, ps)) {
+                if (i == 1) healJustFinished(c, apiKey, mode, ps);     // 🆕 task-41（#7 有界自愈）
+                break;                                                 // 已有 ⇒ 更早的期也已处理（连续性）
+            }
             long end = periodEnd(mode, ps);
             if (nowSec < end) continue;                            // 该期尚未结束（正常到不了这里）
             if (!generateOne(c, apiKey, mode, ps)) break;          // 未能决定 ⇒ 本轮停止，下次重试
+        }
+    }
+
+    /**
+     * 🆕 task-41（2026-10-11 · 用户 #7「老账不自愈复评」）—— **有界自愈：只补"刚结束的那一期"**。
+     *
+     * <p>问题（复评结论）：{@link #fill} 一碰到"库里已有"就 `break`、{@link #maybeBackfillYear} 一碰 `has`
+     * 就 `continue` 且水位线一次性 ⇒ **已落盘的期永远不会再生成**。若某一期的账是**它还在进行中**时生成的
+     * （典型 = 年回填 `i == 0` 的当期月账，见 {@code 验证记录/208}），那期的进度就永久停在"生成那一刻"，
+     * 不会自愈。
+     *
+     * <p><b>可修面（只此一面）</b>：**刚结束的那一期**（{@code i == 1}）—— 它现在是过去时，用**常规趟**
+     * 重生成一次，即可由 `/book/getprogress` 拿到"接近期末"的真值（{@code endKnown = true} ⇒ 顺带把该期的
+     * 真期界快照写进 {@link ProgressLog}）。<b>幂等 / 自限流</b>：重生成后该期行里就有
+     * {@code progressEndKnown = true}，下次不再触发 ⇒ 正常情况下**一期只多一次常规趟**；只有在生成失败
+     * （数据拿不到）时才会在下次启动重试。
+     *
+     * <p>🔴 <b>不可修面（技术理由，不是"延后"）</b>：更早的历史期 —— 它们各自的期末早已过去，而
+     * `/book/getprogress` 只返回"现在"的进度 ⇒ **历史期末进度事后不可查**；任何"用现在的值回填历史期"
+     * 都是编数（{@code 验证记录/208} 的坑）。因此本方法**只**碰 {@code i == 1}，且只在"该期账里一行真期末
+     * 都没有"时动手；不动原 `break` 语义、不动更早的期。
+     */
+    private static void healJustFinished(Context c, String apiKey, String mode, long ps) {
+        try {
+            Bill b = BillStore.load(c, mode, ps);
+            if (b == null || b.items == null || b.items.isEmpty()) return;
+            for (int i = 0; i < b.items.size(); i++) {
+                Bill.Item it = b.items.get(i);
+                // 只要有一行是"真期末"（本期就是刚结束期时抓到的），就认为这期的进度可信 ⇒ 不自愈
+                if (it != null && it.progressEndKnown && it.progressEndPct >= 0) return;
+            }
+            CardDebug.noteV(c, "bill: 期末自愈（刚结束期缺真期末）⇒ 常规趟重生成 " + mode + " " + ps);
+            generateOne(c, apiKey, mode, ps);                          // 常规趟：endKnown = true
+        } catch (Throwable t) {
+            // 自愈是"锦上添花"：异常绝不能影响主流程
+            CardDebug.noteV(c, "bill: 期末自愈异常 " + mode + " " + ps + " " + t);
         }
     }
 

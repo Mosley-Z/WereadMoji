@@ -625,8 +625,9 @@ public final class DeskPageView extends View {
     }
 
     /**
-     * 点一下账单页签条 ⇒ 在「摘录菜单 / 读书菜单 / 月历」之间**循环**切换
-     * （🆕 TASK-077b：月账单 3 档、周账单 2 档 —— 由 `visibleViews()` 决定）。
+     * 点一下账单页签条 ⇒ 在「摘录菜单 / 读书菜单」之间**循环**切换
+     * （🆕 task-40：月历已下架 ⇒ 恒 2 档，由 `visibleViews()` 决定）。
+     *
      *
      * <p>🔴 切换**零额外请求**：各视图共用同一份 {@code Bill}（`BillStore`），只是画法不同；
      * 分会变高变矮 ⇒ 切完要 remeasure + 重绘。
@@ -646,15 +647,6 @@ public final class DeskPageView extends View {
         int next = vis[(pos + 1) % vis.length];
         billSection.setView(getContext(), next);
         remeasure(getWidth(), getHeight());
-        invalidate();
-        return true;
-    }
-
-    /** 🆕 TASK-077b：点月历格子 ⇒ 选中该日（只影响绘制 ⇒ 只需重画，不必 remeasure）。 */
-    private boolean hitCalCell(float x, float y) {
-        float top = billTop();
-        if (top < 0f) return false;
-        if (!billSection.hitCalCell(x, y, getWidth(), unit, top)) return false;
         invalidate();
         return true;
     }
@@ -860,8 +852,6 @@ public final class DeskPageView extends View {
                         // 🆕 2026-10-10：墨单头部（生成壁纸 / 周月 / 周期箭头）
                     } else if (hitBillTab(e.getX(), e.getY())) {
                         // 🆕 TASK-077：点账单页签条 ⇒ 切菜单（优先于"返回"判定，两者区域不重叠）
-                    } else if (hitCalCell(e.getX(), e.getY())) {
-                        // 🆕 TASK-077b：点月历格子 ⇒ 选中该日（同上，优先于"返回"）
                     } else if (renderer.hitBack(e.getX(), e.getY(), getWidth(), unit)) {
                         if (listener != null) listener.onDeskClose();   // 点 `‹ 返回`
                     }

@@ -1,6 +1,7 @@
 package com.inkread.weekread.ui;
 
 import android.content.Context;
+import android.content.res.Configuration;
 import android.graphics.drawable.GradientDrawable;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
@@ -26,7 +27,8 @@ import com.inkread.weekread.R;
  *
  * <p>1:1 复刻「设置页 → 实验室 → 晃动翻页（手机端）」块的全部能力
  * （总开关 / 灵敏度三档 / 四动作方向 4×3 / 自证映射行），并按 {@code docs/09} 加
- * <b>一条通道门控提示条</b>与<b>一张可折叠说明卡</b>；D2=B ⇒ 再加一张「本机晃动」折叠区（默认收起）。
+ * <b>一条通道门控提示条</b>与<b>一张可折叠说明卡</b>；D2=B ⇒ 再加一张本机卡（🆕 TASK-042 起名为
+ * 「本机晃动翻页」，置顶、默认折叠、抬头走大标题档 —— 见下方 TASK-042 段）。
  * 🔴 <b>不含</b>「响应方向（轴使能）两轴」—— 该能力 2026-10-10 第三轮已整组删除
  * （{@code 验证记录/198}）⇒ 本类**没有** {@code onAxisChanged} / {@code axisLr,axisUd}
  * （{@code docs/11 §9.1} 骨架里那两行是删除前的历史残留，实现时**不得照抄**）。
@@ -47,6 +49,13 @@ import com.inkread.weekread.R;
  *   <li><b>L3 单动作方向</b>：「关」({@link #DIR_NONE}) 由检测层判决照走、<b>投递层丢弃</b>
  *       （不发指令）—— 本类只负责把该三值写下去。</li>
  * </ul>
+ *
+ * <p>🆕 <b>TASK-042（V1.3.0-Beta 第四批 #4）本页折叠结构</b>（自上而下）：
+ * ① 页标题 → ② 门控提示条 →（②b 无加速度计提示）→ ③ <b>本机卡「本机晃动翻页」</b>
+ * （<b>置顶 · 默认折叠 · 抬头取既有「分区抬头」档 = 衬线 16sp</b>）→ ④ <b>遥控卡「晃动遥控翻页」</b>
+ * （<b>可折叠 · 默认展开</b>；L1 置灰对象 = <b>整卡含抬头</b> {@link #llPeerBlock}）→ ⑤ 说明卡
+ * 「晃动翻页说明」（保持最后）。🔴 折叠只切<b>可见性</b>，折叠态<b>不跨 {@link #rebuild()}</b>
+ * （深色轮）保持 —— 与既有 {@code shell/LabPageController.bindFold} 同口径（重建即回默认）。
  *
  * <p>🆕 <b>无加速度计</b>（{@link State#sensorOk}=false）：页面级<b>如实提示</b>、
  * <b>不置灰、不硬拦</b>（{@code docs/09}「UI 层不硬拦能力缺失」/ {@code docs/11 §3.5}）。
@@ -151,6 +160,9 @@ public class ShakePageView extends LinearLayout {
     // ── 子 View ─────────────────────────────────────────────────────────────────
     private TextView tvGate;
     private TextView tvSensorWarn;
+    /** 🆕 TASK-042：遥控卡折叠块（抬头 {@link #foldPeer} + 内容 {@link #cardPeer}）—— L1 置灰的对象。 */
+    private LinearLayout llPeerBlock;
+    private FoldHintView foldPeer;
     private LinearLayout cardPeer;
     private CheckBox cbEnabled;
     private LinearLayout llSens;
@@ -186,6 +198,30 @@ public class ShakePageView extends LinearLayout {
             R.string.lab_shake_local_dir_right,
             R.string.lab_shake_local_dir_up,
             R.string.lab_shake_local_dir_down};
+
+    /**
+     * 🆕 TASK-042 · 折叠卡抬头「大标题」档 = 既有**分区抬头**档（衬线 16sp）。
+     * 先例：{@code ui/ConnectPageView.java} 的卡片抬头 {@code title.setTextSize(16f)} + {@code InkTheme.serif()}；
+     * 页标题 20sp 只给页面本身（见 {@code buildUi} ①）⇒ 抬头取 16sp，不与页标题同级。
+     *
+     * <p>🔴 手法说明：{@link FoldHintView} 手机端标度<b>写死 15sp</b> 且<b>没有字号 API</b>，
+     * 而该文件属别卡写域（TASK-042 写域 = 本文件 + 布局 + strings）⇒ 这里用
+     * <b>字号倍率上下文</b>换算：只改 {@code Configuration.fontScale}（15 × 16/15 = 16），
+     * 纸张 / 墨色 / 深色 / 角色判定（{@link FoldHintView} 读的 {@code install_role}）全部不受影响；
+     * 倍率按<b>当前</b> fontScale 相乘 ⇒ 系统字体放大设置照旧生效（不做绝对值覆盖）。
+     */
+    private static final float FOLD_TITLE_SP = 16f;
+
+    /** {@link FoldHintView} 手机端自带标度（sp）—— 见 {@code ui/FoldHintView.java} 的 {@code recompute()}。 */
+    private static final float FOLD_BASE_SP = 15f;
+
+    /** 见 {@link #FOLD_TITLE_SP}：返回把折叠卡抬头字号换算到 16sp 的等价上下文。 */
+    private static Context foldTitleContext(Context c) {
+        Configuration cur = c.getResources().getConfiguration();
+        Configuration cfg = new Configuration(cur);
+        cfg.fontScale = cur.fontScale * (FOLD_TITLE_SP / FOLD_BASE_SP);
+        return c.createConfigurationContext(cfg);
+    }
 
     // ── 构造 / 重建 ─────────────────────────────────────────────────────────────
 
@@ -267,7 +303,7 @@ public class ShakePageView extends LinearLayout {
         addView(tvGate, glp);
 
         // ②b 页面级「无加速度计」如实提示（复用既有 lab_shake_local_unsupported；
-        //     🔴 不在下方「本机晃动」折叠卡里重复一次 —— 全页只出现一处）。
+        //     🔴 不在 ③ 的「本机晃动翻页」折叠卡里重复一次 —— 全页只出现一处）。
         tvSensorWarn = new TextView(c);
         tvSensorWarn.setText(R.string.lab_shake_local_unsupported);
         tvSensorWarn.setTextSize(12f);
@@ -276,8 +312,43 @@ public class ShakePageView extends LinearLayout {
         tvSensorWarn.setVisibility(View.GONE);
         addView(tvSensorWarn, lp(LayoutParams.WRAP_CONTENT, (int) InkTheme.dp(c, 4f)));
 
-        // ③ 卡片 1：总开关 → 灵敏度三档 → 四动作 4×3 → 自证映射行
-        cardPeer = card();
+        // ③ 本机卡（🆕 TASK-042：**置顶**、**默认折叠**、抬头用既有「分区抬头」档 = 衬线 16sp）
+        //    🔴 本机晃动**不依赖角色与通道**（CardPrefs 注释口径）⇒ 不受 L1 门控置灰影响。
+        //    正文（本机开关 + 翻页方式 + 本机 4×3 + 自证行）在本方法后段挂进 llLocalBody。
+        foldLocal = new FoldHintView(foldTitleContext(c));
+        foldLocal.setTitle(getResources().getString(R.string.fold_shake_local_title));
+        foldLocal.setContentDescription(getResources().getString(R.string.fold_shake_local_title));
+        foldLocal.setExpanded(false);                                        // 默认折叠
+        addView(foldLocal, lp((int) InkTheme.dp(c, 44f), 0));
+        llLocalBody = new LinearLayout(c);
+        llLocalBody.setOrientation(VERTICAL);
+        llLocalBody.setVisibility(View.GONE);
+        addView(llLocalBody, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        foldLocal.setListener(new FoldHintView.Listener() {
+            @Override
+            public void onToggle(boolean expanded) {
+                llLocalBody.setVisibility(expanded ? View.VISIBLE : View.GONE);
+            }
+        });
+
+        // ④ 遥控卡（🆕 TASK-042）：可折叠、抬头「晃动遥控翻页」、**默认展开**；
+        //    整卡（抬头 + 内容）受 L1 门控整体置灰（置灰对象 = llPeerBlock，见 setState ②）。
+        //    内容 = 总开关 → 灵敏度三档 → 四动作 4×3 → 自证映射行（TASK-084 原样，未改）。
+        llPeerBlock = new LinearLayout(c);
+        llPeerBlock.setOrientation(VERTICAL);
+        addView(llPeerBlock, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        foldPeer = new FoldHintView(c);
+        foldPeer.setTitle(getResources().getString(R.string.fold_shake_remote_title));
+        foldPeer.setContentDescription(getResources().getString(R.string.fold_shake_remote_title));
+        foldPeer.setExpanded(true);                                          // 默认展开
+        llPeerBlock.addView(foldPeer, lp((int) InkTheme.dp(c, 44f), (int) InkTheme.dp(c, 12f)));
+        cardPeer = cardInto(llPeerBlock);
+        foldPeer.setListener(new FoldHintView.Listener() {
+            @Override
+            public void onToggle(boolean expanded) {
+                cardPeer.setVisibility(expanded ? View.VISIBLE : View.GONE);
+            }
+        });
 
         cbEnabled = new CheckBox(c);
         cbEnabled.setText(R.string.console_shake_enable);   // 「启用晃动翻页」
@@ -364,7 +435,7 @@ public class ShakePageView extends LinearLayout {
         tvPeerMap.setLineSpacing(0f, 1.3f);
         cardPeer.addView(tvPeerMap, lp(LayoutParams.WRAP_CONTENT, (int) InkTheme.dp(c, 4f)));
 
-        // ④ 折叠卡「晃动翻页说明」（默认收起；内容 = 复用 lab_shake_hint，主屏不铺段落）
+        // ⑤ 说明卡「晃动翻页说明」（TASK-042：**保持最后**，默认收起；内容 = 复用 lab_shake_hint，主屏不铺段落）
         foldHint = new FoldHintView(c);
         foldHint.setTitle(getResources().getString(R.string.fold_shake_peer));
         foldHint.setContentDescription(getResources().getString(R.string.fold_shake_peer));
@@ -381,22 +452,8 @@ public class ShakePageView extends LinearLayout {
             }
         });
 
-        // ⑤ 「本机晃动」折叠区（D2=B：默认收起，展开 = 本机开关 + 翻页方式 + 本机 4×3 + 自证行）
-        //    🔴 本机晃动**不依赖角色与通道**（CardPrefs 注释口径）⇒ 不受 L1 门控置灰影响。
-        foldLocal = new FoldHintView(c);
-        foldLocal.setTitle(getResources().getString(R.string.lab_shake_local_title));
-        foldLocal.setContentDescription(getResources().getString(R.string.lab_shake_local_title));
-        addView(foldLocal, lp((int) InkTheme.dp(c, 44f), (int) InkTheme.dp(c, 4f)));
-        llLocalBody = new LinearLayout(c);
-        llLocalBody.setOrientation(VERTICAL);
-        llLocalBody.setVisibility(View.GONE);
-        addView(llLocalBody, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
-        foldLocal.setListener(new FoldHintView.Listener() {
-            @Override
-            public void onToggle(boolean expanded) {
-                llLocalBody.setVisibility(expanded ? View.VISIBLE : View.GONE);
-            }
-        });
+        // ③（续）本机卡正文：本机开关 + 翻页方式 + 本机 4×3 + 自证行 —— 挂进 ③ 建好的 llLocalBody
+        //    （🆕 TASK-042：卡头/正文容器已上移到 ③，此处只负责正文，内容一行未改）
 
         TextView intro = text(R.string.lab_shake_local_intro, 12f, InkTheme.ink2(c));
         intro.setLineSpacing(0f, 1.5f);
@@ -534,8 +591,9 @@ public class ShakePageView extends LinearLayout {
         gb.setCornerRadius(InkTheme.dp(c, 14f));
         tvGate.setBackground(gb);
 
-        // ② L1：主体整体 40% 置灰 —— 🔴 置灰 ≠ 禁用（控件仍可点，设置先存着）
-        if (cardPeer != null) cardPeer.setAlpha(off ? 0.4f : 1f);
+        // ② L1：遥控卡**整卡**（抬头 + 内容）整体 40% 置灰 —— 🔴 置灰 ≠ 禁用（控件仍可点，设置先存着）
+        //    🆕 TASK-042：置灰对象从内容卡 cardPeer 改为折叠块 llPeerBlock ⇒ 折叠抬头一并置灰。
+        if (llPeerBlock != null) llPeerBlock.setAlpha(off ? 0.4f : 1f);
 
         // ③ L2：总开关关 ⇒ 灵敏度 / 四动作方向块整块置灰（保留可见，不跳布局）
         setEnabledDeep(llSens, s.enabled);
@@ -581,12 +639,12 @@ public class ShakePageView extends LinearLayout {
 
     // ── 小部件工厂（口径与 ConnectPageView 一致）────────────────────────────────
 
-    /** 一张分组卡（paper2 底 + 0.5dp line 描边 + 14dp 圆角 + 16dp 内边距），加进本页。 */
-    private LinearLayout card() {
-        return cardInto(this);
-    }
-
-    /** 同 {@link #card()}，但挂到指定父容器（本机折叠区用）。 */
+    /**
+     * 一张分组卡（paper2 底 + 0.5dp line 描边 + 14dp 圆角 + 16dp 内边距），挂到指定父容器。
+     *
+     * <p>🆕 TASK-042：两张卡都改成挂进各自的折叠块（遥控卡 → 遥控卡折叠块、本机卡 → 本机卡折叠块）
+     * ⇒ 原先「直接挂本页」的 {@code card()} 包装已无调用点，一并删除（不引入死代码）。
+     */
     private LinearLayout cardInto(LinearLayout parent) {
         Context c = getContext();
         LinearLayout box = new LinearLayout(c);

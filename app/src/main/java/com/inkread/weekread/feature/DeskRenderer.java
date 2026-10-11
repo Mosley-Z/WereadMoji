@@ -47,8 +47,25 @@ final class DeskRenderer {
 
     private static final int INK   = 0xFF000000;
     private static final int GRAY  = 0xFF3C3C3C;
-    private static final int LIGHT = 0xFF9A9A9A;
+    /**
+     * 🆕 task-39（用户第四批 #1「提示类浅灰提亮」）：顶栏「更新于 HH:MM」提示小字色。
+     *
+     * <p>旧值 `#9A9A9A`（= `InkTheme.INK3`）白底仅 **2.82:1** —— 与 `BillSection.LIGHT`
+     * （`#A8A8A8`，2.38:1）同一个病：用户 #9「小字不得模糊」点名的就是这类提示小字。
+     * 本轮一并复用**既有 token** `InkTheme.INK2`（`#6B6459`，白底 **5.85:1**）。
+     * 🔴 只换颜色：字号（`SZ_UPD`）/ 位置（右端避让 `返回 ›`）/ 字族 / 字重一律不动。
+     */
+    private static final int LIGHT = InkTheme.INK2;
     private static final int LINE  = 0xFFD8D8D8;
+
+    // ── 🆕 task-39（#6a · docs/13:182-184/255/274）：分区抬头**左侧 3px 墨竖线**的尺（×unit）──
+    /** 竖线宽 = `2.5 × unit` ⇒ **3.0px** @480×800（unit=1.2），照 `docs/13:183` 的 3px。 */
+    private static final float HEAD_BAR_W_UNITS   = 2.5f;
+    /** 竖线与抬头文字左沿（`w × PAD_X_RATIO`）的间隙 = `5 × unit` ⇒ 6.0px。 */
+    private static final float HEAD_BAR_GAP_UNITS = 5f;
+    /** 竖线在**抬头带**（`InsightRenderer.secHeadH(unit)`）内的竖向起止占比 —— 视觉上与抬头字同高。 */
+    private static final float HEAD_BAR_TOP = 0.28f;
+    private static final float HEAD_BAR_BOT = 0.73f;
 
     /** 左右内边距比例 —— 与洞察页同尺（`InsightRenderer.PAD_X_RATIO`）。 */
     static final float PAD_X_RATIO = InsightRenderer.PAD_X_RATIO;
@@ -148,7 +165,11 @@ final class DeskRenderer {
         for (int i = 0; i < secs.size(); i++) {
             InsightRenderer.Section s = secs.get(i);
             float sh = s.height(w, vh, unit);
-            if (y + sh > barH && y < vh) s.draw(c, w, vh, y, unit, p);
+            if (y + sh > barH && y < vh) {
+                // 🆕 task-39（#6a）：分区抬头左 3px 墨竖线（只在本类自绘 ⇒ 不外溢洞察页/卡片/软锁）。
+                drawHeadBar(c, w, y, unit);
+                s.draw(c, w, vh, y, unit, p);
+            }
             y += sh;
             // 分区之间的 1px 分隔线（只在"线真的在屏上、且在裁区内"时画 —— 同 InsightRenderer 纪律）
             if (y > barH && y < vh) {
@@ -159,6 +180,32 @@ final class DeskRenderer {
         }
         c.restore();
         p.setTextAlign(Paint.Align.LEFT);
+    }
+
+    /**
+     * 🆕 task-39（用户第四批 #6a · `docs/13:182-184`/`:255`/`:274`）：**分区抬头左 3px 墨竖线**。
+     *
+     * <p>为什么放在本类：`docs/13:226-227` 明令**第一版不动 `InsightRenderer` 常量** ⇒ 竖线
+     * 只在**墨台侧**自绘。本类**只服务墨台**（`DeskPageView` 的列表态），因此洞察页 / 桌面
+     * 卡片 / 软锁（都不经过本类）**自动不受影响**。
+     *
+     * <p>🔴 只改画：不碰任何文字坐标（抬头字仍由各分区的 `drawSectionHead` 画在
+     * `w × PAD_X_RATIO`）、不碰任何命中区（`BillSection.hit` 等仍按原 x 计算）；竖线落在
+     * **左页边距**内（`w × PAD_X_RATIO − 间隙 − 宽度`），纸上不新增墨迹区。
+     * 尺全部用 `unit` 与既有 `secHeadH`，**不新增第二套尺、不引新字体**。
+     */
+    private void drawHeadBar(Canvas c, float w, float top, float unit) {
+        float headH = InsightRenderer.secHeadH(unit);
+        float barW = HEAD_BAR_W_UNITS * unit;
+        float barRight = w * PAD_X_RATIO - HEAD_BAR_GAP_UNITS * unit;
+        float barLeft = barRight - barW;
+        if (barLeft < 0f) {                  // 极窄屏兜底：贴着左沿画，绝不越出分区
+            barLeft = 0f;
+            barRight = barW;
+        }
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(INK);
+        c.drawRect(barLeft, top + headH * HEAD_BAR_TOP, barRight, top + headH * HEAD_BAR_BOT, p);
     }
 
     /**

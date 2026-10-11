@@ -127,7 +127,6 @@ public final class MenuPrefs {
     private static final String K_VIEW = "menu_view";
     public static final int VIEW_EXCERPT = 0;   // 摘录菜单（默认）
     public static final int VIEW_READING = 1;   // 读书菜单
-    public static final int VIEW_CALENDAR = 2;  // 🆕 TASK-077b 月历（**仅月账单可用**）
 
     private MenuPrefs() {
     }
@@ -431,22 +430,21 @@ public final class MenuPrefs {
     }
 
     // ══════════════════════ 当前视图（内部状态 · 非 13 项配置） ══════════════════════
-    /** 当前菜单视图（{@link #VIEW_EXCERPT} / {@link #VIEW_READING} / {@link #VIEW_CALENDAR}）。 */
+    /** 当前菜单视图（{@link #VIEW_EXCERPT} / {@link #VIEW_READING}）。 */
     public static int view(Context c) {
         int v = sp(c).getInt(K_VIEW, VIEW_EXCERPT);
-        return (v == VIEW_READING || v == VIEW_CALENDAR) ? v : VIEW_EXCERPT;
+        return (v == VIEW_READING) ? v : VIEW_EXCERPT;
     }
 
     public static void setView(Context c, int v) {
-        int nv = (v == VIEW_READING || v == VIEW_CALENDAR) ? v : VIEW_EXCERPT;
+        int nv = (v == VIEW_READING) ? v : VIEW_EXCERPT;
         sp(c).edit().putInt(K_VIEW, nv).commit();
     }
 
     /**
-     * 三视图的显示名（顺序 = `view` 的取值 0/1/2；墨台切换条与设置页共用同一份文案）。
-     * 🔴 第 3 项「月历」**只在月账单**出现（周账单下不显示，见 `TASK-077b` B1）。
+     * 两视图的显示名（顺序 = `view` 的取值 0/1；墨台切换条与设置页共用同一份文案）。
      */
-    public static final String[] VIEW_LABELS = { "摘录菜单", "读书菜单", "月历" };
+    public static final String[] VIEW_LABELS = { "摘录菜单", "读书菜单" };
 
     // ══════════════════════ 🆕 周期选择（内部状态 · 非 13 项配置） ══════════════════════
     //

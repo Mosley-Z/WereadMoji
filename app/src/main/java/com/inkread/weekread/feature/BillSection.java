@@ -72,7 +72,24 @@ final class BillSection implements InsightRenderer.Section {
 
     private static final int INK   = 0xFF000000;
     private static final int GRAY  = 0xFF3C3C3C;
-    private static final int LIGHT = 0xFFA8A8A8;   // 🔴 提示小字 / 禁用态用（task-29 **未动**，见 212）
+    /**
+     * 🆕 task-39（用户第四批 #1「提示类浅灰提亮」）：**提示小字 / 禁用态**色。
+     *
+     * <p>旧值 `#A8A8A8`（168）白底只有 **2.38:1** —— task-29 已把**页签未选中项**换成
+     * {@link InkTheme#INK2}（见 {@link #TAB_OFF}），但**提示小字与禁用态当时未动**
+     * （用户 #9「小字不得模糊」只落了一半）。本轮把本常量整体换成**同一个既有 token**
+     * `InkTheme.INK2`（`#6B6459`）：白底 **5.85:1**、纸白 `#F7F3EA` 5.28:1、纸 2
+     * `#EFE9DC` 4.83:1 ⇒ 三种真实底色全部 ≥ AA 4.5:1；禁用态也比底线 `#767676`
+     * （4.54:1）更深 ⇒ **两种角色同时达标**，且**不新造灰、不引第二套灰阶**。
+     *
+     * <p>覆盖处（全部经本常量）：`:869` 周期 chip 的 `avail=false`、`:966` 左右周期箭头禁用态、
+     * `:1112` 手动录价提示、`:1229` 本地条数提示。
+     * （🆕 task-40 起：原「每日条归一提示」与「月历侧」两处随月历一并摘除。）
+     *
+     * <p>🔴 只换颜色：字号 / 字族 / 字重 / 位置 / 行高一律不动；
+     * `feature/BillWallpaper.java` 的同名常量**必须同值同步**（A11：海报与墨单同形制）。
+     */
+    private static final int LIGHT = InkTheme.INK2;
     private static final int LINE  = 0xFFD8D8D8;
 
     /**
@@ -96,11 +113,8 @@ final class BillSection implements InsightRenderer.Section {
     /** 占位文案（Q10：本期无阅读记录 —— 🔴 绝不产 0 值空白账单）。 */
     private static final String PLACEHOLDER = "本期无阅读记录";
 
-    /** 顶部页签条占分区宽的比例（2 项 / 3 项）。🔴 3 项由 `0.62 → 0.56`：🆕 诉求 ① 把页签与
-     *  「生成壁纸」并到同一行后，右簇整体变宽 —— 0.62 会把页签左端推到标题「墨单」右侧仅 ~12px
-     *  处（480px 屏实算），挤成一团；0.56 后余量回到 ~38px。 */
+    /** 顶部页签条占分区宽的比例（2 项）。🔴 原「3 项档 0.56」随月历摘除（task-40）。 */
     private static final float TAB_W_RATIO   = 0.44f;
-    private static final float TAB_W_RATIO_3 = 0.56f;
     /** 页签条与右端「生成壁纸」之间的间隔（×unit）。 */
     private static final float HEAD_TAB_GAP_UNITS = 8f;
 
@@ -134,26 +148,21 @@ final class BillSection implements InsightRenderer.Section {
     /** 键盘按键码（与 `ui/KeyPadView` 的数字键盘同构，但**这是自绘版**：覆盖窗里塞不进 View）。 */
     static final int PK_DOT = 10, PK_DEL = 11, PK_OK = 12, PK_CANCEL = 13;
 
-    // ── 月历（🆕 TASK-077b；尺全部按 unit 标度，网格高度**只依赖 unit**）──
-    private static final int   CAL_COLS   = 7;
-    private static final float CAL_HEAD_H = 15f;    // 星期表头高（×unit）
-    private static final float CAL_CELL_H = 30f;    // 每格高（×unit）
-    private static final String[] CAL_DOW = { "一", "二", "三", "四", "五", "六", "日" };
-
     // ── 行的种类 ──
     private static final int K_SEP  = 0;   // 1px 分隔线
     private static final int K_LINE = 1;   // 单行文字（可两端对齐 / 居中）
     private static final int K_WRAP = 2;   // 折行文字（左对齐，可封顶 + 省略号）
     private static final int K_BARS = 3;   // 装饰条码行
-    private static final int K_CAL  = 4;   // 🆕 月历网格行（自绘，高 = size×unit）
+    /** 🆕 task-39（#6c）：**双线行**（合计行上方，`docs/13:238`）。行高 = 两条 1px + 本间隔。 */
+    private static final int K_DSEP = 5;
+    /** 双线之间的间隔（×unit）—— `2.5×unit = 3.0px` @480×800（unit=1.2），照 `docs/13:238` 的 3px。 */
+    private static final float DSEP_GAP_UNITS = 2.5f;
 
     private final Paint mp = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     private Context ctx;
     private Bill bill;                       // null = 库里没有任何账单
     private int view = MenuPrefs.VIEW_EXCERPT;
-    /** 🆕 月历选中的日（0 基，-1 = 无）。默认 = 本期阅读最久的那天。 */
-    private int selDay = -1;
 
     // ── 🆕 TASK-086：两个**瞬时态**（都不落盘 —— 弹层不是配置） ──
     /** 实付算法下拉框是否展开。 */
@@ -178,8 +187,6 @@ final class BillSection implements InsightRenderer.Section {
         this.ctx = c.getApplicationContext();
         this.view = MenuPrefs.view(c);
         this.bill = pickBill();
-        normalizeView();
-        this.selDay = maxDayIndex(this.bill);
         this.algoOpen = false;          // 🆕 TASK-086：弹层是瞬时态，每次呼出都归零
         this.padItem = -1;
         this.padText = "";
@@ -202,16 +209,6 @@ final class BillSection implements InsightRenderer.Section {
             if (b != null) return b;
         }
         return BillStore.latest(ctx);
-    }
-
-    /** 当前账单**可显示**的视图集合：月账单 = 3 项（含月历）、周账单 = 2 项。 */
-    private void normalizeView() {
-        // 🔴 TASK-077b B1：月历**只属于月账单** ⇒ 当前是周账时不显示第三视图，本次显示回落摘录菜单
-        //    （**不写回 prefs** —— 切回月账仍记得用户选的月历）
-        if (this.view == MenuPrefs.VIEW_CALENDAR
-                && (this.bill == null || !PeriodRange.MONTHLY.equals(this.bill.mode))) {
-            this.view = MenuPrefs.VIEW_EXCERPT;
-        }
     }
 
     // ══════════════════════ 🆕 2026-10-10：周期切换 / 导航（用户诉求 ⑥） ══════════════════════
@@ -283,8 +280,6 @@ final class BillSection implements InsightRenderer.Section {
         if (nb == null) return false;                  // 键在但读坏了 ⇒ 当没换（绝不显示半成品）
         MenuPrefs.setPeriodSel(ctx, mode, start);
         bill = nb;
-        normalizeView();
-        selDay = maxDayIndex(bill);
         invalidateRows();
         return true;
     }
@@ -320,27 +315,14 @@ final class BillSection implements InsightRenderer.Section {
         return 0;
     }
 
-    /** 本期阅读最久的日（0 基）；全 0 / 无账 ⇒ -1。 */
-    private static int maxDayIndex(Bill b) {
-        if (b == null || b.daySec == null) return -1;
-        int best = -1, bv = 0;
-        for (int i = 0; i < b.dayCount && i < b.daySec.length; i++) {
-            if (b.daySec[i] > bv) { bv = b.daySec[i]; best = i; }
-        }
-        return best;
-    }
-
-    /** 当前视图序号（0 = 摘录菜单 / 1 = 读书菜单 / 2 = 月历）。 */
+    /** 当前视图序号（0 = 摘录菜单 / 1 = 读书菜单）。 */
     int view() { return view; }
 
     /**
-     * 当前账单**可显示**的视图集合：月账单 = 3 项（含月历）、周账单 = 2 项。
-     * 页签绘制、命中、循环切换都以它为准（🆕 TASK-077b B1）。
+     * 当前账单**可显示**的视图集合：摘录菜单 / 读书菜单（🆕 task-40：月历已下架）。
+     * 页签绘制、命中、循环切换都以它为准。
      */
     int[] visibleViews() {
-        if (bill != null && PeriodRange.MONTHLY.equals(bill.mode)) {
-            return new int[] { MenuPrefs.VIEW_EXCERPT, MenuPrefs.VIEW_READING, MenuPrefs.VIEW_CALENDAR };
-        }
         return new int[] { MenuPrefs.VIEW_EXCERPT, MenuPrefs.VIEW_READING };
     }
 
@@ -371,7 +353,7 @@ final class BillSection implements InsightRenderer.Section {
     RectF tabStrip(float w, float unit, float top) {
         float right = w - w * InsightRenderer.PAD_X_RATIO
                 - WP_W_UNITS * unit - HEAD_TAB_GAP_UNITS * unit;
-        float ratio = (visibleViews().length > 2) ? TAB_W_RATIO_3 : TAB_W_RATIO;
+        float ratio = TAB_W_RATIO;
         float sw = w * ratio;
         float sh = headRowH(unit);
         float cy = headRowCy(unit, top);
@@ -807,57 +789,6 @@ final class BillSection implements InsightRenderer.Section {
         p.setTypeface(null);
     }
 
-    // ══════════════════════ 🆕 月历：几何 / 命中（TASK-077b） ══════════════════════
-
-    /** 月历网格行的**顶边**在分区内的 y；-1 = 本视图没有网格行（非月历 / 非月账）。 */
-    private float calGridTop(float w, float unit, float top) {
-        if (bill == null || view != MenuPrefs.VIEW_CALENDAR) return -1f;
-        if (!PeriodRange.MONTHLY.equals(bill.mode)) return -1f;
-        List<Row> ls = laid(w, unit);
-        float y = top + headArea(unit);
-        for (int i = 0; i < ls.size(); i++) {
-            Row r = ls.get(i);
-            if (r.kind == K_CAL) return y;
-            y += r.h(unit);
-        }
-        return -1f;
-    }
-
-    /**
-     * 点月历格子 ⇒ 选中该日（底部详情条随之更新）。🔴 **画与命中共用同一套几何**
-     * （{@link #calGridTop} + 同一批常量）⇒ 不会"看着点中了、其实没中"。
-     *
-     * @return true = 这次点击被月历吃掉了
-     */
-    boolean hitCalCell(float x, float y, float w, float unit, float top) {
-        float gt = calGridTop(w, unit, top);
-        if (gt < 0f) return false;
-        float gtop = gt + CAL_HEAD_H * unit;
-        float left = w * InsightRenderer.PAD_X_RATIO;
-        float right = w - w * InsightRenderer.PAD_X_RATIO;
-        float colW = (right - left) / CAL_COLS;
-        if (colW <= 0f || x < left || x > right || y < gtop) return false;
-        int col = (int) ((x - left) / colW);
-        int row = (int) ((y - gtop) / (CAL_CELL_H * unit));
-        if (col < 0 || col >= CAL_COLS || row < 0) return false;
-        int idx = row * CAL_COLS + col - PeriodRange.firstWeekdayIndex(bill.periodStart);
-        if (idx < 0 || idx >= bill.dayCount) return false;
-        if (idx != selDay) {
-            selDay = idx;
-            // 🔴 底部详情条的**文案**随选中日变 ⇒ 必须重建逻辑行；
-            //    只 invalidate() 的话网格标记动了、文字却不动（上机实测踩到）。行数不变 ⇒ 无需 remeasure。
-            invalidateRows();
-        }
-        return true;
-    }
-
-    /** 某日在月账单里的 `M/d` 文案（如 `9/27`）。 */
-    private String mdLabel(int dayIndex) {
-        Calendar c = Calendar.getInstance();
-        c.setTimeInMillis(PeriodRange.dayStart(bill.periodStart, dayIndex) * 1000L);
-        return (c.get(Calendar.MONTH) + 1) + "/" + c.get(Calendar.DAY_OF_MONTH);
-    }
-
     // ══════════════════════ 量高 / 画 ══════════════════════
 
     public float height(float w, float vh, float unit) {
@@ -884,12 +815,7 @@ final class BillSection implements InsightRenderer.Section {
         List<Row> ls = laid(w, unit);
         for (int i = 0; i < ls.size(); i++) {
             Row r = ls.get(i);
-            if (r.kind == K_CAL) {
-                drawCalGrid(c, left, right, y, unit, p);     // 🆕 月历网格：自绘
-                y += r.h(unit);
-            } else {
-                y += r.draw(c, left, right, y, unit, p);
-            }
+            y += r.draw(c, left, right, y, unit, p);
         }
 
         // 🆕 TASK-086：两个**瞬时弹层**最后画（压在内容之上；都是自绘，不引任何 View）
@@ -1046,7 +972,7 @@ final class BillSection implements InsightRenderer.Section {
     // ══════════════════════ 页签条 ══════════════════════
 
     /**
-     * 页签条（`摘录菜单 / 读书菜单(/ 月历)`）+ 右端**无边框**的「生成壁纸」。
+     * 页签条（`摘录菜单 / 读书菜单`）+ 右端**无边框**的「生成壁纸」。
      *
      * <p>🆕 诉求 ①：① 页签上提到标题行（`tabStrip` 已把中心对齐到 {@code headRowCy}）；
      * ② 「生成壁纸」删掉按键框，改用**页签同一套**字族 / 字号 / 颜色（非选中色 = INK，
@@ -1122,12 +1048,6 @@ final class BillSection implements InsightRenderer.Section {
         List<Row> out = new ArrayList<Row>();
         rows = out;
         if (ctx == null || bill == null) return out;
-
-        // 🆕 TASK-077b：第三视图「月历」（**仅月账单**）—— 完全独立的组行分支
-        if (view == MenuPrefs.VIEW_CALENDAR && PeriodRange.MONTHLY.equals(bill.mode)) {
-            buildCal(out);
-            return out;
-        }
 
         final boolean excerptMenu = (view == MenuPrefs.VIEW_EXCERPT);
         final int blocks = MenuPrefs.blocks(ctx);
@@ -1268,11 +1188,16 @@ final class BillSection implements InsightRenderer.Section {
         boolean hasTail = noteOn || (excerptMenu && totalOn)
                 || MenuPrefs.FOOT_BARCODE.equals(footer) || MenuPrefs.FOOT_BOTH.equals(footer)
                 || excerptMenu;
-        if (hasTail) out.add(Row.sep());
 
         String wholeNote = nz(MenuPrefs.footerNote(ctx));
         boolean showWholeNote = noteOn && wholeNote.length() > 0
                 && !MenuPrefs.FOOT_BARCODE.equals(footer);      // 底部只勾条码 ⇒ 不画备注
+        // 🆕 task-39（#6c · docs/13:238）：合计行正上方改画**双线**（1px + 3px + 1px）⇒ 这条双线
+        //   自己就是「票据尾」的分隔线；若尾的第一行正是合计（前面没有「整单备注」），就不再叠
+        //   一条单线 —— 否则双线之上还压着一条 1px，读起来是"三线"。
+        boolean totalFirst = (excerptMenu && totalOn) && !showWholeNote;
+        if (hasTail && !totalFirst) out.add(Row.sep());
+
         if (showWholeNote) {
             Row n = Row.wrap("整单备注：" + wholeNote, SZ_SMALL * scB, 2);
             n.color = GRAY;
@@ -1280,22 +1205,21 @@ final class BillSection implements InsightRenderer.Section {
             out.add(n);
         }
         if (excerptMenu && totalOn) {
-            // 🆕 TASK-086（Q5）：合计行改版 —— 结论句，而不是光秃秃一个金额。
-            //   实付开：`合计   本期阅读 H 小时` + 第二行 `读回 ¥X，折合 ¥Y/小时`
-            //   实付关：`合计   本期阅读 H 小时`（单行）
-            //   🔴 拆两行是上机倒逼的 —— 单行在 480px 上会截掉「折合 ¥Y/小时」，见 billTotalNote 注释。
-            //   🔴 替换原 `账单合计：¥79`（原口径"各书价之和"随 TASK-086 作废）
-            Row tf = Row.line(billTotalMain(), null, SZ_BODY * scB);
+            // 🆕 TASK-086（Q5）→ 🆕 task-39（用户第四批 #5）：合计行**压回一行**。
+            //   旧版（Q5）拆两行是上机倒逼的 —— 单行约 532px > 内容宽 432px，`Row.fit` 会把
+            //   最有价值的「折合 ¥Y/小时」截掉（见 `billTotalNote` 注释）。
+            //   本轮把解法换成「**按需轻微横向压缩**」（与金额列 task-35 同族手段、同一个
+            //   `InkTheme.moneyScaleX`，必要时用 `InkTheme.TOTAL_MIN_SCALE_X` 兜底）⇒
+            //   单行**完整可读**、**不动列宽**（`PRICE_COL_W` 一字未动，也不新增第二套尺）。
+            //   文案 = 用户原话口径 `合计  阅读 x 小时，读回 ¥xx，折合 ¥xx/小时`
+            //   （「本期阅读」按用户原话简化为「阅读」）；`≈` 前缀 / H=0 不写「折合」/
+            //   只累加算得出的行 —— 三条红线全在 `billTotalNote` 内，未改写。
+            out.add(Row.dsep());                       // 合计正上方双线（docs/13:238）
+            Row tf = Row.line(billTotalLine(algo), null, SZ_BODY * scB);
             tf.bold = true;
             tf.mono = bMono;
+            tf.compress = true;                        // 🔴 放不下 ⇒ 压字距画**完整**串，绝不截断
             out.add(tf);
-            String note = billTotalNote(algo);
-            if (note != null) {
-                Row tn = Row.line(note, null, SZ_BODY * scB);
-                tn.bold = true;
-                tn.mono = bMono;
-                out.add(tn);
-            }
         }
         if (MenuPrefs.FOOT_BARCODE.equals(footer) || MenuPrefs.FOOT_BOTH.equals(footer)) {
             out.add(Row.bars(billTitle + " · " + serial));
@@ -1407,12 +1331,21 @@ final class BillSection implements InsightRenderer.Section {
     }
 
     /**
-     * 🆕 TASK-086（Q5）：**合计行**第一段 —— `合计   本期阅读 16.9 小时`。
+     * 🆕 TASK-086（Q5）→ 🆕 task-39（用户第四批 #5）：**合计行**（**单行**）——
+     * `合计   阅读 16.9 小时，≈读回 ¥2130.81，折合 ¥126.10/小时`。
      *
-     * <p>🔴 H = totalSec ÷ 3600（{@link BillMoney#hoursText} = 1 位小数）。
+     * <p>🔴 H = `totalSec ÷ 3600`（{@link BillMoney#hoursText} = 1 位小数）。
+     * 文案 = **用户原话口径**「合计  阅读 x 小时，读回 ¥xx，折合 ¥xx/小时」——
+     * 「本期阅读」按用户原话简化为「阅读」（task-39 记录 §口径 已写明）。
+     *
+     * <p>🔴 第二段的三种"不写"情形、`≈` 前缀规则、只累加算得出的行 —— **全部复用
+     * {@link #billTotalNote(String)}**（单一出口，本方法不重写任何金额口径）。
+     * 单行放不下时由调用方那一行（`Row.compress`）压字距画完整串，不截断。
      */
-    private String billTotalMain() {
-        return "合计   本期阅读 " + BillMoney.hoursText(bill.totalSec) + " 小时";
+    private String billTotalLine(String algo) {
+        String note = billTotalNote(algo);
+        return "合计   阅读 " + BillMoney.hoursText(bill.totalSec) + " 小时"
+                + (note != null ? "，" + note : "");
     }
 
     /**
@@ -1422,10 +1355,12 @@ final class BillSection implements InsightRenderer.Section {
      *
      * <p>🔴 上机实测（480×800）倒逼的两条口径：
      * <ol>
-     *   <li>**一行画不下** —— `合计   本期阅读 16.9 小时，读回 ¥55.50，折合 ¥3.28/小时`
+     *   <li>**一行画不下** —— `合计   阅读 16.9 小时，读回 ¥55.50，折合 ¥3.28/小时`
      *       在 `SZ_BODY` 下约 532px &gt; 内容宽 432px（`PAD_X_RATIO`=0.05 ⇒ 480×0.9）⇒
-     *       `Row.fit` 会把**最有价值的那一段（折合 ¥Y/小时）**截掉。故拆成**两行**画
-     *       （调用方 `rows()` 出两行）；`BillWallpaper` 同步。</li>
+     *       `Row.fit` 会把**最有价值的那一段（折合 ¥Y/小时）**截掉。
+     *       历史解法（Q5）= 拆**两行**；🆕 **task-39 起改为单行 + 按需轻微横向压缩**
+     *       （`Row.compress` → `InkTheme.moneyScaleX`，必要时 `InkTheme.TOTAL_MIN_SCALE_X` 兜底）
+     *       ⇒ 单行完整可读且不动列宽。`BillWallpaper` 同口径同步（A11）。</li>
      *   <li>**一行都算不出来时不写** —— 老账无价 / 算法 A 首期无基线 / 全是免费书时，
      *       `¥0 / ¥0 每小时`是噪声，会读成"一分钱没读回来"。此时如实只留第一段
      *       （与 `tasks/TASK-086` §老账兼容「合计按新格式（仅时长）」一致）。</li>
@@ -1443,157 +1378,6 @@ final class BillSection implements InsightRenderer.Section {
         float h = bill.totalSec / 3600f;
         if (h > 0f) s += "，折合 " + BillMoney.yuan((int) Math.round(pay / h)) + "/小时";
         return s;
-    }
-
-    // ══════════════════════ 🆕 月历视图（TASK-077b） ══════════════════════
-
-    /**
-     * 月历视图的组行：票据头 → 月历网格 → 分隔线 → 选中日详情 → 本期最久 → 提示。
-     *
-     * <p>🔴 **零网络**：逐日数据来自 {@link Bill#daySec}（**生成期**随账单一起落盘）。
-     * 本方法只读 `bill` / `MenuPrefs` / `selDay`，不发任何请求。
-     */
-    private void buildCal(List<Row> out) {
-        final float scT = MenuPrefs.scaleOf(MenuPrefs.fsTitle(ctx));
-        final float scB = MenuPrefs.scaleOf(MenuPrefs.fsBody(ctx));
-        final boolean tSerif = MenuPrefs.titleSerif(ctx);
-        final boolean bMono  = MenuPrefs.bodyMono(ctx);
-        final String unitPref = MenuPrefs.unit(ctx);
-        final String billTitle = MenuPrefs.title(ctx);
-        final String serial = Bill.serialOf(bill.mode, bill.periodStart);
-
-        if ((MenuPrefs.blocks(ctx) & MenuPrefs.BLOCK_HEAD) != 0) {
-            // 🆕 2026-10-10：与两菜单同一口径 —— **单号在左、标题在右**
-            Row t = Row.line(serial, billTitle, SZ_TITLE * scT);
-            t.bold = true;
-            t.serif = tSerif;
-            out.add(t);
-
-            String sub = Bill.kindLabel(bill.mode) + " · " + Bill.rangeLabel(bill.mode, bill.periodStart)
-                    + " · " + bill.bookCount() + " 本"
-                    + (bill.placeholder ? "" : (" · " + dur(bill.totalSec, unitPref)));
-            Row s2 = Row.line(sub, null, SZ_BODY * scB);
-            s2.color = GRAY;
-            s2.mono = bMono;
-            out.add(s2);
-            out.add(Row.sep());
-        }
-
-        // 占位账 ⇒ 与两菜单同一句文案（🔴 绝不产 0 值月历）
-        if (bill.placeholder) {
-            Row ph = Row.line(PLACEHOLDER, null, SZ_BODY * scB);
-            ph.color = GRAY;
-            ph.align = 2;
-            out.add(ph);
-            return;
-        }
-
-        // 网格：首行空 firstWeekdayIndex 格，共 ceil((first + dayCount) / 7) 行
-        int firstIdx = PeriodRange.firstWeekdayIndex(bill.periodStart);
-        int gridRows = (firstIdx + bill.dayCount + CAL_COLS - 1) / CAL_COLS;
-        out.add(Row.cal(CAL_HEAD_H + gridRows * CAL_CELL_H + 6f));
-        out.add(Row.sep());
-
-        // 选中日详情（日期 · 时长）
-        if (selDay >= 0 && selDay < bill.dayCount) {
-            int sec = (selDay < bill.daySec.length) ? bill.daySec[selDay] : 0;
-            String txt = mdLabel(selDay) + "  ·  " + dur(sec, unitPref) + (sec <= 0 ? "  （无记录）" : "");
-            Row d = Row.line(txt, null, SZ_BODY * scB);
-            d.bold = true;
-            d.mono = bMono;
-            out.add(d);
-        }
-
-        // 本期最久（书目已按时长降序 ⇒ [0] 即最久；🔴 明确不带日期归属 —— 逐日×书目无数据）
-        if (!bill.items.isEmpty()) {
-            Bill.Item top = bill.items.get(0);
-            Row tk = Row.line("本期最久 · 《" + nz(top.title) + "》  " + dur(top.readTimeSec, unitPref),
-                    null, SZ_SMALL * scB);
-            tk.color = GRAY;
-            tk.mono = bMono;
-            out.add(tk);
-        }
-
-        Row hint = Row.line("每日条按本期最高日归一", null, SZ_SMALL * scB);
-        hint.color = LIGHT;
-        hint.mono = bMono;
-        out.add(hint);
-    }
-
-    /**
-     * 画月历网格（**纯自绘**）：星期表头（一…日）+ 日期数字 + 当日时长迷你条 + 选中标记。
-     *
-     * <p>几何与 {@link #hitCalCell} **共用同一批常量与起点**（{@link #calGridTop}）⇒
-     * 不会出现"看着点中了、其实没中"。🔴 纯黑白 + 三档灰，无圆角/阴影/动画（墨水屏铁律）。
-     */
-    private void drawCalGrid(Canvas c, float left, float right, float y, float unit, Paint p) {
-        if (bill == null) return;
-        final int n = bill.dayCount;
-        final int firstIdx = PeriodRange.firstWeekdayIndex(bill.periodStart);
-        final float colW = (right - left) / CAL_COLS;
-
-        // ① 星期表头
-        p.setStyle(Paint.Style.FILL);
-        p.setTypeface(InkTheme.serif());
-        p.setTextSize(10.5f * unit);
-        p.setTextAlign(Paint.Align.CENTER);
-        p.setColor(LIGHT);
-        float hy = y + CAL_HEAD_H * unit * 0.66f;
-        for (int i = 0; i < CAL_COLS; i++) {
-            c.drawText(CAL_DOW[i], left + colW * i + colW / 2f, hy, p);
-        }
-        p.setTypeface(null);
-
-        // ② 归一基准 = 本期最高日
-        int max = 0;
-        for (int i = 0; i < n && i < bill.daySec.length; i++) {
-            if (bill.daySec[i] > max) max = bill.daySec[i];
-        }
-
-        // ③ 逐日格
-        final float gtop = y + CAL_HEAD_H * unit;
-        final long today = PeriodRange.todayStartSec();
-        for (int i = 0; i < n; i++) {
-            int idx = firstIdx + i;
-            int row = idx / CAL_COLS;
-            int col = idx % CAL_COLS;
-            float cxs = left + colW * col;
-            float cy = gtop + row * CAL_CELL_H * unit;
-            int sec = (i < bill.daySec.length) ? bill.daySec[i] : 0;
-            boolean sel = (i == selDay);
-            boolean isToday = PeriodRange.dayStart(bill.periodStart, i) == today;
-
-            // 日期数字（贴格子左上；未读书的日子用浅灰）
-            p.setTextSize(11f * unit);
-            p.setTypeface(Typeface.MONOSPACE);
-            p.setFakeBoldText(sel || isToday);
-            p.setColor(sec > 0 ? INK : LIGHT);
-            Paint.FontMetrics fm = p.getFontMetrics();
-            float base = cy + unit * 12f - (fm.ascent + fm.descent) / 2f;
-            p.setTextAlign(Paint.Align.LEFT);
-            c.drawText(String.valueOf(i + 1), cxs + unit * 4f, base, p);
-
-            // 当日时长迷你条（按本期最高日归一；缺日不画）
-            if (sec > 0 && max > 0) {
-                float ratio = (float) sec / (float) max;
-                float bw = colW * 0.58f;
-                float bh = Math.max(unit * 1.6f, CAL_CELL_H * 0.40f * unit * ratio);
-                float by = cy + CAL_CELL_H * unit - unit * 4f - bh;
-                p.setColor(INK);
-                c.drawRect(cxs + (colW - bw) / 2f, by, cxs + (colW + bw) / 2f, by + bh, p);
-            }
-
-            // 选中标记：数字下方一条短横线
-            if (sel) {
-                p.setColor(INK);
-                float uw = colW * 0.34f;
-                c.drawRect(cxs + (colW - uw) / 2f, cy + unit * 14.5f,
-                        cxs + (colW + uw) / 2f, cy + unit * 14.5f + Math.max(1f, unit * 1.3f), p);
-            }
-            p.setFakeBoldText(false);
-        }
-        p.setTypeface(null);
-        p.setTextAlign(Paint.Align.LEFT);
     }
 
     // ══════════════════════ 折行 ══════════════════════
@@ -1686,6 +1470,8 @@ final class BillSection implements InsightRenderer.Section {
         int align;              // 0 左 / 1 右 / 2 中
         float maxLines;         // K_WRAP 的行数上限（0 = 不限）
         float gap;              // K_GAP 的额外留白（×unit）
+        /** 🆕 task-39（#5）：左对齐单行**放不下时按需压字距**画完整串（合计行用），绝不截断。 */
+        boolean compress;
 
         static Row line(String a, String b, float size) {
             Row r = new Row();
@@ -1711,6 +1497,13 @@ final class BillSection implements InsightRenderer.Section {
             return r;
         }
 
+        /** 🆕 task-39（#6c · docs/13:238）：**双线**分隔行 —— 合计行正上方（1px + 3px + 1px）。 */
+        static Row dsep() {
+            Row r = new Row();
+            r.kind = K_DSEP;
+            return r;
+        }
+
         static Row bars(String caption) {
             Row r = new Row();
             r.kind = K_BARS;
@@ -1726,26 +1519,26 @@ final class BillSection implements InsightRenderer.Section {
             return r;
         }
 
-        /** 🆕 月历网格行 —— {@code heightUnits} = 网格总高（×unit）；实际绘制在 {@code BillSection.drawCalGrid}。 */
-        static Row cal(float heightUnits) {
-            Row r = new Row();
-            r.kind = K_CAL;
-            r.size = heightUnits;
-            return r;
-        }
-
         float h(float unit) {
-            if (kind == K_CAL) return size * unit;       // size 存的是高度（×unit）
             if (kind == K_BARS) return unit * 20f;
+            if (kind == K_DSEP) return unit * DSEP_GAP_UNITS + 2f;   // 两条 1px + 间隔
             if (kind == K_SEP) return unit * (gap > 0f ? 12f : 10f);
             return size * LH * unit;
         }
 
         float draw(Canvas c, float left, float right, float y, float unit, Paint p) {
             float h = h(unit);
-            if (kind == K_CAL) return h;                 // 自绘（调用方拦截，见 BillSection.draw 主循环）
             if (kind == K_BARS) {
                 drawBars(c, left, right, y, unit, p, a);
+                return h;
+            }
+            if (kind == K_DSEP) {
+                // 🆕 task-39（#6c · docs/13:238）：**合计行上方双线** = 1px 线 + 3px 间隔 + 1px 线。
+                //    只改画：不引新字体、不新增第二套尺（间隔仍以 unit 为单位）、不动任何命中区。
+                p.setStyle(Paint.Style.FILL);
+                p.setColor(LINE);
+                c.drawRect(left, y, right, y + 1f, p);
+                c.drawRect(left, y + h - 1f, right, y + h, p);
                 return h;
             }
             if (kind == K_SEP) {
@@ -1839,7 +1632,32 @@ final class BillSection implements InsightRenderer.Section {
                 c.drawText(fit(p, a, right - x), right, base, p);
             } else {
                 p.setTextAlign(Paint.Align.LEFT);
-                c.drawText(fit(p, a, right - x), x, base, p);
+                if (compress) {
+                    // 🆕 task-39（#5）：合计**单行** —— 放不下就「按需轻微横向压缩」
+                    //    （与金额列 task-35 同族手段、同一个 `InkTheme.moneyScaleX`），
+                    //    🔴 绝不把「折合 ¥Y/小时」截成 `…`。
+                    //    `moneyScaleX` 自带 0.68 下限（语义：压不动就交回截断）；合计行还允许用
+                    //    更松的 `InkTheme.TOTAL_MIN_SCALE_X`（0.60）再兜一次 —— 那一段是结论句，
+                    //    "字略瘦"远好过"结论被截掉"。真到 0.60 还压不下（病态超长）才回到老 `fit()`。
+                    final float maxW = right - x;
+                    float sc = InkTheme.moneyScaleX(p, a, maxW);
+                    if (sc >= 1f) {
+                        float need = p.measureText(a);
+                        if (need > maxW) {
+                            float raw = maxW / need;
+                            if (raw >= InkTheme.TOTAL_MIN_SCALE_X) sc = raw;
+                        }
+                    }
+                    if (sc < 1f) {
+                        p.setTextScaleX(sc);
+                        c.drawText(a, x, base, p);
+                        p.setTextScaleX(1f);
+                    } else {
+                        c.drawText(fit(p, a, maxW), x, base, p);
+                    }
+                } else {
+                    c.drawText(fit(p, a, right - x), x, base, p);
+                }
             }
             p.setTextAlign(Paint.Align.LEFT);
             p.setFakeBoldText(false);

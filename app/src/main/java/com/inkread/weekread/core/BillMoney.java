@@ -85,7 +85,9 @@ public final class BillMoney {
      * <p>🆕 task-13（2026-10-11）：算法 B 的进度**不再取 {@link Bill.Item#progressPct}**（那是"期末/
      * <b>当前</b>"语义，补旧期时写进的是"现在"，于是每期都显示同一个数 —— 用户报的问题），
      * 改用生成期解析好的 {@link Bill.Item#progressEndPct}（**该期自己的**期末累计）。
-     * 🔴 算法 A 的算式与判据**一字未动**（task-15 才诊断它）。
+     * 🔴 算法 A 的算式与判据**一字未动**（task-15 才诊断它）—— 🆕 **task-41（2026-10-11）打破了这一条**：
+     * 算法 A 的**期末取值与判据改为与算法 B 同源**（都取 {@code progressEndPct}、都只要求"这个值存在"），
+     * 详见下方 `else` 分支内的说明；task-15~task-40 期间"一字未动"是那时的实况。
      *
      * @return {@code >= 0} 实付（分）；{@link #UNKNOWN} ⇒ 该行显示 `—` 且**不计入合计**
      */
@@ -121,11 +123,24 @@ public final class BillMoney {
                 delta = it.progressEndPct - it.progressStartPct;
                 if (delta < 0) delta = 0;                   // 估算线单调不减；兜底 clamp 不倒扣
             } else {
-                if (end < 0) return UNKNOWN;                // 进度未知 ⇒ 算不出来
-                // 算法 A：首期无基线（progressStartPct < 0）或期末不可信 ⇒ 如实留白
-                if (!it.progressEndKnown || it.progressStartPct < 0) return UNKNOWN;
-                delta = end - it.progressStartPct;
-                if (delta < 0) delta = 0;                   // 重读致进度回落 ⇒ clamp(≥0)，不倒扣
+                // 🆕 task-41（2026-10-11）：**与累计档同源** —— 期末一律取"该期自己的期末累计"
+                //   {@link Bill.Item#progressEndPct}（task-13 起它才是该期的期末值），只在它缺失时
+                //   才回落到 {@link Bill.Item#progressPct}（老账兜底）。
+                //   🔴 为什么去掉旧的 `!progressEndKnown` 硬门：`progressEndKnown` 的语义是
+                //      "**本次生成**抓到的进度是不是该期期末"（生成时机的 provenance），而这里要判的是
+                //      "**落盘的 progressEndPct** 这个值本身可不可信" —— task-13 引入 `progressEndPct`
+                //      （该期自己的期末累计）之后，旧判据已经陈旧：历史期（如 2026-06/07/08）的
+                //      `progressEndPct` 是 `ProgressLog` 里的**真期界快照**，却因 `progressEndKnown=false`
+                //      被旧判据打成 `—`；而**同一行的累计档**（只要求 `progressEndPct >= 0`）却能算出值
+                //      ⇒ 两个算法判据不一致（用户报的"月维度没修好"的判据层根因）。
+                //   "值本身可不可信"改由 {@link BillEstimator#rebuild} 的**期末值可信度 pass** 负责标注：
+                //      非真期末（如"进行中"的当期月）⇒ 标 `progressEndEst = true` ⇒ 走上面的估算支并带 `≈`。
+                int ep = it.progressEndPct;
+                if (ep < 0 && it.progressEndKnown) ep = end;   // 老账回落（与累计档同一条线）
+                if (ep < 0) return UNKNOWN;                    // 该期期末取不到 ⇒ 如实留白，不编数
+                if (it.progressStartPct < 0) return UNKNOWN;   // 首期无基线 ⇒ 留白（不编数）
+                delta = ep - it.progressStartPct;
+                if (delta < 0) delta = 0;                      // 重读致进度回落 ⇒ clamp(≥0)，不倒扣
             }
         }
         if (delta > 100) delta = 100;

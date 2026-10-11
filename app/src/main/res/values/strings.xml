@@ -500,6 +500,11 @@
     <!-- 总开关文案（docs/11 §5.2 线框 + §六 #4；§7.2 把 lab_shake_label 指派给页标题 ⇒ 亦属设计稿漏列，Lead 批准） -->
     <string name="console_shake_enable">启用晃动翻页</string>
     <string name="fold_shake_peer">晃动翻页说明</string>
+    <!-- 🆕 TASK-042：两张折叠卡的抬头（V1.3.0-Beta 第四批 #4）——
+         遥控卡抬头「晃动遥控翻页」（默认展开）+ 本机卡抬头「本机晃动翻页」（置顶、默认折叠、大标题）。
+         🔴 本机抬头**不能**复用 lab_shake_local_title（值「本机晃动」，墨水屏端实验室页本机块共用该键 ⇒ 改值会污染墨水屏端）。 -->
+    <string name="fold_shake_remote_title">晃动遥控翻页</string>
+    <string name="fold_shake_local_title">本机晃动翻页</string>
     <!-- 门控条 %1$s 的短标签（长串 lab_conn_hotspot/lab_conn_bt 塞进 48dp 单行条会溢出） -->
     <string name="lab_conn_short_hotspot">热点连接</string>
     <string name="lab_conn_short_bt">蓝牙连接</string>

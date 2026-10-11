@@ -251,6 +251,21 @@ public final class InkTheme {
     public static final float MONEY_MIN_SCALE_X = 0.68f;
 
     /**
+     * 🆕 task-39（用户第四批 #5）：**合计行单行**允许的横向压缩下限（比金额列的 0.68 更松）。
+     *
+     * <p>为什么合计行可以更松：合计是一句**结论句**（`合计   阅读 16.9 小时，≈读回 ¥2130.81，
+     * 折合 ¥126.10/小时`），其中「折合 ¥Y/小时」是用户点名要保住的一段 —— 在 432px 内容宽
+     * （`PAD_X_RATIO`=0.05）下按 `SZ_BODY` 实测需要压到 ≈**0.72**（真机取证见
+     * `验证记录/217`），"字略瘦"远好过"结论被截成 `…`"。0.60 是**兜底**（覆盖更长的
+     * 手填价 + 更长的时长串），不是设计目标值。
+     *
+     * <p>🔴 与 {@link #MONEY_MIN_SCALE_X} 的分工：金额列是**逐行**数字（列位已验收，
+     * 见 `验证记录/206`），不许压过 0.68；合计行是**整段**结论句，允许到 0.60。
+     * 两个表面（墨单 `feature/BillSection` / 海报 `feature/BillWallpaper`）必须同口径（A11）。
+     */
+    public static final float TOTAL_MIN_SCALE_X = 0.60f;
+
+    /**
      * 金额串「按需轻微横向压缩」的比例 —— 用**压缩**代替**截断**（TASK-086 第三批 · task-35）。
      *
      * <p>用法（两个表面同口径）：{@code float sc = InkTheme.moneyScaleX(p, s, maxW);}

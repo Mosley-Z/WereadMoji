@@ -59,15 +59,17 @@ public final class BillWallpaper {
     private static final int BASE_W = 480;
     private static final int BASE_H = 800;
 
-    // 🆕 2026-10-10 第四轮 ①：月历版海报的网格常量 —— 🔴 与 BillSection 同一批值（勿各写一套）
-    private static final int    CAL_COLS   = 7;
-    private static final float  CAL_HEAD_H = 15f;    // 星期表头高（×s）
-    private static final float  CAL_CELL_H = 30f;    // 每格高（×s）
-    private static final String[] CAL_DOW  = { "一", "二", "三", "四", "五", "六", "日" };
-
     private static final int INK   = 0xFF000000;
     private static final int GRAY  = 0xFF3C3C3C;
-    private static final int LIGHT = 0xFFA8A8A8;
+    /**
+     * 🆕 task-39（用户第四批 #1）：提示小字 / 禁用态色。
+     *
+     * <p>旧值 `#A8A8A8`（白底 2.38:1）—— 与墨单 `feature/BillSection.LIGHT` **同一个 token**。
+     * 本轮两边同值改为既有 token {@link InkTheme#INK2}（`#6B6459`，白底 5.85:1）：
+     * **A11「海报与墨单同形制」要求同口径**，海报侧同步。
+     * 🔴 只换颜色：字号 / 位置 / 字族 / 字重一律不动。
+     */
+    private static final int LIGHT = InkTheme.INK2;
     private static final int LINE  = 0xFFD8D8D8;
 
     /** 落盘目录名（在 App 私有 {@code files/} 下）—— 保存失败时的兜底目录。 */
@@ -91,10 +93,9 @@ public final class BillWallpaper {
      * @param mode        {@link PeriodRange#WEEKLY} / {@link PeriodRange#MONTHLY}
      * @param periodStart 该期起点（秒）
      * @param view        🆕 2026-10-10 第四轮（用户诉求 ①）：**当前菜单类别** ——
-     *                    {@code MenuPrefs.VIEW_EXCERPT}（摘录菜单）/ {@code VIEW_READING}（读书菜单）/
-     *                    {@code VIEW_CALENDAR}（月历）。🔴 **在哪个类别点「生成壁纸」就出哪个类别的海报**
+     *                    {@code MenuPrefs.VIEW_EXCERPT}（摘录菜单）/ {@code VIEW_READING}（读书菜单）。
+     *                    🔴 **在哪个类别点「生成壁纸」就出哪个类别的海报**
      *                    （此前恒按摘录口径渲染，与用户所见脱节）。
-     *                    ⚠️ {@code VIEW_CALENDAR} 只在月账单下有效，周账单会回落摘录口径。
      */
     public static Poster render(Context c, String mode, long periodStart, int view) {
         Poster r = new Poster();
@@ -110,10 +111,8 @@ public final class BillWallpaper {
             return r;
         }
 
-        // 月历只在月账单下存在（同 BillSection.visibleViews），否则回落摘录口径
-        final int v = (view == MenuPrefs.VIEW_READING) ? MenuPrefs.VIEW_READING
-                : (view == MenuPrefs.VIEW_CALENDAR && PeriodRange.MONTHLY.equals(m))
-                    ? MenuPrefs.VIEW_CALENDAR : MenuPrefs.VIEW_EXCERPT;
+        // 视图口径（🆕 task-40：月历已下架 ⇒ 只剩摘录 / 读书两档）
+        final int v = (view == MenuPrefs.VIEW_READING) ? MenuPrefs.VIEW_READING : MenuPrefs.VIEW_EXCERPT;
 
         int[] size = screenSize(c);
         final int w = size[0], h = size[1];
@@ -315,13 +314,6 @@ public final class BillWallpaper {
             return;
         }
 
-        // ④′ 🆕 2026-10-10 第四轮 ①：**月历视图**（仅月账单）—— 镜像墨台的月历，而不是逐本账单
-        if (view == MenuPrefs.VIEW_CALENDAR && PeriodRange.MONTHLY.equals(b.mode)) {
-            drawCalPoster(cv, p, b, left, right, y, s, unitPref);
-            footer(cv, p, W, H, s, b);
-            return;
-        }
-
         // ⑤ 表头（沿用菜单隐喻：🆕 TASK-086 ⇒ 4 列 `品类 │ 主厨 │ 原价 │ 实付`）+ 分隔线
         //    —— 🔴 **只在摘录菜单画**（读书菜单不显示价格列）
         //    🆕 TASK-12：实付关（`paidCol == false`）时「原价」移到**最右列**（与实付同 x），
@@ -487,103 +479,35 @@ public final class BillWallpaper {
             p.setFakeBoldText(true);
             p.setColor(INK);
             p.setTextSize(sBody);
-            // 🆕 TASK-086（Q5）：与墨台屏幕**逐字同一句**（同一个拼法，只是这里没有 Context 差异）。
-            // 🔴 拆两行与 `BillSection.rows()` 同口径 —— 单行在 480px 上会截掉「折合 ¥Y/小时」（A11/A6）。
-            cv.drawText(fit(p, totalMain(b), avail), left, ty + sBody, p);
-            ty += sBody * lineH;
+            // 🆕 TASK-086（Q5）→ 🆕 task-39（用户第四批 #5）：与墨台屏幕**逐字同一句**，且同为**单行**。
+            //   旧版拆两行是上机倒逼的（单行 480px 会截掉「折合 ¥Y/小时」）；task-39 起两边都改成
+            //   「单行 + 按需轻微横向压缩」（同一个 `InkTheme.moneyScaleX` + `TOTAL_MIN_SCALE_X` 兜底）
+            //   ⇒ 文案逐字一致，且**都不会截断**（A11/A6）。
+            String totalLine = totalMain(b);
             String note = totalNote(c, b, algo);
-            if (note != null) {
-                cv.drawText(fit(p, note, avail), left, ty + sBody, p);
+            if (note != null) totalLine = totalLine + "，" + note;
+            // 与 `BillSection.Row.draw` 的 `compress` 分支**逐行同口径**（同一族手段、同两个下限）。
+            float sc = InkTheme.moneyScaleX(p, totalLine, avail);
+            if (sc >= 1f) {
+                float need = p.measureText(totalLine);
+                if (need > avail) {
+                    float raw = avail / need;
+                    if (raw >= InkTheme.TOTAL_MIN_SCALE_X) sc = raw;
+                }
             }
+            if (sc < 1f) {
+                p.setTextScaleX(sc);
+                cv.drawText(totalLine, left, ty + sBody, p);
+                p.setTextScaleX(1f);
+            } else {
+                cv.drawText(fit(p, totalLine, avail), left, ty + sBody, p);
+            }
+            ty += sBody * lineH;
             p.setFakeBoldText(false);
             p.setTypeface(null);
         }
 
         footer(cv, p, W, H, s, b);
-    }
-
-    /**
-     * 🆕 2026-10-10 第四轮 ①：**月历版海报** —— 镜像墨台的月历视图（网格 + 本期最久 + 提示）。
-     *
-     * <p>与 {@code BillSection.buildCal / drawCalGrid} 同一口径（同一批常量、同一「本期最高日」归一基准），
-     * 只把 `unit` 换成海报的 `s`（= 屏高 / 800）。🔴 零新增数据：只读 {@link Bill#daySec}（生成期已落盘）。
-     */
-    private static void drawCalPoster(Canvas cv, Paint p, Bill b, float left, float right,
-                                      float y, float s, String unitPref) {
-        final float colW = (right - left) / CAL_COLS;
-        final int firstIdx = PeriodRange.firstWeekdayIndex(b.periodStart);
-
-        // ① 星期表头
-        p.setStyle(Paint.Style.FILL);
-        p.setTypeface(Typeface.SERIF);
-        p.setTextSize(10.5f * s);
-        p.setTextAlign(Paint.Align.CENTER);
-        p.setColor(LIGHT);
-        float hy = y + CAL_HEAD_H * s * 0.66f;
-        for (int i = 0; i < CAL_COLS; i++) {
-            cv.drawText(CAL_DOW[i], left + colW * i + colW / 2f, hy, p);
-        }
-        p.setTypeface(null);
-
-        // ② 归一基准 = 本期最高日
-        int max = 0;
-        for (int i = 0; i < b.dayCount && i < b.daySec.length; i++) {
-            if (b.daySec[i] > max) max = b.daySec[i];
-        }
-
-        // ③ 逐日格（日期 + 时长迷你条；今天加粗）
-        final float gtop = y + CAL_HEAD_H * s;
-        final long today = PeriodRange.todayStartSec();
-        for (int i = 0; i < b.dayCount; i++) {
-            int idx = firstIdx + i;
-            float cxs = left + colW * (idx % CAL_COLS);
-            float cy = gtop + (idx / CAL_COLS) * CAL_CELL_H * s;
-            int sec = (i < b.daySec.length) ? b.daySec[i] : 0;
-            boolean isToday = PeriodRange.dayStart(b.periodStart, i) == today;
-
-            p.setTextSize(11f * s);
-            p.setTypeface(Typeface.MONOSPACE);
-            p.setFakeBoldText(isToday);
-            p.setColor(sec > 0 ? INK : LIGHT);
-            Paint.FontMetrics fm = p.getFontMetrics();
-            float base = cy + s * 12f - (fm.ascent + fm.descent) / 2f;
-            p.setTextAlign(Paint.Align.LEFT);
-            cv.drawText(String.valueOf(i + 1), cxs + s * 4f, base, p);
-
-            if (sec > 0 && max > 0) {
-                float ratio = (float) sec / (float) max;
-                float bw = colW * 0.58f;
-                float bh = Math.max(s * 1.6f, CAL_CELL_H * 0.40f * s * ratio);
-                float by = cy + CAL_CELL_H * s - s * 4f - bh;
-                p.setColor(INK);
-                cv.drawRect(cxs + (colW - bw) / 2f, by, cxs + (colW + bw) / 2f, by + bh, p);
-            }
-            p.setFakeBoldText(false);
-        }
-        p.setTypeface(null);
-        p.setTextAlign(Paint.Align.LEFT);
-
-        final int gridRows = (firstIdx + b.dayCount + CAL_COLS - 1) / CAL_COLS;
-        y = gtop + gridRows * CAL_CELL_H * s;
-        y = sep(cv, p, left, right, y, s);
-
-        // ④ 本期最久（书目已按时长降序 ⇒ [0] 即最久）
-        if (!b.items.isEmpty()) {
-            Bill.Item top = b.items.get(0);
-            p.setTypeface(Typeface.MONOSPACE);
-            p.setColor(GRAY);
-            p.setTextSize(16f * s);
-            cv.drawText(fit(p, "本期最久 · 《" + nz(top.title) + "》  " + dur(top.readTimeSec, unitPref),
-                    right - left), left, y + 16f * s, p);
-            y += 16f * s * 1.55f;
-        }
-
-        // ⑤ 如实提示（与墨台同一句）
-        p.setTypeface(Typeface.MONOSPACE);
-        p.setColor(LIGHT);
-        p.setTextSize(15f * s);
-        cv.drawText("每日条按本期最高日归一", left, y + 15f * s, p);
-        p.setTypeface(null);
     }
 
     /** 落款：`微读墨记 · 周结 2026-W40`（居中）+ 一行小字如实说明。 */
@@ -642,17 +566,18 @@ public final class BillWallpaper {
     // ══════════════════════ 文本工具 ══════════════════════
 
     /**
-     * 🆕 TASK-086（Q5）：合计行**第一段** `合计   本期阅读 16.9 小时`。
+     * 🆕 TASK-086（Q5）→ 🆕 task-39（用户第四批 #5）：合计行**第一段** `合计   阅读 16.9 小时`。
      *
-     * <p>🔴 与 `feature/BillSection#billTotalMain` **同一套拼法**（同一句中文、同一个取整口径）
-     * —— A11「摘录版壁纸与墨单逐字一致」就是靠这条守住的。
+     * <p>🔴 与 `feature/BillSection#billTotalLine` **同一套拼法**（同一句中文、同一个取整口径、
+     * 同一处「本期阅读 → 阅读」的简化）—— A11「摘录版壁纸与墨单逐字一致」就是靠这条守住的。
+     * 第二段（`≈读回 …`）由调用方用 {@code "，" + totalNote(...)} 拼上（同墨单的单行口径）。
      */
     private static String totalMain(Bill b) {
-        return "合计   本期阅读 " + BillMoney.hoursText(b.totalSec) + " 小时";
+        return "合计   阅读 " + BillMoney.hoursText(b.totalSec) + " 小时";
     }
 
     /**
-     * 🆕 TASK-086（Q5）：合计行**第二段** `读回 ¥X，折合 ¥Y/小时`；返回 null = 不画。
+     * 🆕 TASK-086（Q5）：合计行**第二段** `读回 ¥X，折合 ¥Y/小时`；返回 null = 不写。
      *
      * <p>🔴 与 `feature/BillSection#billTotalNote` **同一套拼法**（含"一行都算不出来就不写"这条）。
      */
