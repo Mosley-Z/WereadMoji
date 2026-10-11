@@ -1,13 +1,13 @@
 {
-  "versionCode": 45,
-  "versionName": "1.2.2-beta",
-  "tag": "v1.2.2-beta",
-  "notes": "① 实验室「翻页」页改为「连接方式」三选一（关闭 / 热点 / 蓝牙），蓝牙配置收进「蓝牙」分支。② 新增「本机晃动翻页」：晃手机即可翻手机上的微信读书。③ 新增「一起翻页」：本机晃动开关打开时，手机与墨水屏同向翻页。④ 「本机晃动」左/右/上/下四个方向可分别设为「上一页」或「下一页」。⑤ 「本机晃动」说明整理为可折叠卡片。",
-  "apk": "dist/weread-stats-1.2.2-beta.apk",
-  "size": 457390,
-  "sha256": "c6c6656f57ee469c3180a61c4840aa2f10bf3a8bac354e750acd95cfcbb62a42",
+  "versionCode": 46,
+  "versionName": "1.3.0-beta",
+  "tag": "v1.3.0-beta",
+  "notes": "① 墨台模块精简为「墨单 + 阅读资产」两项（阅读画像 / 今日一签 / 年度视图下线）。② 阅读资产新增「只统计书架上的书」，长按书名可移出统计（设置内可恢复）、长按「免费」可手填价格。③ 新增「启用墨台」总开关（App：设置 → 自定义）。④ 修正 2026-06 / 2026-07 期初金额估算（历史期收入显示更准）。⑤ 海报新增「保存到相册」、书名显示更完整，表头改「序号 / 品类」。",
+  "apk": "dist/weread-stats-1.3.0-beta.apk",
+  "size": 535214,
+  "sha256": "55787115bff577e894038743c1ae8565929d177845f8106e7768047b9318f95e",
   "urls": [
-    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v1.2.2-beta/dist/weread-stats-1.2.2-beta.apk",
-    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v1.2.2-beta/dist/weread-stats-1.2.2-beta.apk"
+    "https://cdn.jsdelivr.net/gh/Mosley-Z/WereadMoji@v1.3.0-beta/dist/weread-stats-1.3.0-beta.apk",
+    "https://raw.githubusercontent.com/Mosley-Z/WereadMoji/v1.3.0-beta/dist/weread-stats-1.3.0-beta.apk"
   ]
 }
