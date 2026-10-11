@@ -65,6 +65,15 @@ public final class BillScheduler {
     private static final long YEAR_BACKFILL_GAP_MS = 400L;
 
     /**
+     * 🆕 task-48（用户第五批 #2④）：**当期刷新**的最小间隔（毫秒）—— 见 {@link #refreshCurrent}。
+     *
+     * <p>取 60 s：`ensureBills` 的调用点不止一个（服务创建 / `MainActivity.onStart` / a11y 回调），
+     * 短时间连开会被连点；60 s 既能保证"每次真正打开 App 拿到的是当期最新进度"，又把
+     * 稳态请求量压到"每分钟至多一趟 `getprogress`"。
+     */
+    private static final long CUR_REFRESH_GAP_MS = 60_000L;
+
+    /**
      * 🔴 并发闸：服务创建与 {@code MainActivity.onStart} 是两个独立的调用点，
      * 可能在极短时间内各调一次。不闸的话两遍扫描会并发跑同一期（重复请求；落盘虽然幂等，
      * 但白烧流量）。用 CAS 保证**同一时刻只有一趟**在跑。
@@ -114,6 +123,12 @@ public final class BillScheduler {
         fill(c, apiKey, PeriodRange.MONTHLY, now);
         // 🆕 TASK-086 第三批（A19）：一次性把最近 12 个月补齐（**自动、无提示、不阻塞渲染**）
         maybeBackfillYear(c, apiKey, now);
+        // 🆕 task-48（用户第五批 #2④）：**当期有界刷新** —— `fill` 只补已完结期、年回填有一次性水位线
+        //    ⇒ 当期账一旦落盘就再也不更新（本机 2026-10 月账停在装包时刻）。这里对两个 mode 的当期
+        //    各做一次**节流常规趟**（只刷已存在的当期；60 s 内不重复）。放在 `rebuild` **之前** ⇒
+        //    估算曲线拿到的当期进度是刚刷过的。
+        refreshCurrent(c, apiKey, PeriodRange.WEEKLY, now);
+        refreshCurrent(c, apiKey, PeriodRange.MONTHLY, now);
         // 🆕 TASK-086 第三批（A15 自洽）：把两个 mode 的估算点**整条曲线**重算一遍 ——
         //    `fill` 是"一期一期就地估算"，各期锚点/分母随数据增长而变 ⇒ 数列不 telescope
         //    （2026-10-11 S4 实测 Σ增额 ¥98 ≠ 末期累计 ¥33.32）。这里用同一锚点基准写定全窗口，
@@ -243,6 +258,49 @@ public final class BillScheduler {
     /** 周期结束时刻（秒，不含）—— 起点 + 周期天数 × 86400。 */
     private static long periodEnd(String mode, long periodStart) {
         return periodStart + (long) PeriodRange.daysInPeriod(mode, periodStart) * 86400L;
+    }
+
+    /**
+     * 🆕 task-48（用户第五批 #2④）：**当期（未完期）有界刷新** —— 让"当期"不再冻结在生成那一刻。
+     *
+     * <p><b>问题</b>：{@link #fill} 只补**已完结**的过去期（`i >= 1`），{@link #maybeBackfillYear} 有
+     * 一次性水位线（{@link BillStore#yearBackfilled}）⇒ **当期账单一旦落盘就永不更新**。
+     * 本机实测（2026-10-11）：2026-10 月账的 `generatedAt` 仍停在装包时刻，当期进度/金额与实际阅读脱节
+     * （用户第五批 #2：当期虽有行但金额不对、且全部带 `≈`）。
+     *
+     * <p><b>做法</b>：对某个 mode 的**当期**，若落盘账龄 ≥ {@link #CUR_REFRESH_GAP_MS} 就用**常规趟**
+     * 重生成（{@link #generateOne}：抓进度、不抓热门）⇒ 当期 `progressEndPct` 变"**至今**累计"真值、
+     * 金额随之更新；`progressEndEst` 的处置由 {@link BillEstimator} 的**当期豁免**（task-48 #2③）决定。
+     *
+     * <p><b>有界性（红线，逐条都不许破）</b>
+     * <ol>
+     *   <li>**只刷"已存在的"当期** —— 当期账不存在时**不生成**（不越权改"什么时候该有账"的口径；
+     *       本机当期**周**账从来不生成这一既有事实见 `验证记录/223` 的登记项，不在本轮改）；</li>
+     *   <li>**节流**：账龄 &lt; {@link #CUR_REFRESH_GAP_MS} ⇒ 早退（`generatedAt` 是账单自带、已持久化的
+     *       时间戳 ⇒ 冷启动也认，`BillStore` 不必新增 pref）；</li>
+     *   <li>**实付关不刷**、**没登录不刷**（与 {@link #maybeBackfillYear} 同一条红线）；</li>
+     *   <li>成本 = 一次常规趟：本地 `stats_*` 缓存命中 ⇒ **0 次 `/readdata/detail`**，
+     *       外加 Top-N 次 `/book/getprogress`（N ≤ 榜单上限；实付关时连它也跳过）；</li>
+     *   <li>全程在 `bill-ensure` 后台线程内 ⇒ **渲染侧依旧零请求**。</li>
+     * </ol>
+     */
+    private static void refreshCurrent(Context c, String apiKey, String mode, long nowSec) {
+        try {
+            if (apiKey == null || apiKey.length() == 0) return;
+            if (MenuPrefs.PAID_OFF.equals(MenuPrefs.paidAlgo(c))) return;
+            final long curStart = PeriodRange.startOf(mode, nowSec);
+            if (curStart <= 0) return;
+            Bill old = BillStore.load(c, mode, curStart);
+            if (old == null) return;                                   // ① 只刷已存在的当期
+            long age = System.currentTimeMillis() - old.generatedAt;
+            if (old.generatedAt > 0 && age >= 0 && age < CUR_REFRESH_GAP_MS) return;   // ② 节流
+            CardDebug.noteV(c, "bill: 当期刷新 " + mode + " " + curStart
+                    + "（上次生成 " + (old.generatedAt > 0 ? (age / 1000) + "s 前" : "时刻未知") + "）");
+            generateOne(c, apiKey, mode, curStart);                    // 常规趟 ⇒ 当期进度变"至今"真值
+        } catch (Throwable t) {
+            // 刷新是"锦上添花"：异常绝不能影响主流程（与 healJustFinished 同一条红线）
+            CardDebug.noteV(c, "bill: 当期刷新异常 " + mode + " " + t);
+        }
     }
 
     /**

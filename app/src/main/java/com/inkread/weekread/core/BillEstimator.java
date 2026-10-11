@@ -196,7 +196,8 @@ public final class BillEstimator {
         List<Long> dirty = new ArrayList<Long>();
 
         // ⓪ 🆕 task-41：「期末值可信度」标注 pass —— **必须先于**锚点 ① 跑（顺序说明见该方法）。
-        final int marked = markEndTrust(c, win, byPeriod, dirty);
+        //    🆕 task-48（#2③）：当期豁免（不标、并清旧标记）也在这个 pass 里。
+        final int marked = markEndTrust(c, mode, win, byPeriod, dirty);
         if (marked > 0) {
             CardDebug.noteV(c, "bill: 期末值存疑改标估算 " + mode + " 行数=" + marked);
         }
@@ -322,22 +323,48 @@ public final class BillEstimator {
      * 标注后：{@link BillMoney#paidFen} 的增额/累计都会走**估算支**、金额带 `≈`
      * （{@link BillMoney#paidEstimated}），且本期不再被锚点 ① 选中（锚点自然退到更早的真快照期）。
      *
-     * <p>🔴 只标 `progressEndEst`，**不改任何进度数值**（不编数）；`progressEndPct < 0`（无值）与已是估算的
+     * <p>🆕 task-48（用户第五批 #2③）：**当期（未完期）豁免** —— 上述判据的唯一例外。
+     * 「当期」= {@link PeriodRange#isCurrent}{@code (mode, p)}。理由：当期的
+     * {@code progressEndPct} 本身就被 {@code BillScheduler.generateOne} 写成"**至今**累计"
+     * （`验证记录/210` 口径），它**没有冒充期末**，只是"期末还没到" ⇒ 标 `≈` 会让当期金额
+     * 一律带估算符号（用户实测：当期 5 行全部 `≈`、其中 4 行被读成 ¥0.00 噪声）。
+     * <ul>
+     *   <li>当期**不标** `progressEndEst`；若旧构建已标上，本次**清掉**（`progressEndEst = false`）
+     *       ⇒ 装新包后首启即去 `≈`，不必等一次网络刷新；</li>
+     *   <li>于是当期重新成为锚点 ①（"最新真快照"）⇒ 历史期估算按"当期至今真值"归一重算，
+     *       这正是 `验证记录/208` §20.4「锚点 = 最近一次真快照」的本意；</li>
+     *   <li>🔴 **精确值仍一律不动**（本方法只碰 `progressEndEst` 这一个布尔，从不改任何进度数值）。</li>
+     * </ul>
+     * ⚠️ 这是本方法**唯一**的时间依赖（其余判据仍与"现在"无关）—— 因此当期账单的估算结果
+     * 会随日历推进而变（月末再看，当期行从 ¥ 值变成真期末），这是**预期的**。
+     *
+     * <p>🔴 只标/清 `progressEndEst`，**不改任何进度数值**（不编数）；`progressEndPct < 0`（无值）与已是估算的
      * 行不动。
      *
-     * @return 被标注的**行数**（留痕用）
+     * @return 被**标注**的行数（留痕用；当期清除的旧标记单独打日志）
      */
-    private static int markEndTrust(Context c, List<Long> win, Map<Long, Bill> byPeriod,
+    private static int markEndTrust(Context c, String mode, List<Long> win, Map<Long, Bill> byPeriod,
                                     List<Long> dirty) {
         int n = 0;
+        int cleared = 0;
         for (int w = 0; w < win.size(); w++) {
             final long p = win.get(w).longValue();
             Bill x = byPeriod.get(Long.valueOf(p));
             if (x == null || x.items == null) continue;
             boolean rowDirty = false;
+            // 🆕 task-48（#2③）：当期豁免（唯一的时间依赖）
+            final boolean cur = PeriodRange.isCurrent(mode, p);
             for (int i = 0; i < x.items.size(); i++) {
                 Bill.Item it = x.items.get(i);
                 if (it == null) continue;
+                if (cur) {
+                    if (it.progressEndEst) {            // 旧构建标错了 ⇒ 清掉（不改数值）
+                        it.progressEndEst = false;
+                        rowDirty = true;
+                        cleared++;
+                    }
+                    continue;
+                }
                 if (it.progressEndPct < 0 || it.progressEndEst) continue;   // 无值 / 已标 ⇒ 不动
                 if (it.progressEndKnown) continue;                          // ① 刚结束期抓到的真期末
                 String bid = it.bookId == null ? "" : it.bookId;
@@ -348,6 +375,9 @@ public final class BillEstimator {
             }
             Long pk = Long.valueOf(p);
             if (rowDirty && !dirty.contains(pk)) dirty.add(pk);
+        }
+        if (cleared > 0) {
+            CardDebug.noteV(c, "bill: 当期期末不再标估算 " + mode + " 清除行数=" + cleared);
         }
         return n;
     }

@@ -51,11 +51,19 @@ import com.inkread.weekread.R;
  * </ul>
  *
  * <p>🆕 <b>TASK-042（V1.3.0-Beta 第四批 #4）本页折叠结构</b>（自上而下）：
- * ① 页标题 → ② 门控提示条 →（②b 无加速度计提示）→ ③ <b>本机卡「本机晃动翻页」</b>
- * （<b>置顶 · 默认折叠 · 抬头取既有「分区抬头」档 = 衬线 16sp</b>）→ ④ <b>遥控卡「晃动遥控翻页」</b>
+ * ① 页标题 → ② <b>本机卡「本机晃动翻页」</b>
+ * （<b>置顶 · 默认折叠 · 抬头取既有「分区抬头」档 = 衬线 16sp</b>）→ ③ 门控提示条
+ * →（③b 无加速度计提示）→ ④ <b>遥控卡「晃动遥控翻页」</b>
  * （<b>可折叠 · 默认展开</b>；L1 置灰对象 = <b>整卡含抬头</b> {@link #llPeerBlock}）→ ⑤ 说明卡
  * 「晃动翻页说明」（保持最后）。🔴 折叠只切<b>可见性</b>，折叠态<b>不跨 {@link #rebuild()}</b>
  * （深色轮）保持 —— 与既有 {@code shell/LabPageController.bindFold} 同口径（重建即回默认）。
+ *
+ * <p>🆕 <b>TASK-049（V1.3.0-Beta 第五批 #6）门控提示条下移</b>：用户要求「未连接时顶端的提示框」
+ * 改到「本机晃动翻页」折叠卡<b>下方</b>、「晃动遥控翻页」<b>上方</b> ⇒ 装配序
+ * ① → ② 本机卡 → ③ 门控条 →（③b 无加速度计提示）→ ④ 遥控卡 → ⑤ 说明卡：
+ * ③ 紧贴它门控的 ④ 遥控卡；③b 紧贴它解释的 ② 本机卡（默认 {@code GONE}，只有真机缺加速度计时
+ * 才占位）。🔴 只挪 {@code addView} 装配位置：门控语义、默认折叠态、置灰对象（{@link #llPeerBlock}
+ * 整卡 alpha）全部不变。
  *
  * <p>🆕 <b>无加速度计</b>（{@link State#sensorOk}=false）：页面级<b>如实提示</b>、
  * <b>不置灰、不硬拦</b>（{@code docs/09}「UI 层不硬拦能力缺失」/ {@code docs/11 §3.5}）。
@@ -283,8 +291,9 @@ public class ShakePageView extends LinearLayout {
         title.setGravity(Gravity.CENTER_VERTICAL);
         addView(title, lp((int) InkTheme.dp(c, 48f), 0));
 
-        // ② 通道门控提示条：正常 bambooWeak 底 + bamboo 字；异常 clayWeak 底 + clay 字；
+        // ③ 通道门控提示条：正常 bambooWeak 底 + bamboo 字；异常 clayWeak 底 + clay 字；
         //    点整条 ⇒ 跳「连接」页（docs/11 §5.2/§5.3、§六 #2）。
+        //    🆕 TASK-049：创建留在原处，**装配位置**已下移到 ② 本机卡之后（见下方「③ 装配」段）。
         tvGate = new TextView(c);
         tvGate.setTextSize(13f);
         tvGate.setGravity(Gravity.CENTER_VERTICAL);
@@ -300,19 +309,18 @@ public class ShakePageView extends LinearLayout {
             }
         });
         LayoutParams glp = lp((int) InkTheme.dp(c, 48f), (int) InkTheme.dp(c, 10f));
-        addView(tvGate, glp);
 
-        // ②b 页面级「无加速度计」如实提示（复用既有 lab_shake_local_unsupported；
-        //     🔴 不在 ③ 的「本机晃动翻页」折叠卡里重复一次 —— 全页只出现一处）。
+        // ③b 页面级「无加速度计」如实提示（复用既有 lab_shake_local_unsupported；
+        //     🔴 不在 ② 的「本机晃动翻页」折叠卡里重复一次 —— 全页只出现一处）。
+        //     🆕 TASK-049：装配位置紧贴 ② 本机卡下方（见下方「③ 装配」段）。
         tvSensorWarn = new TextView(c);
         tvSensorWarn.setText(R.string.lab_shake_local_unsupported);
         tvSensorWarn.setTextSize(12f);
         tvSensorWarn.setTextColor(InkTheme.clay(c));
         tvSensorWarn.setLineSpacing(0f, 1.4f);
         tvSensorWarn.setVisibility(View.GONE);
-        addView(tvSensorWarn, lp(LayoutParams.WRAP_CONTENT, (int) InkTheme.dp(c, 4f)));
 
-        // ③ 本机卡（🆕 TASK-042：**置顶**、**默认折叠**、抬头用既有「分区抬头」档 = 衬线 16sp）
+        // ② 本机卡（🆕 TASK-042：**置顶**、**默认折叠**、抬头用既有「分区抬头」档 = 衬线 16sp）
         //    🔴 本机晃动**不依赖角色与通道**（CardPrefs 注释口径）⇒ 不受 L1 门控置灰影响。
         //    正文（本机开关 + 翻页方式 + 本机 4×3 + 自证行）在本方法后段挂进 llLocalBody。
         foldLocal = new FoldHintView(foldTitleContext(c));
@@ -330,6 +338,14 @@ public class ShakePageView extends LinearLayout {
                 llLocalBody.setVisibility(expanded ? View.VISIBLE : View.GONE);
             }
         });
+
+        // ③ 装配（🆕 TASK-049 / 用户第五批 #6）：门控提示条 + 无加速度计提示 插到
+        //    ② 本机卡 与 ④ 遥控卡 **之间** —— 本轮**只挪这两行 addView**，其它分支一行未改。
+        //    · ③ 门控条紧贴 ④ 遥控卡之上：它门控的就是遥控卡（顺序断言见 验证记录/225）；
+        //    · ③b 无加速度计提示紧贴 ② 本机卡之下：它只解释「本机晃动」不可用，与遥控卡无关；
+        //      默认 GONE ⇒ 只有真机缺加速度计时才占位（该提示位置的取舍理由见 225）。
+        addView(tvSensorWarn, lp(LayoutParams.WRAP_CONTENT, (int) InkTheme.dp(c, 4f)));
+        addView(tvGate, glp);
 
         // ④ 遥控卡（🆕 TASK-042）：可折叠、抬头「晃动遥控翻页」、**默认展开**；
         //    整卡（抬头 + 内容）受 L1 门控整体置灰（置灰对象 = llPeerBlock，见 setState ②）。
@@ -452,8 +468,8 @@ public class ShakePageView extends LinearLayout {
             }
         });
 
-        // ③（续）本机卡正文：本机开关 + 翻页方式 + 本机 4×3 + 自证行 —— 挂进 ③ 建好的 llLocalBody
-        //    （🆕 TASK-042：卡头/正文容器已上移到 ③，此处只负责正文，内容一行未改）
+        // ②（续）本机卡正文：本机开关 + 翻页方式 + 本机 4×3 + 自证行 —— 挂进 ② 建好的 llLocalBody
+        //    （🆕 TASK-042：卡头/正文容器已上移到 ②，此处只负责正文，内容一行未改）
 
         TextView intro = text(R.string.lab_shake_local_intro, 12f, InkTheme.ink2(c));
         intro.setLineSpacing(0f, 1.5f);

@@ -1341,10 +1341,21 @@ final class BillSection implements InsightRenderer.Section {
      * <p>🔴 第二段的三种"不写"情形、`≈` 前缀规则、只累加算得出的行 —— **全部复用
      * {@link #billTotalNote(String)}**（单一出口，本方法不重写任何金额口径）。
      * 单行放不下时由调用方那一行（`Row.compress`）压字距画完整串，不截断。
+     *
+     * <p>🆕 task-48（用户第五批 #3）：第一段**按实付算法分档**——
+     * <ul>
+     *   <li>**增额档**（`PAID_PERIOD`）：`合计   阅读 16.9 小时` —— 时段阅读时长，逐字不动；</li>
+     *   <li>**累计档**（`PAID_CUMULATIVE`）：`合计   本期阅读 16.9 小时` —— 加「本期」二字，
+     *       因为下一段的金额是**开读至今累计**，不加会与"本期读回"混读
+     *       （用户第五批原话：累计档要写明是哪一段的时长）。</li>
+     * </ul>
+     * 两种档的 H 同源 = `bill.totalSec ÷ 3600`（不变）。`BillWallpaper` 同口径（A11）。
      */
     private String billTotalLine(String algo) {
         String note = billTotalNote(algo);
-        return "合计   阅读 " + BillMoney.hoursText(bill.totalSec) + " 小时"
+        // 🆕 task-48（#3）：累计档写「本期阅读」（下一段是"开读至今"的金额，须标清时长归属）
+        String lead = MenuPrefs.PAID_CUMULATIVE.equals(algo) ? "合计   本期阅读 " : "合计   阅读 ";
+        return lead + BillMoney.hoursText(bill.totalSec) + " 小时"
                 + (note != null ? "，" + note : "");
     }
 
@@ -1369,14 +1380,30 @@ final class BillSection implements InsightRenderer.Section {
      * 🔴 X 只累加**算得出来**的行（无价 / 无进度 / 首期无基线的不进合计 —— A7）。
      * <p>🆕 TASK-086 第三批（A18）：合计里**只要有一行是估算值**（历史期锚点法），整段前缀 `≈`
      * —— 行上标 `≈` 而合计不标会读成"合计是精确值"，自相矛盾；`BillWallpaper` 同规则同步（A11）。
+     *
+     * <p>🆕 task-48（用户第五批 #3）：**累计档**（{@code PAID_CUMULATIVE}）第二段改为
+     * 「{@code (≈)累计读回 ¥X}」并**去掉「折合 ¥Y/小时」**——
+     * <ol>
+     *   <li>累计档的 X = {@link BillMoney#totalPaidFen} = 各书**开读至今**的合计（不是本期增量），
+     *       所以口径名要带「累计」二字；</li>
+     *   <li>「折合 ¥Y/小时」= X ÷ **本期**时长 ⇒ 分子累计、分母本期，是**跨口径混算**
+     *       （用户第五批 #3 原话：累计档不要折合）⇒ 累计档整段不写折合。</li>
+     * </ol>
+     * 🔴 `≈` 位置：沿用本方法"整段前缀"的既有先例 ⇒ `≈累计读回 ¥X`（备选写 `累计读回 ≈¥X`
+     * 与行级 `≈¥X` 一致；本轮取前者，已登记 `验证记录/224`）。
+     * 增额档（`PAID_PERIOD`）逐字不动。
      */
     private String billTotalNote(String algo) {
         if (MenuPrefs.PAID_OFF.equals(algo)) return null;
         if (BillMoney.paidCount(ctx, bill.items, algo) <= 0) return null;   // ② 全算不出 ⇒ 不写
         long pay = BillMoney.totalPaidFen(ctx, bill.items, algo);
-        String s = (BillMoney.totalEstimated(ctx, bill.items, algo) ? "≈" : "") + "读回 " + BillMoney.yuan(pay);
+        final boolean cum = MenuPrefs.PAID_CUMULATIVE.equals(algo);
+        // 🆕 task-48（#3）：累计档 ⇒ 「累计读回」（口径名标清）；增额档 ⇒ 「读回」（逐字不动）
+        String s = (BillMoney.totalEstimated(ctx, bill.items, algo) ? "≈" : "")
+                + (cum ? "累计读回 " : "读回 ") + BillMoney.yuan(pay);
         float h = bill.totalSec / 3600f;
-        if (h > 0f) s += "，折合 " + BillMoney.yuan((int) Math.round(pay / h)) + "/小时";
+        // 🔴 累计档**不写折合**（分子"开读至今"÷ 分母"本期时长" = 跨口径混算，见方法 javadoc）
+        if (!cum && h > 0f) s += "，折合 " + BillMoney.yuan((int) Math.round(pay / h)) + "/小时";
         return s;
     }
 
@@ -1535,17 +1562,27 @@ final class BillSection implements InsightRenderer.Section {
             if (kind == K_DSEP) {
                 // 🆕 task-39（#6c · docs/13:238）：**合计行上方双线** = 1px 线 + 3px 间隔 + 1px 线。
                 //    只改画：不引新字体、不新增第二套尺（间隔仍以 unit 为单位）、不动任何命中区。
+                // 🆕 task-48（用户第五批 #5）：**可见性修复** —— ① 颜色由 `LINE 0xFFD8D8D8`
+                //    （白底 1.43:1，实测渲成 235/236 ≈ 看不见）换成票据横线色 `InkTheme.RULE`；
+                //    ② 两条线**对齐到整数物理行**（`Math.round`）⇒ 1px 落在整行上、不再被抗锯齿
+                //    摊成两行各 50%（实测证据见 `验证记录/224`）。间隔仍是 3px。
                 p.setStyle(Paint.Style.FILL);
-                p.setColor(LINE);
-                c.drawRect(left, y, right, y + 1f, p);
-                c.drawRect(left, y + h - 1f, right, y + h, p);
+                p.setColor(InkTheme.RULE);
+                final float dy0 = Math.round(y);
+                float dy1 = Math.round(y + h) - 1f;
+                if (dy1 < dy0) dy1 = dy0;
+                c.drawRect(left, dy0, right, dy0 + 1f, p);
+                c.drawRect(left, dy1, right, dy1 + 1f, p);
                 return h;
             }
             if (kind == K_SEP) {
                 if (gap > 0f) return h;                  // 只留白，不画线
+                // 🆕 task-48（用户第五批 #5）：同 K_DSEP —— 票据横线换 `InkTheme.RULE` + 整数行对齐
+                //    （原来 `LINE` 1px 画在半像素上 ⇒ 实测色 219，墨屏读不出）。
                 p.setStyle(Paint.Style.FILL);
-                p.setColor(LINE);
-                c.drawRect(left, y + h * 0.5f, right, y + h * 0.5f + 1f, p);
+                p.setColor(InkTheme.RULE);
+                final float sy = Math.round(y + h * 0.5f);
+                c.drawRect(left, sy, right, sy + 1f, p);
                 return h;
             }
             float sz = size * unit;

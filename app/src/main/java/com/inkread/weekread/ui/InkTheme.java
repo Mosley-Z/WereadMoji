@@ -46,6 +46,20 @@ public final class InkTheme {
     public static final int INK3 = 0xFF9A9285;
     /** 界线：分隔线 / 描边。 */
     public static final int LINE = 0xFFDCD4C4;
+
+    /**
+     * 🆕 task-48（用户第五批 #5）：**票据横线**（墨单内部横线 + 合计双线 / 海报票据横线）专用色。
+     *
+     * <p>🔴 为什么不能继续用 `feature/BillSection.LINE = 0xFFD8D8D8`：它在纯白底上只有
+     * **1.43:1**（相对亮度 216/255）⇒ 墨屏上**肉眼几乎不可见**（用户原话："横线/双线看不见"）；
+     * 像素实测：表头下 1px 线渲成 `219`、合计双线各渲成 `235/236`（1.2px 落在半像素上被抗锯齿摊成两行）。
+     *
+     * <p>取值 = 既有 token {@link #INK2}（`#6B6459`，亮度 101）⇒ 白底 **5.74:1**，
+     * 与「抬头 3px 墨竖线」（`INK`）同族、仍是墨色系（不是彩色）。
+     * ⚠️ 与 {@link #LINE} 分工：`LINE` 继续服务**控件**（页签底边、算法胶囊下划线、周月外框），
+     * 那些是"可点暗示"、不需要抢读数；本 token 只给**票据横线**。两表面（墨单 `/` 海报）同值（A11）。
+     */
+    public static final int RULE = INK2;
     /** 竹青：**唯一强调色**（主操作 / 已连接 / 选中）。 */
     public static final int BAMBOO = 0xFF2E6B5E;
     /** 竹青浅底（选中态）。 */

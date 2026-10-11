@@ -334,9 +334,15 @@ public final class BillWallpaper {
 
         // ⑥ 底部保留区（分隔线 + 备注 + 合计 + 落款），先算出来 ⇒ 书目区不会压住它
         String wholeNote = nz(MenuPrefs.footerNote(c));
+        // 🆕 task-48（用户第五批 #4）：合计块由 **1 行**变成 **1–3 行 + 一条装饰条形码** ⇒
+        //   这里的预留高度必须**同步重算**，否则「先备料再判放得下」的机制会被压穿
+        //   （书目区画到合计/落款上）。读书菜单不画合计 ⇒ 仍按原来的 1 行预留（版面不变）。
+        final String[] tparts = excerpt ? totalMoneyParts(c, b, algo) : new String[] { null, null };
+        final int tLines = excerpt ? (1 + (tparts[0] != null ? 1 : 0) + (tparts[1] != null ? 1 : 0)) : 1;
         float tailH = 0f;
         if (wholeNote.length() > 0) tailH += sSmall * lineH;
-        tailH += sBody * lineH;                     // 账单合计
+        tailH += sBody * lineH * tLines;            // 账单合计（摘录 1–3 行 / 读书菜单 1 行）
+        if (excerpt) tailH += barsH(s);             // 🆕 #4：合计下方铺满内容宽的装饰条形码一行
         tailH += sSmall * lineH * 2f;               // 落款 + 水印
         tailH += s * 30f;
         final float limit = H - 22f * s - pad - tailH;
@@ -479,32 +485,29 @@ public final class BillWallpaper {
             p.setFakeBoldText(true);
             p.setColor(INK);
             p.setTextSize(sBody);
-            // 🆕 TASK-086（Q5）→ 🆕 task-39（用户第四批 #5）：与墨台屏幕**逐字同一句**，且同为**单行**。
-            //   旧版拆两行是上机倒逼的（单行 480px 会截掉「折合 ¥Y/小时」）；task-39 起两边都改成
-            //   「单行 + 按需轻微横向压缩」（同一个 `InkTheme.moneyScaleX` + `TOTAL_MIN_SCALE_X` 兜底）
-            //   ⇒ 文案逐字一致，且**都不会截断**（A11/A6）。
-            String totalLine = totalMain(b);
-            String note = totalNote(c, b, algo);
-            if (note != null) totalLine = totalLine + "，" + note;
-            // 与 `BillSection.Row.draw` 的 `compress` 分支**逐行同口径**（同一族手段、同两个下限）。
-            float sc = InkTheme.moneyScaleX(p, totalLine, avail);
-            if (sc >= 1f) {
-                float need = p.measureText(totalLine);
-                if (need > avail) {
-                    float raw = avail / need;
-                    if (raw >= InkTheme.TOTAL_MIN_SCALE_X) sc = raw;
+            // 🆕 task-48（用户第五批 #3/#4）：合计由「单行 + 压缩字距」改为
+            //   **左标签 + 右对齐 1–3 行**，再在下方压一条**铺满内容宽**的装饰条形码（票据观感）。
+            //   🔴 金额仍**只来自 `BillMoney`**（同一套 `paidCount/totalPaidFen/totalEstimated`）
+            //   ⇒ A11「与墨单同源同词」不变：差的只是**版面**（墨单 1 行 / 海报 2–3 行）。
+            //   第 1 行：左「合计」+ 右「(本期)阅读 H 小时」；第 2/3 行：右对齐金额段（可缺）。
+            p.setTextAlign(Paint.Align.LEFT);          // 显式声明（不依赖上一段的状态）
+            cv.drawText("合计", left, ty + sBody, p);
+            p.setTextAlign(Paint.Align.RIGHT);
+            String hoursTxt = totalHours(b, algo);
+            cv.drawText(fit(p, hoursTxt, avail * 0.72f), right, ty + sBody, p);
+            ty += sBody * lineH;
+            if (tparts[0] != null) {
+                cv.drawText(fit(p, tparts[0], avail), right, ty + sBody, p);
+                ty += sBody * lineH;
+                if (tparts[1] != null) {
+                    cv.drawText(fit(p, tparts[1], avail), right, ty + sBody, p);
+                    ty += sBody * lineH;
                 }
             }
-            if (sc < 1f) {
-                p.setTextScaleX(sc);
-                cv.drawText(totalLine, left, ty + sBody, p);
-                p.setTextScaleX(1f);
-            } else {
-                cv.drawText(fit(p, totalLine, avail), left, ty + sBody, p);
-            }
-            ty += sBody * lineH;
+            p.setTextAlign(Paint.Align.LEFT);
             p.setFakeBoldText(false);
             p.setTypeface(null);
+            ty = bars(cv, p, left, right, ty, s);      // 🆕 #4：装饰条形码一行（纯装饰、不编码数据）
         }
 
         footer(cv, p, W, H, s, b);
@@ -530,11 +533,13 @@ public final class BillWallpaper {
         p.setTypeface(null);
     }
 
-    /** 画一条 1px 分隔线并推进 y（返回新的 y）。 */
+    /** 画一条 1px 分隔线并推进 y（返回新的 y）。🆕 task-48（#5）：与墨单同族 ⇒ 用票据横线色
+     *  {@link InkTheme#RULE}（旧 `LINE 0xFFD8D8D8` 白底 1.43:1 几乎不可见）+ 整数行对齐。 */
     private static float sep(Canvas cv, Paint p, float left, float right, float y, float s) {
         p.setStyle(Paint.Style.FILL);
-        p.setColor(LINE);
-        cv.drawRect(left, y + s * 6f, right, y + s * 6f + 1f, p);
+        p.setColor(InkTheme.RULE);
+        final float ly = Math.round(y + s * 6f);
+        cv.drawRect(left, ly, right, ly + 1f, p);
         return y + s * 16f;
     }
 
@@ -566,31 +571,75 @@ public final class BillWallpaper {
     // ══════════════════════ 文本工具 ══════════════════════
 
     /**
-     * 🆕 TASK-086（Q5）→ 🆕 task-39（用户第四批 #5）：合计行**第一段** `合计   阅读 16.9 小时`。
+     * 🆕 TASK-086（Q5）→ 🆕 task-39（用户第四批 #5）→ 🆕 task-48（用户第五批 #3）：
+     * 合计块**第 1 行右半** —— 增额档 `阅读 16.9 小时` / 累计档 `本期阅读 16.9 小时`。
      *
      * <p>🔴 与 `feature/BillSection#billTotalLine` **同一套拼法**（同一句中文、同一个取整口径、
-     * 同一处「本期阅读 → 阅读」的简化）—— A11「摘录版壁纸与墨单逐字一致」就是靠这条守住的。
-     * 第二段（`≈读回 …`）由调用方用 {@code "，" + totalNote(...)} 拼上（同墨单的单行口径）。
+     * 同一处「本期阅读 → 阅读」的简化、累计档加「本期」二字）—— A11 靠这条守住：
+     * **改一处必须改另一处**。金额段由 {@link #totalMoneyParts} 提供（同墨单的同一套口径）。
      */
-    private static String totalMain(Bill b) {
-        return "合计   阅读 " + BillMoney.hoursText(b.totalSec) + " 小时";
+    private static String totalHours(Bill b, String algo) {
+        String lead = MenuPrefs.PAID_CUMULATIVE.equals(algo) ? "本期阅读 " : "阅读 ";
+        return lead + BillMoney.hoursText(b.totalSec) + " 小时";
     }
 
     /**
-     * 🆕 TASK-086（Q5）：合计行**第二段** `读回 ¥X，折合 ¥Y/小时`；返回 null = 不写。
+     * 🆕 task-48（用户第五批 #3/#4）：合计块**第 2/3 行** —— `{读回段, 折合段}`（各可为 null）。
      *
-     * <p>🔴 与 `feature/BillSection#billTotalNote` **同一套拼法**（含"一行都算不出来就不写"这条）。
+     * <p>🔴 与 `feature/BillSection#billTotalNote` **同一套拼法**（同一套"不写"判据、同一个 `≈`
+     * 前缀规则、同一个"只累加算得出的行"），只在**版面上**拆成两行：
+     * <ul>
+     *   <li>增额档：`(≈)读回 ¥X` + `折合 ¥Y/小时`（`H = 0` 时折合为 null）；</li>
+     *   <li>累计档：`(≈)累计读回 ¥X` + **null**（累计额 ÷ 本期时长 = 跨口径混算 ⇒ 不写折合）。</li>
+     * </ul>
+     * 返回 `{null, null}` = 这一段不写（实付关 / 一行都算不出来）。
      */
-    private static String totalNote(Context c, Bill b, String algo) {
-        if (MenuPrefs.PAID_OFF.equals(algo)) return null;
-        if (BillMoney.paidCount(c, b.items, algo) <= 0) return null;    // 全算不出 ⇒ 不写（同墨单口径）
+    private static String[] totalMoneyParts(Context c, Bill b, String algo) {
+        if (MenuPrefs.PAID_OFF.equals(algo)) return new String[] { null, null };
+        if (BillMoney.paidCount(c, b.items, algo) <= 0) return new String[] { null, null };
+        final boolean cum = MenuPrefs.PAID_CUMULATIVE.equals(algo);
         long pay = BillMoney.totalPaidFen(c, b.items, algo);
         // 🆕 TASK-086 第三批（A18）：合计含估算行 ⇒ 整段前缀 `≈`（与 `BillSection#billTotalNote`
         //    **同一套拼法** —— A11 靠这条守住：改一处必须改另一处）。
-        String s = (BillMoney.totalEstimated(c, b.items, algo) ? "≈" : "") + "读回 " + BillMoney.yuan(pay);
+        String first = (BillMoney.totalEstimated(c, b.items, algo) ? "≈" : "")
+                + (cum ? "累计读回 " : "读回 ") + BillMoney.yuan(pay);
+        String second = null;
         float h = b.totalSec / 3600f;
-        if (h > 0f) s += "，折合 " + BillMoney.yuan((int) Math.round(pay / h)) + "/小时";
-        return s;
+        if (!cum && h > 0f) second = "折合 " + BillMoney.yuan((int) Math.round(pay / h)) + "/小时";
+        return new String[] { first, second };
+    }
+
+    /** 🆕 task-48（#4）：装饰条形码一行的推进量（见 {@link #bars}）。 */
+    private static float barsH(float s) {
+        return s * 22f;
+    }
+
+    /**
+     * 🆕 task-48（用户第五批 #4）：**装饰条形码一行** —— 循环铺满 `left→right`。
+     *
+     * <p>🔴 **纯自绘、不编码任何真实数据**（沿用 `feature/BillSection.Row#drawBars` 的同一图样
+     * `pat` 与同一画法；那边是固定 `92×unit` 宽 + 右侧 `墨单 · 期号` 说明，这边是**铺满内容宽**
+     * 的纯装饰条）。画法与 `s` 同尺 ⇒ 换分辨率不失衡。
+     *
+     * @return 推进后的 y
+     */
+    private static float bars(Canvas cv, Paint p, float left, float right, float y, float s) {
+        final float cy = y + s * 11f;
+        final float top = cy - s * 5.5f, bot = cy + s * 5.5f;
+        final int[] pat = { 3, 1, 1, 2, 1, 3, 1, 2, 2, 1, 3, 1, 1, 2, 3, 1, 2, 1, 1, 3, 2, 1, 1, 2, 1 };
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(INK);
+        float x = left;
+        int i = 0;
+        while (x < right - 0.5f && i < 400) {
+            final int v = pat[i % pat.length];
+            float bw = s * (v * 0.9f + 0.4f);
+            if (x + bw > right) bw = right - x;
+            if (bw > 0.5f) cv.drawRect(x, top, x + bw, bot, p);
+            x += bw + s * (1.1f + (v % 2));
+            i++;
+        }
+        return y + barsH(s);
     }
 
     /** 时长文案：小时档 `3h39m` / 分钟档 `219m`（与墨单**同一个口径**）。 */
