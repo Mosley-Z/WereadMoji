@@ -86,6 +86,22 @@ final class AssetSection implements InsightRenderer.Section {
     /** D9：累计阅读时长 **≤ 10 分钟（600s）** 的书不进资产表。 */
     private static final int MIN_SEC = 600;
 
+    /**
+     * 墨台顶栏高**兜底**（×unit）= `DeskRenderer.SZ_TITLE(18) × BAR_H_UNITS(3.0)`。
+     * 🔴 正常路径由 `DeskPageView` 每帧喂入真值（见 {@link #setDeskHeadH}）；改 `DeskRenderer` 的那两个
+     * 私有常量时必须同步本值（否则只有"未喂入"的极端帧会少算一屏高度）。
+     */
+    private static final float BLANK_HEAD_UNITS = 54f;
+
+    /** 🆕 TASK-087-A1：抬头右端「生成壁纸」按钮尺寸（×unit）—— 与 `BillSection` 的同名按钮同款。 */
+    private static final float WALL_W_UNITS = 62f;
+    private static final float WALL_H_UNITS = 1.85f;
+    /** 三键与「生成壁纸」的间距（×unit；🔴 Lead 冻结下限 = 4）。 */
+    private static final float WALL_GAP_UNITS = 4f;
+
+    /** 🆕 TASK-087-A1：抬头「生成壁纸」的全部条目高（×unit）—— 与 `BillSection.WP_H_UNITS` 同款。 */
+    private static final float WALL_MAX_SHRINK = 0.7f;
+
     private static final String EMPTY = "暂无数据";
     private static final String EXPAND = "展开 ▽";
     private static final String COLLAPSE = "收起 △";
@@ -103,19 +119,16 @@ final class AssetSection implements InsightRenderer.Section {
     /** 已合成的资产行（本地缓存 + 本地价格 ⇒ 零网络）。 */
     private final List<Book> items = new ArrayList<Book>();
 
-    // ── 🆕 补丁（m01985）：本地价格链索引（每次换料建一次，**零新增请求**）──
-    /** `bookId → 市场价(分)`：`bills.xml` 落盘的 `Bill.Item.marketPriceFen > 0`。 */
-    private final Map<String, Integer> billFen = new HashMap<String, Integer>();
-    /** 账单里**明确免费**的 `bookId`（`marketPriceFen == 0`）。 */
-    private final Set<String> billFree = new HashSet<String>();
-    /** `bookId → 原价(分)`：`cfg.xml` 落盘的 `PeriodStats.Longest` 经 {@link BillMoney#fenOf} 判为**有价**者。 */
-    private final Map<String, Integer> statFen = new HashMap<String, Integer>();
-    /** 统计里**明确免费**的 `bookId`（`fenOf` 判为 `FREE`）。 */
-    private final Set<String> statFree = new HashSet<String>();
+    /**
+     * 🆕 TASK-087-A2：最近一次换料的**共享快照**（条目 + 合计口径）。
+     * 🔴 资产页与**资产壁纸**（{@link AssetPoster}）用的是**同一份** {@link #snapshot} 结果 ——
+     * 价格链 / 收入算法 / 排序 / 合计只有一份实现，杜绝双源分叉。
+     */
+    private Snapshot snap;
 
     // ── 行缓存（w / unit / sort / open / **view** / 数据版本 六元组）──
+    //    🔴 TASK-087-A1：缓存键**不含** `inner`（内滚只改"可见窗口"，不改"内容行"）。
     private List<BillSection.Row> rows;
-    private int toggleIdx = -1;
     private float laidW = -1f;
     private float laidUnit = -1f;
     private int laidSort = -1;
@@ -134,13 +147,39 @@ final class AssetSection implements InsightRenderer.Section {
     private final RectF[] chipRects = { new RectF(), new RectF(), new RectF() };
     private final RectF toggleRect = new RectF();
 
+    // ── 🆕 TASK-087-A1（2026-10-12，用户 ③）：固定抬头 + 固定尾部 + **中间条目内滚** ──
+
+    /** 抬头右端「生成壁纸」文字按钮矩形（内容坐标；画与命中共用，见 {@link #sortRects}）。 */
+    private final RectF wallRect = new RectF();
+    /**
+     * 尾部**固定行**（「… 还有 N 本」→「展开 ▽ / 收起 △」→ 分隔线 → 合计行 → 三计数提示）。
+     * 🔴 与 {@link #rows} 分两层：尾部**不随** {@link #inner} 移动；合计口径仍是**全部 items**（D15）。
+     */
+    private List<BillSection.Row> footRows;
+    /** 尾部里「展开 / 收起」那行的下标（`-1` = 本页不可折叠 ⇒ 无该行）。 */
+    private int toggleFootIdx = -1;
+    /** 内滚位移（像素，0 = 内容顶部）。🔴 只有**条目视口**随它动，抬头/尾部不动。 */
+    private float inner = 0f;
+    /**
+     * 墨台顶栏高（px）—— 由 `DeskPageView` 每帧喂入（= `DeskRenderer.headerHeight(unit)`）。
+     *
+     * <p>🔴 为什么需要：视口高 = `vh − 顶栏 − 抬头 − 尾部`（Lead 冻结公式），而本类拿不到
+     * `DeskRenderer` 的**私有**常量 `SZ_TITLE(18) × BAR_H_UNITS(3.0)`；`≤ 0` 时按 `54 × unit` 兜底。
+     */
+    private float deskHeadH = 0f;
+
     /** 🆕 W2：手填原价键盘（与墨单**共用同一实现**；本类只做宿主侧的开/关、落盘与重算）。 */
     private final PricePad pad = new PricePad();
 
     // ══════════════════════ 数据 ══════════════════════
 
-    /** 一行资产（`AssetStore` 缓存 + 本地价格的合成视图；**不落任何新盘**）。 */
-    private static final class Book {
+    /**
+     * 一行资产（`AssetStore` 缓存 + 本地价格的合成视图；**不落任何新盘**）。
+     *
+     * <p>🆕 TASK-087-A2：改为**包内可见**（连同 {@link Snapshot}）—— 资产壁纸 {@link AssetPoster}
+     * 读同一份条目对象，不再另建一套数据模型。
+     */
+    static final class Book {
         String id, title, author;
         /** 摘录皮肤第三行（无摘录 ⇒ null ⇒ **不占行**，D14）。 */
         String note;
@@ -170,26 +209,126 @@ final class AssetSection implements InsightRenderer.Section {
     @Override
     public float height(float w, float vh, float unit) {
         laid(w, unit);
-        float h = InsightRenderer.secHeadH(unit);
-        if (rows == null || rows.isEmpty()) return h + SZ_BODY * unit * 3.8f;   // 空态（居中一句话）
-        for (int i = 0; i < rows.size(); i++) h += rows.get(i).h(unit);
-        return h + unit * 6f;
+        final float head = InsightRenderer.secHeadH(unit);
+        if (items.isEmpty() || rows == null || rows.isEmpty()) {
+            return head + SZ_BODY * unit * 3.8f;      // 空态（居中一句话；无尾部）
+        }
+        // 🔴 Lead 冻结公式：一屏 = 抬头 + 视口 + 尾部；`vpH = (vh − 墨台顶栏) − 抬头 − 尾部`。
+        //    内容装得下 ⇒ 分区**自高收缩**为「抬头 + 内容 + 尾部」（不留大片空白，canScroll=false）。
+        final float vp = vpOf(vh, unit);
+        final float ch = contentH(unit);
+        return head + ((ch < vp) ? ch : vp) + footH(unit);
     }
 
     @Override
     public void draw(Canvas c, float w, float vh, float top, float unit, Paint p) {
         float y = InsightRenderer.drawSectionHead(c, w, top, unit, p, title());
         laid(w, unit);
-        if (rows == null || rows.isEmpty()) {
+        if (items.isEmpty() || rows == null || rows.isEmpty()) {
             InsightRenderer.drawCenteredIn(c, w, y, SZ_BODY * unit * 3.8f, unit, p, EMPTY);
             return;
         }
-        drawSortChips(c, w, unit, top);            // D12：标题行右端三键
+        drawSortChips(c, w, unit, top);            // D12：标题行右端三键 + 🆕「生成壁纸」（**固定**）
+        clampInner(vh, unit);
         final float left = w * InsightRenderer.PAD_X_RATIO;
         final float right = w - left;
+        final float vp = vpOf(vh, unit);
+        // ── 中间条目视口：裁剪 + 逐行 `− inner` + 视口剔除（照 `InsightRenderer.drawRankSection` 纪律）──
+        c.save();
+        c.clipRect(left, y, right, y + vp);
+        float yy = y - inner;
         for (int i = 0; i < rows.size(); i++) {
-            y += rows.get(i).draw(c, left, right, y, unit, p);
+            BillSection.Row r = rows.get(i);
+            final float rh = r.h(unit);
+            if (yy + rh > y && yy < y + vp) r.draw(c, left, right, yy, unit, p);
+            yy += rh;
         }
+        c.restore();
+        // ── 尾部：**固定**（不随 inner 动），自视口下沿起画 ──
+        float fy = y + vp;
+        for (int i = 0; i < footRows.size(); i++) {
+            fy += footRows.get(i).draw(c, left, right, fy, unit, p);
+        }
+    }
+
+    // ══════════════════════ 🆕 TASK-087-A1：内滚 API（宿主 `DeskPageView` 用）══════════════════════
+
+    /** 墨台顶栏高喂入（`≤ 0` 忽略 —— 保持上一次有效值 / 兜底 `54 × unit`）。 */
+    void setDeskHeadH(float h) { if (h > 0f) deskHeadH = h; }
+
+    /** 顶栏高（`DeskRenderer.headerHeight` 的本地镜像；未喂入时按 `18 × 3.0 × unit` 兜底）。 */
+    private float headH(float unit) { return (deskHeadH > 0f) ? deskHeadH : BLANK_HEAD_UNITS * unit; }
+
+    /** 条目**内容**总高（全部内容行，与 {@link #inner} 无关）。 */
+    private float contentH(float unit) {
+        if (rows == null) return 0f;
+        float h = 0f;
+        for (int i = 0; i < rows.size(); i++) h += rows.get(i).h(unit);
+        return h;
+    }
+
+    /** 尾部固定块总高（与 {@link #inner} 无关）。 */
+    private float footH(float unit) {
+        if (footRows == null) return 0f;
+        float h = 0f;
+        for (int i = 0; i < footRows.size(); i++) h += footRows.get(i).h(unit);
+        return h;
+    }
+
+    /** 条目视口高（像素）——一屏减去顶栏/抬头/尾部。可为负（极小屏）⇒ 调用方按 `≥0` 用。 */
+    float vpOf(float vh, float unit) {
+        final float v = vh - headH(unit) - InsightRenderer.secHeadH(unit) - footH(unit);
+        return (v > 0f) ? v : 0f;
+    }
+
+    /** 视口里能内滚的最大位移（`0` ⇒ 装得下、不需要内滚）。 */
+    float maxInner(float vh, float unit) {
+        final float m = contentH(unit) - vpOf(vh, unit);
+        return (m > 0f) ? m : 0f;
+    }
+
+    /** 是否需要内滚（用户 ③：内容多于一屏时中间可滑）。 */
+    boolean canScroll(float vh, float unit) { return maxInner(vh, unit) > 0.5f; }
+
+    /** 当前内滚位移（自动化断言用）。 */
+    float inner() { return inner; }
+
+    /** 内滚复位（换料/换皮/换排序/展开收起后由 {@link #laid} 调用）。 */
+    void resetInner() { inner = 0f; }
+
+    /**
+     * 内滚一步。{@code delta > 0} = 内容上移（看更靠后的行）。
+     *
+     * @return 是否**真的**移动了；`false` = 本方向已到边界（`inner == 0` 或 `== maxInner`）
+     *         ⇒ 宿主必须把这次 MOVE **回落给整页滚动**（否则用户滚到页面底部后翻不回去）。
+     */
+    boolean scrollBy(float delta, float vh, float unit) {
+        final float m = maxInner(vh, unit);
+        float n = inner + delta;
+        if (n < 0f) n = 0f;
+        if (n > m) n = m;
+        if (n == inner) return false;
+        inner = n;
+        return true;
+    }
+
+    /** 把 {@link #inner} 钳回 `[0, maxInner]`（视口高随屏/字号变化时用）。 */
+    private void clampInner(float vh, float unit) {
+        final float m = maxInner(vh, unit);
+        if (inner > m) inner = m;
+        if (inner < 0f) inner = 0f;
+    }
+
+    /**
+     * 触点 y 是否落在**条目视口**矩形内（屏幕坐标）。
+     *
+     * <p>🔴 宿主在 ACTION_DOWN 只用它判定一次：视口内 ⇒ 锁定 `dragAsset`（内滚），
+     * 抬头/尾部 ⇒ 不锁（那些是固定控件或整页滚动的落点）。
+     */
+    boolean inViewport(float y, float top, float vh, float unit) {
+        if (top == -1f) return false;
+        final float t = top + InsightRenderer.secHeadH(unit);
+        return y >= t && y <= t + vpOf(vh, unit);
     }
 
     // ══════════════════════ 装配 / 换料 ══════════════════════
@@ -255,7 +394,8 @@ final class AssetSection implements InsightRenderer.Section {
         final float left = w * InsightRenderer.PAD_X_RATIO;
         final float right = w - left;
         final float split = right - 2f * BillSection.PRICE_COL_W * unit;
-        float yy = top + InsightRenderer.secHeadH(unit);
+        // 🔴 TASK-087-A1：条目是**内滚**的 ⇒ 命中起点必须减 `inner`，否则会出现「点 A 行改 B 书价」。
+        float yy = top + InsightRenderer.secHeadH(unit) - inner;
         for (int i = 0; i < rows.size(); i++) {
             BillSection.Row r = rows.get(i);
             final float rh = r.h(unit);
@@ -354,23 +494,133 @@ final class AssetSection implements InsightRenderer.Section {
         return -1;
     }
 
-    /** D13：点「展开 ▽ / 收起 △」（命中区 = 整行，方便点）。 */
-    boolean hitToggle(float x, float y, float w, float unit, float top) {
+    /**
+     * D13：点「展开 ▽ / 收起 △」。
+     *
+     * <p>🔴 TASK-087-A1：该行属于**固定尾部**（用户拍板 3）⇒ **不减 `inner`**（减了反而与画的位置错位）；
+     * 位置 = 抬头下沿 + 视口高 + 尾部内前几行高。命中区 = 整行宽（方便点）。
+     */
+    boolean hitToggle(float x, float y, float w, float vh, float unit, float top) {
         if (items.isEmpty()) return false;
         laid(w, unit);
-        if (toggleIdx < 0 || rows == null || toggleIdx >= rows.size()) return false;
-        float yTop = top + InsightRenderer.secHeadH(unit);
-        for (int i = 0; i < toggleIdx; i++) yTop += rows.get(i).h(unit);
+        if (toggleFootIdx < 0 || footRows == null || toggleFootIdx >= footRows.size()) return false;
+        float yTop = top + InsightRenderer.secHeadH(unit) + vpOf(vh, unit);
+        for (int i = 0; i < toggleFootIdx; i++) yTop += footRows.get(i).h(unit);
         final float left = w * InsightRenderer.PAD_X_RATIO;
-        toggleRect.set(left, yTop, w - left, yTop + rows.get(toggleIdx).h(unit));
+        toggleRect.set(left, yTop, w - left, yTop + footRows.get(toggleFootIdx).h(unit));
         return toggleRect.contains(x, y);
+    }
+
+    /**
+     * 🆕 TASK-087-A1：点抬头右端「生成壁纸」文字按钮。
+     *
+     * <p>🔴 归属：**布局与命中 = A1**；按钮按下后「生成资产壁纸」的**动作**由 A2 在 `DeskPageView.enterAssetWallpaper()`
+     * （那里消费这次点击并进入壁纸预览态）实现 —— 本方法只判命中、不消费点击。抬头**固定** ⇒ 同样不减 `inner`。
+     */
+    boolean hitWall(float x, float y, float w, float unit, float top) {
+        if (items.isEmpty() || ctx == null) return false;
+        sortRects(w, unit, top);
+        if (wallRect.isEmpty()) return false;
+        // 与 `BillSection.hitWallpaper` 同一宽容度（字小、手指点不准）：四周各外扩 `6 × unit`
+        final float m = unit * 6f;
+        return x >= wallRect.left - m && x <= wallRect.right + m
+                && y >= wallRect.top - m && y <= wallRect.bottom + m;
     }
 
     // ══════════════════════ 换料实现 ══════════════════════
 
     private void load(Context c) {
-        List<AssetStore.Book> all = AssetStore.all(c);
-        buildLedgerIndex(c);                                    // 🆕 价格链索引（零网络，换料时建一次）
+        // 🔴 TASK-087-A2：条目构建 / 过滤 / 价格链 / 收入 / 合计**全部**在共享构建器
+        //    {@link #snapshot} 里 —— 资产页与**资产壁纸**（{@link AssetPoster}）调同一份，
+        //    禁止在壁纸侧重写第二套算法（双源必然分叉）。
+        snap = snapshot(c);
+        items.addAll(snap.items);
+    }
+
+    // ══════════════════════ 🆕 TASK-087-A2：共享构建器（资产页 + 资产壁纸同源） ══════════════════════
+
+    /** 本地价格链索引（每本书一条；建一次，**零新增请求**）。 */
+    private static final class Ledger {
+        /** `bookId → 市场价(分)`：`bills.xml` 落盘的 `Bill.Item.marketPriceFen > 0`。 */
+        final Map<String, Integer> billFen = new HashMap<String, Integer>();
+        /** 账单里**明确免费**的 `bookId`（`marketPriceFen == 0`）。 */
+        final Set<String> billFree = new HashSet<String>();
+        /** `bookId → 原价(分)`：`cfg.xml` 落盘的 `PeriodStats.Longest` 经 {@link BillMoney#fenOf} 判为**有价**者。 */
+        final Map<String, Integer> statFen = new HashMap<String, Integer>();
+        /** 统计里**明确免费**的 `bookId`（`fenOf` 判为 `FREE`）。 */
+        final Set<String> statFree = new HashSet<String>();
+    }
+
+    /**
+     * 🆕 TASK-087-A2：**资产快照** = 过滤后的全部条目 + 合计口径。
+     *
+     * <p>🔴 这是资产相关数字的**唯一**来源：墨台屏上「阅读资产」列表 / 合计与资产壁纸
+     * （{@link AssetPoster}）都读它 ⇒ 同一筛选 / 同一价格链 / 同一收入算法 / 同一合计。
+     * {@code items} 里的 {@code note}（摘录文本）**不在此处烘焙**（与皮肤无关，见 D14），
+     * 由调用方按当前皮肤用 {@link #excerptOf} 现算。
+     */
+    static final class Snapshot {
+        final List<Book> items = new ArrayList<Book>();
+        int secSum;         // 时长合计（秒，**全部**条目）
+        int priceSum;       // 原价合计（分，只累加「有价」条目）
+        int incomeSum;      // 收入合计（分，只累加 `incomeKnown`）
+        int knownN;         // 已计价 = 有价 + 明确免费
+        int unkPriceN;      // 原价未知
+        int unkProgN;       // 有价但进度未取到 ⇒ 收入 `—`
+    }
+
+    /** 建本地价格链索引（零网络）—— 资产页与资产壁纸**共用**。 */
+    private static Ledger ledgerIndex(Context c) {
+        Ledger led = new Ledger();
+        final String[] modes = { PeriodRange.WEEKLY, PeriodRange.MONTHLY };
+        for (int m = 0; m < modes.length; m++) {
+            List<Long> starts = BillStore.startsOf(c, modes[m]);
+            if (starts == null) continue;
+            for (int i = 0; i < starts.size(); i++) {
+                final long t = starts.get(i).longValue();
+                Bill bill = BillStore.load(c, modes[m], t);
+                if (bill != null && bill.items != null) {
+                    for (int k = 0; k < bill.items.size(); k++) {
+                        Bill.Item it = bill.items.get(k);
+                        if (it == null || it.bookId == null || it.bookId.length() == 0) continue;
+                        if (it.marketPriceFen > 0) {
+                            if (!led.billFen.containsKey(it.bookId)) {
+                                led.billFen.put(it.bookId, Integer.valueOf(it.marketPriceFen));
+                            }
+                        } else if (it.marketPriceFen == 0) {
+                            led.billFree.add(it.bookId);
+                        }
+                    }
+                }
+                PeriodStats ps = StatsStore.load(c, modes[m], t);
+                if (ps == null || ps.longest == null) continue;
+                for (int k = 0; k < ps.longest.size(); k++) {
+                    PeriodStats.Longest lg = ps.longest.get(k);
+                    if (lg == null || lg.bookId == null || lg.bookId.length() == 0) continue;
+                    // 三态照 `BillMoney.fenOf`（`centPrice` / `priceYuan` / `origYuan` 取 max，free 才认免费）
+                    final int f = BillMoney.fenOf(lg.centPrice, lg.priceYuan, lg.origYuan, lg.free);
+                    if (f > 0) {
+                        if (!led.statFen.containsKey(lg.bookId)) led.statFen.put(lg.bookId, Integer.valueOf(f));
+                    } else if (f == 0) {
+                        led.statFree.add(lg.bookId);
+                    }
+                }
+            }
+        }
+        return led;
+    }
+
+    /**
+     * 🆕 TASK-087-A2：**共享构建器** —— 过滤 → 条目（价格链 + 收入）→ 合计。**零网络、零 I/O 之外**。
+     *
+     * <p>🔴 摘录文本**不在这里烘焙**（`load` 与皮肤无关，见 D14）—— 调用方按当前皮肤用
+     * {@link #excerptOf} 现算；排序也不在这里（调用方用 {@link #sorter}）。
+     */
+    static Snapshot snapshot(Context c) {
+        Snapshot o = new Snapshot();
+        if (c == null) return o;
+        final Ledger led = ledgerIndex(c);
+        final List<AssetStore.Book> all = AssetStore.all(c);
         // 🆕 第七批 W2（task-66）A1：**独立**的「只统计书架上的书」（只作用于阅读资产，不共用
         //    `rank_shelf_only`）—— 口径**同 `core/RankFilter#apply`**：开关关 ⇒ 不过滤；
         //    `BookStore.shelfIds` 返回 `null`（文件缺失/读失败 ⇒ 「还不知道」）⇒ 不过滤（等后台补拉）；
@@ -386,6 +636,14 @@ final class AssetSection implements InsightRenderer.Section {
             if (s.sec <= MIN_SEC) continue;                     // D9：≤10 分钟不进资产表
             if (hidden != null && hidden.contains(s.id)) continue;   // A2：已长按移出统计
             if (shelf != null && !shelf.contains(s.id)) continue;    // A1：只在架（清单未知时 shelf==null）
+            // 🆕 TASK-087-A1（用户 ②，拍板 4/5）：**只统计读完的书**（缺省打开）。
+            //    🔴 判据唯一入口 = `BillMoney.progressForBilling`（**不许另写一套**）：
+            //       `finished ⇒ 100` / `pct ≥ READ_DONE_PCT(99) ⇒ 100` / `pct < 0 且未读完 ⇒ -1`
+            //       ⇒ 「进度未知且未读完」自然落进 `< 100`，按用户拍板 5 **隐藏**（关掉本开关即可找回）。
+            //    🔴 三条过滤（读完 / 只在架 / 已移出）**AND 叠加**，且都作用于**同一份 `load` 结果**
+            //       ⇒ 墨台「阅读资产」列表、合计与**资产壁纸**（A2 复用同一份）一起生效。
+            if (PagePrefs.isAssetFinishedOnly(c)
+                    && BillMoney.progressForBilling(s.pct, s.finished()) < 100) continue;
             Book b = new Book();
             b.id = s.id;
             b.title = s.title;
@@ -409,13 +667,13 @@ final class AssetSection implements InsightRenderer.Section {
                     free = (nf == 0);
                 }
             }
-            if (fen < 0 && billFen.containsKey(s.id)) fen = billFen.get(s.id).intValue();
-            if (fen < 0 && billFree.contains(s.id)) {
+            if (fen < 0 && led.billFen.containsKey(s.id)) fen = led.billFen.get(s.id).intValue();
+            if (fen < 0 && led.billFree.contains(s.id)) {
                 fen = 0;
                 free = true;
             }
-            if (fen < 0 && statFen.containsKey(s.id)) fen = statFen.get(s.id).intValue();
-            if (fen < 0 && statFree.contains(s.id)) {
+            if (fen < 0 && led.statFen.containsKey(s.id)) fen = led.statFen.get(s.id).intValue();
+            if (fen < 0 && led.statFree.contains(s.id)) {
                 fen = 0;
                 free = true;
             }
@@ -433,15 +691,31 @@ final class AssetSection implements InsightRenderer.Section {
                 b.income = 0;
                 b.incomeKnown = free && !b.priced;
             }
-            items.add(b);
+            o.items.add(b);
         }
+        // ── 合计口径（D15 / m01985，读数 scope = **全部**条目，与展开态无关）──
+        for (int i = 0; i < o.items.size(); i++) {
+            Book b = o.items.get(i);
+            o.secSum += b.sec;
+            if (b.priced) {
+                o.priceSum += b.fen;
+                o.knownN++;                                     // 有价 ⇒ 计入原价合计
+                if (!b.incomeKnown) o.unkProgN++;                // 有价但进度未取到 ⇒ 收入 `—`
+            } else if (b.free) {
+                o.knownN++;                                     // 明确免费 ⇒ 价格已定（0）
+            } else {
+                o.unkPriceN++;                                  // 原价未知 ⇒ 原价与收入都 `—`
+            }
+            if (b.incomeKnown) o.incomeSum += b.income;
+        }
+        return o;
     }
 
     /**
      * 摘录（D14：摘录皮肤第三行）—— 手填摘录优先，其次**本地已同步**的最新原文划线 / 想法。
      * 🔴 零请求、无摘录返回 null（⇒ 不占行）。
      */
-    private String excerpt(Context c, String bookId) {
+    static String excerptOf(Context c, String bookId) {
         String s = clean(MenuPrefs.noteOf(c, bookId));
         if (s != null) return s;
         JSONArray marks = NoteStore.marks(c, bookId);
@@ -484,7 +758,11 @@ final class AssetSection implements InsightRenderer.Section {
             return;
         }
         rows = new ArrayList<BillSection.Row>();
-        toggleIdx = -1;
+        footRows = new ArrayList<BillSection.Row>();
+        toggleFootIdx = -1;
+        // 🔴 TASK-087-A1：内容/皮肤/排序/展开态真的变了 ⇒ 内滚复位到顶（避免停在越界位置画成空白）。
+        //    缓存键**不含** `inner`（"内容行"与"可见窗口"分两层，否则滚动不会重画）。
+        inner = 0f;
         if (!items.isEmpty()) {
             List<Book> order = new ArrayList<Book>(items);
             Collections.sort(order, bySort());
@@ -495,22 +773,24 @@ final class AssetSection implements InsightRenderer.Section {
             for (int i = 0; i < shown; i++) {
                 Book b = order.get(i);
                 // 摘录文本按**当前皮肤**现算（只算真正会被画出来的那几本；读书皮肤不算 ⇒ 省读数）
-                if (excerpt) b.note = excerpt(ctx, b.id);
+                if (excerpt) b.note = excerptOf(ctx, b.id);
                 addItem(rows, b, i + 1, excerpt);
             }
+            // ── 🆕 TASK-087-A1：尾部**固定块**（用户拍板 3：「展开/收起」随尾部固定）──
             if (collapsible) {
                 if (!open) {
-                    // D13：省略号行（「… 还有 N 本」）
+                    // D13：省略号行（「… 还有 N 本」）—— 归尾部（固定），不进内滚内容
                     BillSection.Row e = BillSection.Row.line("… 还有 " + (n - shown) + " 本", null, SZ_SMALL);
                     e.color = GRAY;
-                    rows.add(e);
+                    footRows.add(e);
                 }
                 BillSection.Row t = BillSection.Row.line(open ? COLLAPSE : EXPAND, null, SZ_SMALL);
                 t.color = GRAY;
-                toggleIdx = rows.size();
-                rows.add(t);
+                toggleFootIdx = footRows.size();
+                footRows.add(t);
             }
-            addTotal(rows);
+            // 合计口径仍是**全部 items**（不是 shown）—— `addTotal` 只读 `items`，与展开态无关。
+            addTotal(footRows);
         }
         laidW = w;
         laidUnit = unit;
@@ -520,11 +800,15 @@ final class AssetSection implements InsightRenderer.Section {
         laidStamp = stamp;
     }
 
+    /** 🆕 TASK-087-A2：**只读**访问器 —— 资产壁纸要与屏上用**同一个排序键**（不加写路径）。 */
+    int sortKey() { return sort; }
+
     /** 一条书目（摘录皮肤 = 主串 + meta + 摘录；读书皮肤 = 折行书名 + meta，精简与周/月一致）。 */
     private void addItem(List<BillSection.Row> out, Book b, int no, boolean excerpt) {
         // 三态（🆕 m01985）：有价 ⇒ 金额；**明确免费** ⇒ 「免费」；**未知** ⇒ `—`
-        final String income = b.incomeKnown ? money(b.income) : "—";
-        final String price = b.priced ? money(b.fen) : (b.free ? "免费" : "—");
+        // 🔴 TASK-087-A2：文本口径走**共享** {@link #incomeText}/{@link #priceText}（资产壁纸同源）
+        final String income = incomeText(b);
+        final String price = priceText(b);
         if (excerpt) {
             BillSection.Row r = BillSection.Row.line(no + ". " + nz(b.title), income, SZ_BODY);
             r.c3 = price;                        // 右起第二列（原价），与墨单同列宽
@@ -559,43 +843,47 @@ final class AssetSection implements InsightRenderer.Section {
 
     /** D15：合计 = **全部**（含未展开）三列 —— 原价（右起第二列）/ 收入（贴右）/ 时长（主串）。 */
     private void addTotal(List<BillSection.Row> out) {
-        int priceSum = 0, incomeSum = 0, secSum = 0, knownN = 0, unkPriceN = 0, unkProgN = 0;
-        for (int i = 0; i < items.size(); i++) {
-            Book b = items.get(i);
-            secSum += b.sec;
-            if (b.priced) {
-                priceSum += b.fen;
-                knownN++;                                   // 有价 ⇒ 计入原价合计
-                if (!b.incomeKnown) unkProgN++;              // 有价但进度未取到 ⇒ 收入 `—`（🆕 m01985）
-            } else if (b.free) {
-                knownN++;                                   // 明确免费 ⇒ 价格已定（0），不影响金额
-            } else {
-                unkPriceN++;                                // 原价未知 ⇒ 原价与收入都 `—`
-            }
-            if (b.incomeKnown) incomeSum += b.income;
-        }
+        final Snapshot s = (snap != null) ? snap : new Snapshot();
         out.add(BillSection.Row.dsep());
-        BillSection.Row r = BillSection.Row.line("合计 " + items.size() + " 本 · " + dur(secSum),
-                money(incomeSum), SZ_BODY);
-        r.c3 = money(priceSum);
-        out.add(r);
+        out.add(totalRow(s));
         // 🆕 三计数（m01985）：`已计价` = **价格已定**（有价 + 明确免费）本数 ⇒ 与 `原价未知` 之和 = 全部本数
-        String note = "已计价 " + knownN + " 本 · " + unkPriceN + " 本原价未知 · " + unkProgN + " 本进度未取到";
-        BillSection.Row n = BillSection.Row.line(note, null, SZ_SMALL);
+        BillSection.Row n = BillSection.Row.line(totalNote(s), null, SZ_SMALL);
         n.color = GRAY;
         out.add(n);
     }
 
-    private Comparator<Book> bySort() {
+    /** 🆕 TASK-087-A2 共享：合计行 —— 左「合计 N 本 · 时长」/ 右起第二「原价合计」/ 贴右「收入合计」。 */
+    static BillSection.Row totalRow(Snapshot s) {
+        BillSection.Row r = BillSection.Row.line(totalMain(s.items.size(), s.secSum), money(s.incomeSum), SZ_BODY);
+        r.c3 = money(s.priceSum);
+        return r;
+    }
+
+    /** 🆕 TASK-087-A2 共享：合计行主串（**全部**条目，与展开态无关）。 */
+    static String totalMain(int n, int secSum) { return "合计 " + n + " 本 · " + dur(secSum); }
+
+    /** 🆕 TASK-087-A2 共享：合计下方三计数小字。 */
+    static String totalNote(Snapshot s) {
+        return "已计价 " + s.knownN + " 本 · " + s.unkPriceN + " 本原价未知 · " + s.unkProgN + " 本进度未取到";
+    }
+
+    private Comparator<Book> bySort() { return sorter(sort); }
+
+    /**
+     * 🆕 TASK-087-A2 共享：排序键 → 比较器（资产页与资产壁纸**同一份**）。
+     * 口径：`SORT_PRICE` 原价未知排最后、再按 `fen` 降序；`SORT_INCOME` 收入未知排最后、
+     * 再按 `income` 降序；默认按时长降序；并列再按时长、再按书名字典序。
+     */
+    static Comparator<Book> sorter(final int sortKey) {
         return new Comparator<Book>() {
             @Override
             public int compare(Book x, Book y) {
                 int c;
-                if (sort == SORT_PRICE) {
+                if (sortKey == SORT_PRICE) {
                     // 原价未知（`—`）永远排在最后（🆕 m01985）
                     if (x.priceKnown != y.priceKnown) return x.priceKnown ? -1 : 1;
                     c = y.fen - x.fen;
-                } else if (sort == SORT_INCOME) {
+                } else if (sortKey == SORT_INCOME) {
                     // 进度未取到（`—`）永远排在最后
                     int xi = x.incomeKnown ? x.income : Integer.MIN_VALUE;
                     int yi = y.incomeKnown ? y.income : Integer.MIN_VALUE;
@@ -635,14 +923,43 @@ final class AssetSection implements InsightRenderer.Section {
                 c.drawRect(r.left, ly, r.right, ly + 1f, hp);
             }
         }
+        // 🆕 TASK-087-A1：抬头最右端「生成壁纸」文字按钮（与 `BillSection` 的同名按钮同款：
+        //    无边框、INK、与三键同字号；装不下就逐次 −0.4f 缩到 WALL_MAX_SHRINK）。
+        if (!wallRect.isEmpty()) {
+            final String label = wallLabel();
+            float sz = SZ_SMALL * unit;
+            final float limit = sz * WALL_MAX_SHRINK;
+            hp.setTypeface(null);
+            hp.setFakeBoldText(false);
+            hp.setTextScaleX(1f);
+            hp.setTextAlign(Paint.Align.CENTER);
+            hp.setStyle(Paint.Style.FILL);
+            hp.setColor(INK);
+            hp.setTextSize(sz);
+            final float avail = wallRect.width();
+            while (sz > limit && hp.measureText(label) > avail) {
+                sz -= 0.4f;
+                hp.setTextSize(sz);
+            }
+            Paint.FontMetrics fm = hp.getFontMetrics();
+            float base = wallRect.centerY() - (fm.ascent + fm.descent) / 2f;
+            c.drawText(label, wallRect.centerX(), base, hp);
+        }
         hp.setFakeBoldText(false);
         hp.setTextAlign(Paint.Align.LEFT);
     }
 
-    /** 三键矩形（右对齐排在标题行右端）—— 画与命中同一份几何。 */
+    /**
+     * 三键矩形（右对齐排在标题行右端）—— 画与命中同一份几何。
+     *
+     * <p>🆕 TASK-087-A1：抬头**最右端**先钉住「生成壁纸」文字按钮，三键再整体右对齐到它左侧
+     * （间距 `≥ 4 × unit`；两者矩形**不相交** ⇒ 不会"点键变壁纸"）。显式 4 个矩形全为内容坐标
+     * （抬头**固定**，全不减 `inner`）。
+     */
     private void sortRects(float w, float unit, float top) {
         if (items.isEmpty()) {
             for (int i = 0; i < chipRects.length; i++) chipRects[i].setEmpty();
+            wallRect.setEmpty();
             return;
         }
         final float right = w - w * InsightRenderer.PAD_X_RATIO;
@@ -652,17 +969,26 @@ final class AssetSection implements InsightRenderer.Section {
         final float half = unit * SZ_SMALL * 0.95f;
         hp.setTextSize(SZ_SMALL * unit);
         hp.setTypeface(null);
+        // ── 最右端：「生成壁纸」文字按钮（与墨单头部同一块尺寸：62 × 1.85 × SZ_SMALL）──
+        final float wallHalf = SZ_SMALL * unit * WALL_H_UNITS * 0.5f;
+        wallRect.set(right - WALL_W_UNITS * unit, cy - wallHalf, right, cy + wallHalf);
+        final float chipsRight = wallRect.left - WALL_GAP_UNITS * unit;
         final float[] ws = new float[SORT_LABELS.length];
         float total = gap * (SORT_LABELS.length - 1);
         for (int i = 0; i < SORT_LABELS.length; i++) {
             ws[i] = hp.measureText(SORT_LABELS[i]) + pad * 2f;
             total += ws[i];
         }
-        float x = right - total;
+        float x = chipsRight - total;
         for (int i = 0; i < SORT_LABELS.length; i++) {
             chipRects[i].set(x, cy - half, x + ws[i], cy + half);
             x += ws[i] + gap;
         }
+    }
+
+    /** 「生成壁纸」按钮文案（复用墨单同一字符串键 ⇒ 两处入口视觉/文案一致）。 */
+    private String wallLabel() {
+        return (ctx != null) ? ctx.getString(R.string.menu_gen_wallpaper) : "生成壁纸";
     }
 
     // ══════════════════════ 价格链索引（🆕 补丁 m01985）══════════════════════
@@ -678,52 +1004,10 @@ final class AssetSection implements InsightRenderer.Section {
      * <p>🔴 语义照 {@link BillMoney#fenOf}：`> 0` 有价 / `0`（带 free 标记）明确免费 / `-1` 未知 ——
      * **不许用 max 之类的猜测**（两字段语义未经证实相同）。
      */
-    private void buildLedgerIndex(Context c) {
-        billFen.clear();
-        billFree.clear();
-        statFen.clear();
-        statFree.clear();
-        final String[] modes = { PeriodRange.WEEKLY, PeriodRange.MONTHLY };
-        for (int m = 0; m < modes.length; m++) {
-            List<Long> starts = BillStore.startsOf(c, modes[m]);
-            if (starts == null) continue;
-            for (int i = 0; i < starts.size(); i++) {
-                final long t = starts.get(i).longValue();
-                Bill bill = BillStore.load(c, modes[m], t);
-                if (bill != null && bill.items != null) {
-                    for (int k = 0; k < bill.items.size(); k++) {
-                        Bill.Item it = bill.items.get(k);
-                        if (it == null || it.bookId == null || it.bookId.length() == 0) continue;
-                        if (it.marketPriceFen > 0) {
-                            if (!billFen.containsKey(it.bookId)) {
-                                billFen.put(it.bookId, Integer.valueOf(it.marketPriceFen));
-                            }
-                        } else if (it.marketPriceFen == 0) {
-                            billFree.add(it.bookId);
-                        }
-                    }
-                }
-                PeriodStats ps = StatsStore.load(c, modes[m], t);
-                if (ps == null || ps.longest == null) continue;
-                for (int k = 0; k < ps.longest.size(); k++) {
-                    PeriodStats.Longest lg = ps.longest.get(k);
-                    if (lg == null || lg.bookId == null || lg.bookId.length() == 0) continue;
-                    // 三态照 `BillMoney.fenOf`（`centPrice` / `priceYuan` / `origYuan` 取 max，free 才认免费）
-                    final int f = BillMoney.fenOf(lg.centPrice, lg.priceYuan, lg.origYuan, lg.free);
-                    if (f > 0) {
-                        if (!statFen.containsKey(lg.bookId)) statFen.put(lg.bookId, Integer.valueOf(f));
-                    } else if (f == 0) {
-                        statFree.add(lg.bookId);
-                    }
-                }
-            }
-        }
-    }
-
     // ══════════════════════ 小工具 ══════════════════════
 
     /** 时长文案（照墨单口径：`3h39m` / `219m`）。 */
-    private static String dur(int sec) {
+    static String dur(int sec) {
         if (sec < 3600) return Math.max(1, sec / 60) + "m";
         final int h = sec / 3600;
         final int m = (sec % 3600) / 60;
@@ -731,9 +1015,21 @@ final class AssetSection implements InsightRenderer.Section {
     }
 
     /** 金额文案（走墨单同一口径：`¥39` / `¥12.50`；`¥0` = 免费收入）。 */
-    private static String money(int fen) { return BillMoney.yuan(fen); }
+    static String money(int fen) { return BillMoney.yuan(fen); }
 
-    private static String nz(String s) { return (s == null) ? "" : s; }
+    /**
+     * 🆕 TASK-087-A2 共享：**原价**文案（三态）—— 有价 ⇒ 金额；明确免费 ⇒ 「免费」；未知 ⇒ `—`。
+     */
+    static String priceText(Book b) {
+        return b.priced ? money(b.fen) : (b.free ? "免费" : "—");
+    }
+
+    /**
+     * 🆕 TASK-087-A2 共享：**收入**文案（三态）—— 可算 ⇒ 金额；否则 `—`（免费 ⇒ `¥0`，计入合计）。
+     */
+    static String incomeText(Book b) { return b.incomeKnown ? money(b.income) : "—"; }
+
+    static String nz(String s) { return (s == null) ? "" : s; }
 
     private static String clean(String s) {
         if (s == null) return null;

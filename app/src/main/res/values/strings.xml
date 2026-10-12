@@ -64,6 +64,9 @@
     <string name="btn_asset_restore">恢复</string>
     <string name="btn_asset_restore_all">全部恢复</string>
     <string name="toast_asset_hidden">已移出阅读资产：%1$s（可在墨台设置 →「阅读资产」里恢复）</string>
+    <!-- 🆕 TASK-087-A1（2026-10-12，用户 ②）：「只统计读完的书」—— 缺省打开 -->
+    <string name="label_asset_finished_only">只统计读完的书</string>
+    <string name="label_asset_finished_only_tip">只列出已读完（或进度 ≥ 99%）的书；进度未知且未读完的按未读完处理 ⇒ 默认看不见（关掉本开关即可找回）。作用于墨台「阅读资产」的列表与合计，与上面两项叠加。</string>
     <!-- 🆕 2026-10-10（用户诉求 ⑤⑥）：墨单头部的「生成壁纸」与「周/月」切换、壁纸保存反馈 -->
     <string name="menu_gen_wallpaper">生成壁纸</string>
     <string name="menu_mode_week">周</string>

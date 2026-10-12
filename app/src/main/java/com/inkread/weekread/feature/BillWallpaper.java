@@ -207,7 +207,7 @@ public final class BillWallpaper {
     }
 
     /** 真实屏尺寸（取不到就退回 480×800）；同时把过小的值钳掉（防 0 宽位图）。 */
-    private static int[] screenSize(Context c) {
+    static int[] screenSize(Context c) {
         int w = BASE_W, h = BASE_H;
         try {
             DisplayMetrics dm = c.getResources().getDisplayMetrics();
@@ -586,7 +586,7 @@ public final class BillWallpaper {
      * 本行含「单号」（{@code Bill.serialOf}）⇒ 属裁定所说的「提示小字/单号」类。若日后要恢复
      * 署名层级的视觉重量，只需把这一行改回 {@link BillSection#SZ_TITLE}（18f）。
      */
-    private static void footer(Canvas cv, Paint p, int W, int H, float s, Bill b) {
+    static void footer(Canvas cv, Paint p, int W, int H, float s, Bill b) {
         float base = H - 22f * s - 34f * s;
         p.setStyle(Paint.Style.FILL);
         p.setTextAlign(Paint.Align.CENTER);
@@ -603,7 +603,7 @@ public final class BillWallpaper {
 
     /** 画一条 1px 分隔线并推进 y（返回新的 y）。🆕 task-48（#5）：与墨单同族 ⇒ 用票据横线色
      *  {@link InkTheme#RULE}（旧 `LINE 0xFFD8D8D8` 白底 1.43:1 几乎不可见）+ 整数行对齐。 */
-    private static float sep(Canvas cv, Paint p, float left, float right, float y, float s) {
+    static float sep(Canvas cv, Paint p, float left, float right, float y, float s) {
         p.setStyle(Paint.Style.FILL);
         p.setColor(InkTheme.RULE);
         final float ly = Math.round(y + s * 6f);
@@ -662,7 +662,7 @@ public final class BillWallpaper {
      * </ul>
      * 返回 `{null, null}` = 这一段不写（收入关 / 一行都算不出来）。
      */
-    private static String[] totalMoneyParts(Context c, Bill b, String algo) {
+    static String[] totalMoneyParts(Context c, Bill b, String algo) {
         if (MenuPrefs.PAID_OFF.equals(algo)) return new String[] { null, null };
         if (BillMoney.paidCount(c, b.items, algo) <= 0) return new String[] { null, null };
         final boolean cum = MenuPrefs.PAID_CUMULATIVE.equals(algo);
@@ -683,7 +683,7 @@ public final class BillWallpaper {
      * <p>🔴 2026-10-11（第六批B ⑦）：用户要求「条形码高度 ×2」⇒ 推进量一并 **22s → 44s**
      * （高度翻倍而不加推进量就会与下一行叠字）。`tailH` 用的就是本方法 ⇒ **自动重算**，不留两处数。
      */
-    private static float barsH(float s) {
+    static float barsH(float s) {
         return s * 44f;
     }
 
@@ -696,7 +696,7 @@ public final class BillWallpaper {
      *
      * @return 推进后的 y
      */
-    private static float bars(Canvas cv, Paint p, float left, float right, float y, float s) {
+    static float bars(Canvas cv, Paint p, float left, float right, float y, float s) {
         // 🔴 2026-10-11（第六批B ⑦）：条高 11s → **22s**（×2）；`cy` 取半高 ⇒ 与 `barsH` 的 44s 对齐。
         final float cy = y + s * 22f;
         final float top = cy - s * 11f, bot = cy + s * 11f;
@@ -724,7 +724,7 @@ public final class BillWallpaper {
     }
 
     /** 折行（按实测宽度；最多 {@code maxLines} 行，末行截断加省略号）。 */
-    private static List<String> wrap(Paint p, String sIn, float maxW, int maxLines) {
+    static List<String> wrap(Paint p, String sIn, float maxW, int maxLines) {
         List<String> out = new ArrayList<String>();
         String s = nz(sIn).replace('\n', ' ').replace('\r', ' ').trim();
         if (s.length() == 0 || maxW <= 0f) return out;
@@ -743,7 +743,7 @@ public final class BillWallpaper {
     }
 
     /** 按实测宽度截断 + 省略号。 */
-    private static String fit(Paint p, String s, float maxW) {
+    static String fit(Paint p, String s, float maxW) {
         if (s == null) return "";
         if (maxW <= 0f) return "";
         if (p.measureText(s) <= maxW) return s;
@@ -754,5 +754,5 @@ public final class BillWallpaper {
         return "…";
     }
 
-    private static String nz(String s) { return s == null ? "" : s; }
+    static String nz(String s) { return s == null ? "" : s; }
 }

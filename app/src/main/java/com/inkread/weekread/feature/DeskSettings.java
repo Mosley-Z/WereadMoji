@@ -97,6 +97,8 @@ final class DeskSettings {
     private static final int K_ASSET_SHELF = 9;   // 「只统计书架上的书」（整行可点 ⇒ 切换）
     private static final int K_ASSET_HID   = 10;  // 已移出的书：左侧书名 + 右侧「恢复」按钮（r = 按钮区）
     private static final int K_ASSET_ALL   = 11;  // 「全部恢复」按钮行（r = 按钮区）
+    /** 🆕 TASK-087-A1（用户 ②）：阅读资产「只统计读完的书」（整行可点 ⇒ 切换；缺省打开）。 */
+    private static final int K_ASSET_FIN   = 12;
     /** 🆕 W2：资产组右侧按钮宽（×unit）——「全部恢复」4 个字也放得下。 */
     private static final float ASSET_BTN_UNITS = 78f;
 
@@ -213,6 +215,12 @@ final class DeskSettings {
         sh.on = PagePrefs.isAssetShelfOnly(ctx);
         y += rowH;
         y = note(out, ctx.getString(R.string.label_asset_shelf_only_tip), y, w, unit);
+        // 🆕 TASK-087-A1（用户 ②）：紧接「只统计书架上的书」之后 = 同一族的资产过滤开关。
+        Item fin = row(out, K_ASSET_FIN, pad, right, y, rowH);
+        fin.a = ctx.getString(R.string.label_asset_finished_only);
+        fin.on = PagePrefs.isAssetFinishedOnly(ctx);
+        y += rowH;
+        y = note(out, ctx.getString(R.string.label_asset_finished_only_tip), y, w, unit);
         y = head(out, y, headH, ctx.getString(R.string.label_asset_hidden), w, unit);
         y = note(out, ctx.getString(R.string.label_asset_hidden_tip), y, w, unit);
         final Set<String> hidden = PagePrefs.assetHiddenIds(ctx);
@@ -377,6 +385,8 @@ final class DeskSettings {
 
                 // 🆕 第七批 W2（task-66）：阅读资产组
                 case K_ASSET_SHELF:
+                // 🆕 TASK-087-A1：同一族的第二行（视觉与上面一行完全一致）
+                case K_ASSET_FIN:
                     // 与 K_MOD 同一视觉：左侧勾选框 + 右移的标签
                     text(it, c, pad + BOX_UNITS * unit + GAP_UNITS * unit, cy, SZ_ROW * unit, INK, false);
                     checkBox(c, pad, cy, BOX_UNITS * unit, it.on);
@@ -548,6 +558,12 @@ final class DeskSettings {
             // 🆕 第七批 W2（task-66）阅读资产组
             case K_ASSET_SHELF:
                 PagePrefs.setAssetShelfOnly(ctx, !it.on);
+                invalidateCache();
+                return true;
+
+            // 🆕 TASK-087-A1：读完筛选（缺省 true ⇒ 关掉即可把「进度未知」的书找回来）
+            case K_ASSET_FIN:
+                PagePrefs.setAssetFinishedOnly(ctx, !it.on);
                 invalidateCache();
                 return true;
 

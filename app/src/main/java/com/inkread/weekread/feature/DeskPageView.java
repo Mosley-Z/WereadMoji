@@ -18,6 +18,7 @@ import com.inkread.weekread.R;
 import com.inkread.weekread.core.CardDebug;
 import com.inkread.weekread.core.MenuPrefs;
 import com.inkread.weekread.core.PagePrefs;
+import com.inkread.weekread.core.PeriodRange;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -134,6 +135,11 @@ public final class DeskPageView extends View {
     };
     private String previewMode = null;
     private long previewStart = 0L;
+    /**
+     * 🆕 TASK-087-A2：本张预览的**来源** —— false = 墨单海报（{@link BillWallpaper}），
+     * true = 阅读资产海报（{@link AssetPoster}）。只影响诊断文案；保存 / 分享 / 关闭共用同一套。
+     */
+    private boolean wpFromAsset = false;
     private final RectF btnSave = new RectF();
     private final RectF btnShare = new RectF();   // 🆕 2026-10-10 用户 ⑤：分享（发到手机）
     private final RectF btnClose = new RectF();
@@ -165,6 +171,14 @@ public final class DeskPageView extends View {
     private boolean longFired;
     /** 数字键盘模态：按下时键盘已开 ⇒ 整段手势只归键盘。 */
     private boolean padModal;
+    /**
+     * 🆕 TASK-087-A1：本次手势是否驱动「阅读资产」的**区内滚**。
+     *
+     * <p>按下那一刻**只判定一次**（照 `InsightPageView` 的 `dragRank` 范式）：落在资产内滚视口里
+     * 且该分区当前可滚（`maxInner > 0`）⇒ true。拖动时先喂区内滚，**到边界**（`scrollBy` 返回 false）
+     * 就把这一段剩余量回落给**整页滚动**；反向拖回时区内滚可继续接住。
+     */
+    private boolean dragAsset;
     /** 长按判定时长 —— 墨屏上手指停留普遍比手机久，取 550ms 比 400ms 稳。 */
     private static final int LONG_PRESS_MS = 550;
 
@@ -289,6 +303,9 @@ public final class DeskPageView extends View {
         if (mode == MODE_SETTINGS) {
             ch = renderer.headerHeight(unit) + settings.height(w, unit);
         } else {
+            // 🆕 TASK-087-A1：阅读资产分区要按「抬头（固定）+ 视口（内滚）+ 尾部（固定）」算高，
+            //    视口高 = 视图高 − 顶栏高 − 抬头 − 尾部 ⇒ 必须把顶栏高喂给分区（同 D25 之前的 rankH 注入）。
+            assetSection.setDeskHeadH(renderer.headerHeight(unit));
             ch = renderer.contentHeight(w, h, unit);
         }
         maxScroll = ch - h;
@@ -432,6 +449,67 @@ public final class DeskPageView extends View {
         }).start();
     }
 
+    /**
+     * 🆕 TASK-087-A2（用户诉求 ①）：进壁纸预览态 —— 这次渲染的是**阅读资产**整表
+     * （{@link AssetPoster}），而不是墨单。
+     *
+     * <p>🔴 与 {@link #enterWallpaper()} **同一套态与同一条后台范式**：纯后台渲染 → 回主线程换帧；
+     * 保存 / 分享 / 关闭三个按钮、落盘目录、分享面板全部复用（只有位图来源不同）。
+     *
+     * <p>🔴 文件名基（`previewMode` / `previewStart`）仍取墨单的当期口径 —— {@code BillWallpaper.save}
+     * 只用它拼 `modan_&lt;mode&gt;_&lt;start&gt;_&lt;ts&gt;.png` 的文件名，与画面内容无关；墨单分区没有当期
+     * 口径时（本该不发生）退到**本周**，保证文件名始终合法。
+     */
+    private void enterAssetWallpaper() {
+        String m = billSection.shownMode();
+        long s = billSection.shownStart();
+        if (m == null || s <= 0L) {
+            m = PeriodRange.WEEKLY;
+            s = PeriodRange.startOf(PeriodRange.WEEKLY, PeriodRange.nowSec());
+        }
+        final String fm = m;
+        final long fs = s;
+        // 🔴 壁纸跟随**当前菜单类别**（摘录 / 读书），与屏上同一档
+        final int v = MenuPrefs.view(getContext());
+        final int sortKey = assetSection.sortKey();
+
+        mode = MODE_WALLPAPER;
+        scrollY = 0f;
+        axis = AXIS_NONE;
+        releasePreview();
+        previewBusy = true;
+        previewMode = fm;
+        previewStart = fs;
+        wpFromAsset = true;
+        invalidate();
+
+        final Context app = getContext().getApplicationContext();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final AssetPoster.Poster r = AssetPoster.render(app, sortKey, v);
+                post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (mode != MODE_WALLPAPER) {          // 期间用户已退出 ⇒ 直接丢弃
+                            if (r.bmp != null) r.bmp.recycle();
+                            return;
+                        }
+                        previewBusy = false;
+                        preview = r.bmp;
+                        previewErr = (r.err == null) ? "" : r.err;
+                        CardDebug.note(getContext(), "资产壁纸渲染(" + MenuPrefs.VIEW_LABELS[
+                                (v >= 0 && v < MenuPrefs.VIEW_LABELS.length) ? v : 0] + ")："
+                                + (preview == null ? previewErr
+                                : (r.width + "×" + r.height + " · " + r.itemDrawn + "/" + r.itemTotal + " 本")));
+                        if (preview == null && previewErr.length() > 0) showTip(previewErr);
+                        invalidate();
+                    }
+                });
+            }
+        }).start();
+    }
+
     /** 出预览态（`‹ 返回` / 「关闭」）。 */
     private void exitWallpaper() {
         mode = MODE_LIST;
@@ -451,6 +529,7 @@ public final class DeskPageView extends View {
         previewErr = "";
         previewMode = null;
         previewStart = 0L;
+        wpFromAsset = false;
         btnSave.setEmpty();
         btnShare.setEmpty();
         btnClose.setEmpty();
@@ -726,14 +805,27 @@ public final class DeskPageView extends View {
 
     // ══════════════════════ 🆕 TASK-086 第六批B：阅读资产头部命中 ══════════════════════
     // 🔴 D25 取舍：原「读书排行」有内滚（`dragRank` + `RANK_VIEWPORT_RATIO` 视口），
-    //    换成「阅读资产」后**去掉内滚**——分区内容随整页滚（上面 ACTION_MOVE 里那支
-    //    内滚分支连同 `dragRank` 字段一并删除）。这里只留头部条（排序三键 / 展开·收起）的命中。
+    //    换成「阅读资产」时先去掉了内滚（内容随整页滚）。
+    // 🆕 TASK-087-A1（2026-10-12，用户 ③ 拍板）：**重新加回内滚**，但形态按用户要求 =
+    //    「抬头（标题 + 三键 + 生成壁纸）固定 + 中间条目内滚 + 尾部（还有 N 本 / 展开收起 / 合计）固定」；
+    //    手指拖动跟手、松手停在原地（无惯性）；**内滚到边界必须回落给整页滚动**。
+    //    参见 `dragAsset` 与 `AssetSection.scrollBy/maxInner/canScroll`。
 
     /** 阅读资产分区**顶边**的屏幕坐标 y；-1 = 分区不在分区表里（模块关了 / 没料）。 */
     private float assetTop() {
         int idx = renderer.indexOf(assetSection);
         if (idx < 0) return -1f;
         return renderer.sectionTop(idx, getWidth(), getHeight(), unit) - scrollY;
+    }
+
+    /**
+     * 🆕 TASK-087-A1：阅读资产**内滚视口**顶边的屏幕坐标 y（= 分区顶边 + 抬头高）；
+     * `-1f` = 分区不在分区表里。给"拖动是否落在内容区"的判定用（尾部/抬头不在其中）。
+     */
+    private float assetBodyTop() {
+        float top = assetTop();
+        if (top == -1f) return -1f;
+        return top + InsightRenderer.secHeadH(unit);
     }
 
     /**
@@ -762,7 +854,14 @@ public final class DeskPageView extends View {
             }
             return true;
         }
-        if (assetSection.hitToggle(x, y, getWidth(), unit, top)) {
+        // 🆕 TASK-087-A1：抬头最右端「生成壁纸」——A1 只登记「存在 + 可命中」，
+        //    🆕 TASK-087-A2 起动作落地：进壁纸预览态、渲染**阅读资产**海报（不再是空动作）。
+        //    放在三键之后、展开行之前：两者与它都不重叠（`sortRects` 里已留 4×unit 间距）。
+        if (assetSection.hitWall(x, y, getWidth(), unit, top)) {
+            enterAssetWallpaper();
+            return true;
+        }
+        if (assetSection.hitToggle(x, y, getWidth(), getHeight(), unit, top)) {
             assetSection.toggleOpen();
             remeasure(getWidth(), getHeight());
             invalidate();
@@ -890,6 +989,14 @@ public final class DeskPageView extends View {
                     }
                     if (longKind != LP_NONE) postDelayed(longPressRun, LONG_PRESS_MS);
                 }
+                // 🆕 TASK-087-A1：区内滚判定**只在按下这一刻做一次**（照 `InsightPageView.dragRank` 范式）。
+                //    条件 = 列表态 + 阅读资产当前可滚（`maxInner > 0`） + 按点落在**内滚视口**里
+                //    （抬头/尾部不算 —— 那两块是固定的，按在上面应当照旧走整页滚动 / 点击）。
+                dragAsset = false;
+                if (mode == MODE_LIST && assetSection.canScroll(getHeight(), unit)) {
+                    final float at = assetTop();
+                    if (at != -1f && assetSection.inViewport(downY, at, getHeight(), unit)) dragAsset = true;
+                }
                 // 🔴 2026-10-11（TASK-18）：设置态的「按住白纱滑条 ⇒ 只拖滑条」分支已随白纱删除
                 //     ⇒ 设置态与列表态共用同一套滚动手势（不再有"按住即拖"的特例）。
                 return true;
@@ -913,14 +1020,22 @@ public final class DeskPageView extends View {
                 }
                 if (axis == AXIS_VERT) {
                     float mv = lastY - e.getY();     // 手指上滑 ⇒ mv > 0 ⇒ 内容上移
-                    // 🔴 2026-10-11（TASK-086 第六批B / D25）：原「落在排行区 ⇒ 只滚区内」的分支
-                    //    已随「阅读资产」去掉内滚而删除 ⇒ 列表态一律整页滚动。
-                    float next = scrollY + mv;
-                    if (next < 0f) next = 0f;
-                    if (next > maxScroll) next = maxScroll;     // 到顶/到底夹住，不穿透、不回弹
-                    if (next != scrollY) {
-                        scrollY = next;
-                        invalidate();
+                    // 🆕 TASK-087-A1：先喂「阅读资产」区内滚；**到边界**（`scrollBy` 返回 false =
+                    //    本次量一点没吃下）就把这一段剩余量**回落给整页滚动**（用户 ③ 拍板：
+                    //    "内滚到边界后回落整页滚动"）。区内滚只要真动了就不动整页（防双滚）。
+                    boolean handled = false;
+                    if (dragAsset) {
+                        handled = assetSection.scrollBy(mv, getHeight(), unit);
+                        if (handled) invalidate();
+                    }
+                    if (!handled) {
+                        float next = scrollY + mv;
+                        if (next < 0f) next = 0f;
+                        if (next > maxScroll) next = maxScroll;     // 到顶/到底夹住，不穿透、不回弹
+                        if (next != scrollY) {
+                            scrollY = next;
+                            invalidate();
+                        }
                     }
                 }
                 lastY = e.getY();
@@ -932,6 +1047,8 @@ public final class DeskPageView extends View {
                 final boolean up = (e.getActionMasked() == MotionEvent.ACTION_UP);
                 // 🆕 TASK-086：长按收尾 —— 已开键盘 ⇒ 这一次抬手不再当"点击"
                 removeCallbacks(longPressRun);
+                // 🆕 TASK-087-A1：手势结束 ⇒ 清区内滚锁（下次按下重新判定）
+                dragAsset = false;
                 if (longFired) {
                     longFired = false;
                     pendingPriceIdx = -1;

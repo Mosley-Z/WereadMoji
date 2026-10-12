@@ -268,6 +268,27 @@ public final class PagePrefs {
         sp(c).edit().putBoolean(K_ASSET_SHELF_ONLY, on).commit();
     }
 
+    // 🆕 TASK-087-A1（2026-10-12，用户 ② 拍板 4/5）：阅读资产「只统计读完的书」。
+    //    🔴 键名与签名**冻结**：A2（资产壁纸）与墨台设置页只调用，不许另建键、不许改默认值。
+
+    private static final String K_ASSET_FINISHED_ONLY = "asset_finished_only";
+
+    /**
+     * 阅读资产是否「只统计**读完**的书」。缺省 **true**（用户拍板 4：默认打开）。
+     *
+     * <p>🔴 判据唯一入口 = {@link com.inkread.weekread.core.BillMoney#progressForBilling(int, boolean)}
+     * （`finished ⇒ 100` / `pct ≥ 99 ⇒ 100` / `pct < 0 且未读完 ⇒ -1`）。因此
+     * 「**进度未知（-1）且未读完**」也 &lt; 100 ⇒ 与用户拍板 5 一致地**被隐藏**；
+     * 这些书要靠关掉本开关（或长按录价前先关）才看得见 —— 后果已登记在 `验证记录/236`。
+     */
+    public static boolean isAssetFinishedOnly(Context c) {
+        return sp(c).getBoolean(K_ASSET_FINISHED_ONLY, true);
+    }
+
+    public static void setAssetFinishedOnly(Context c, boolean on) {
+        sp(c).edit().putBoolean(K_ASSET_FINISHED_ONLY, on).commit();
+    }
+
     /**
      * 被**隐藏**的资产 `bookId` 集合。
      *
