@@ -105,6 +105,9 @@ jobs:
             VN="$(grep -E '^VERSION_NAME=' version.properties | cut -d= -f2- | tr -d ' \r')"
             VC="$(grep -E '^VERSION_CODE=' version.properties | cut -d= -f2- | tr -d ' \r')"
             NOTES="$(grep -E '^NOTES=' version.properties | cut -d= -f2- | tr -d '\r')"
+            # NOTES 里的 `\n` 是换行转义（version.properties 只能写单物理行）：
+            # 与 tools/gen_update_json.py 同一口径 ⇒ 这里换回真实换行再进 Release 正文。
+            NOTES="$(printf '%b' "$NOTES")"
 
             # ① 路径必须落在 dist/ 内（防清单被写成越界路径），且文件真实存在
             case "$APK_REL" in

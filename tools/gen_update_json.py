@@ -7,7 +7,7 @@
 
     VERSION_NAME   版本名，如 0.5.0
     VERSION_CODE   版本号（递增整数），如 22
-    NOTES          更新说明，一行短句
+    NOTES          更新说明，一行短句（多行用 `\n` 转义写在同一个物理行里）
     APK_REL        APK 在仓库内的相对路径，如 dist/weread-stats-0.5.0-debug.apk
     SIZE           APK 字节数
     SHA256         APK 的 sha256（App 下载后校验）
@@ -33,6 +33,9 @@ def main():
     version_name = env("VERSION_NAME")
     version_code = env("VERSION_CODE")
     notes = env("NOTES")
+    # version.properties 是 properties 格式 ⇒ 说明只能写在一个物理行里，
+    # 多行说明用 `\n` 转义书写，这里换回真实换行（App 与 Release 正文都按行显示）。
+    notes = notes.replace("\\n", "\n")
     apk_rel = env("APK_REL")
     size = env("SIZE", "0")
     sha256 = env("SHA256")
