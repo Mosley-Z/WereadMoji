@@ -131,7 +131,6 @@ public final class AssetPoster {
         final float s = H / 800f;
         final float sTitle  = BillSection.SZ_TITLE  * s;
         final float sSerial = BillSection.SZ_SERIAL * s;
-        final float sSub    = BillSection.SZ_BODY   * s;
         final float sBody   = BillSection.SZ_BODY   * s;
         final float sHead   = BillSection.SZ_BODY   * s;
         final float sMeta   = BillSection.SZ_SMALL  * s;
@@ -139,6 +138,8 @@ public final class AssetPoster {
         final float sTotal  = BillSection.SZ_BODY   * s;
         final float pad     = 34f * s;
         final float lineH   = BillSection.LH;
+        // 条目行高：海报专用，比票据尺 1.7 略紧 ⇒ 尾部之外多出一行空间多放一本（墨单海报复用 BillSection.LH，不受影响）
+        final float itemLH  = 1.55f;
 
         final boolean excerpt = (view != MenuPrefs.VIEW_READING);
 
@@ -181,14 +182,7 @@ public final class AssetPoster {
         p.setTypeface(null);
         y += sTitle * 1.36f;
 
-        // ③ 副行：阅读资产 · N 本 · 时长（照墨单海报副行的位置与尺）
-        p.setTypeface(Typeface.MONOSPACE);
-        p.setColor(GRAY);
-        p.setTextSize(sSub);
-        String sub = "阅读资产 · " + order.size() + " 本 · " + AssetSection.dur(snap.secSum);
-        cv.drawText(BillWallpaper.fit(p, sub, avail), left, y + sSub, p);
-        y += sSub * lineH;
-
+        // ③ 副行已删（`阅读资产 · N 本 · 时长` 与页底「合计」行同数字 ⇒ 冗余，空间让给书目）
         y = BillWallpaper.sep(cv, p, left, right, y, s);
 
         // ④ 空表（一本书都没有）：只写一句，绝不产 0 值海报
@@ -225,7 +219,7 @@ public final class AssetPoster {
                     + sTotal * lineH                      // 合计一行三列
                     + BillWallpaper.barsH(s)              // 装饰条形码一行
                     + sSmall * lineH                      // 落款
-                    + s * 30f;
+                    + s * 14f;                            // 页底安全余量（原 30 ⇒ 14，空间让给书目）
         final float limit = H - 22f * s - pad - tailH;
 
         // ⑦ 逐本：**先备料再判放得下** —— 避免「画到一半才发现超界」
@@ -253,12 +247,12 @@ public final class AssetPoster {
             // 摘录行：与屏上同源（手填摘录 → 本地划线 → 想法）
             final String noteTxt = excerpt ? AssetSection.excerptOf(c, b.id) : null;
 
-            float need = titleLines.size() * sBody * lineH + sMeta * lineH;
-            if (noteTxt != null) need += sSmall * lineH;
-            if (i > 0) need += s * 8f;
+            float need = titleLines.size() * sBody * itemLH + sMeta * itemLH;
+            if (noteTxt != null) need += sSmall * itemLH;
+            if (i > 0) need += s * 4f;
             if (y + need > limit) break;
 
-            if (i > 0) y += s * 8f;                        // 条目之间一口气
+            if (i > 0) y += s * 4f;                        // 条目之间一口气（原 8 ⇒ 4）
 
             // 标题行（+ 摘录皮肤右端两列，列宽固定 ⇒ 与表头严格成列）
             final float moneyMax = pCol - s * 4f;
@@ -282,7 +276,7 @@ public final class AssetPoster {
                     p.setTextScaleX(1f);
                     p.setTextAlign(Paint.Align.LEFT);
                 }
-                y += sBody * lineH;
+                y += sBody * itemLH;
             }
             p.setFakeBoldText(false);
             p.setTypeface(null);
@@ -292,7 +286,7 @@ public final class AssetPoster {
             p.setColor(LIGHT);
             p.setTextSize(sMeta);
             cv.drawText(BillWallpaper.fit(p, metaTxt, avail - s * 12f), left + s * 12f, y + sMeta, p);
-            y += sMeta * lineH;
+            y += sMeta * itemLH;
 
             // 摘录行（衬线、灰、缩进 1 字）
             if (noteTxt != null) {
@@ -300,7 +294,7 @@ public final class AssetPoster {
                 p.setColor(GRAY);
                 p.setTextSize(sSmall);
                 cv.drawText(BillWallpaper.fit(p, noteTxt, avail - s * 12f), left + s * 12f, y + sSmall, p);
-                y += sSmall * lineH;
+                y += sSmall * itemLH;
             }
             p.setTypeface(null);
             drawn++;

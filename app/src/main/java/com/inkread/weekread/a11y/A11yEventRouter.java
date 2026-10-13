@@ -342,10 +342,19 @@ final class A11yEventRouter {
             // 由 TomoPageGate.settleSwipe 决定不判向（否则卡片会被永久藏死）。
             // 必须排在下面两个 return 之前。
             tomo.noteOwnPkgEvent();
-            boolean ownScreen = clsForLog.endsWith(".MainActivity") || clsForLog.endsWith(".SettingsActivity");
+            // 🆕 TASK-103（task-104）：墨台页（shell.DeskActivity）也算**自家界面**。
+            //   上一版只认 MainActivity / SettingsActivity ⇒ 墨台的窗口事件被当"自家悬浮窗"直接
+            //   return（:346），st.onDesktop 保持 true ⇒ 后来按 HOME 回桌面时
+            //   `desk == st.onDesktop` ⇒ 三个重算条件全不成立 ⇒ 卡片停在让位态。
+            //   纳入后与 App 页同一条路：进自家界面即 sOwnUiForeground=true、st.onDesktop=false
+            //   ⇒ 回桌面的那条窗口事件必然命中 `desk != st.onDesktop` ⇒ 重算。
+            boolean ownScreen = clsForLog.endsWith(".MainActivity")
+                    || clsForLog.endsWith(".SettingsActivity")
+                    || clsForLog.endsWith(".DeskActivity");
             if (!ownScreen) return;                // 自己的悬浮窗事件：忽略，维持现状
             // 用户在我们的界面里：桌面上那张卡片要让位（主页已经整屏显示同一张卡片了）
             CardA11yService.sOwnUiForeground = true;
+            CardDebug.noteV(ctx, "ownScreen cls=" + clsForLog + " ⇒ ownUi=true onDesktop=" + st.onDesktop);
             if (st.onDesktop) {
                 st.onDesktop = false;
                 ov.applyVisibility();

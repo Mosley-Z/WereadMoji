@@ -242,6 +242,11 @@ public class CardA11yService extends AccessibilityService {
         if (epoch != sDeskEpoch || sDeskEnded) {
             CardDebug.note(sInstance, "墨台会话收尾作废（epoch=" + epoch
                     + " 当前=" + sDeskEpoch + " 已收尾=" + sDeskEnded + "）");
+            // 🆕 TASK-103（task-104）：**早退分支也补一次重算**。旧实例的回调 / 同一会话的二次回调
+            //   都走这里；若此刻卡片仍被压在「让位」态（st.onDesktop 未回真），不补这一次就回不来。
+            //   重算本身按现成标志（sOwnUiForeground / st.onDesktop）判，不发明新状态；
+            //   新会话正在展示墨台时 sOwnUiForeground=true ⇒ 重算结果仍是「隐藏」，与让位一致。
+            recomputeVisibilityNow();
             return;
         }
         sDeskEnded = true;

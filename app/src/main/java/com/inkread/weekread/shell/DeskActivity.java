@@ -7,6 +7,7 @@ import com.inkread.weekread.feature.DeskPageView;
 import android.app.Activity;
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.PowerManager;
 import android.view.WindowManager;
 
 /**
@@ -25,6 +26,16 @@ import android.view.WindowManager;
  *       而 {@code noteOwnUiForeground(false)} 刻意不重算 ⇒ 必须由 {@link CardA11yService#endDesk(int)}
  *       显式补一次重算，卡片才会从"让位"状态回来。见本类 {@link #onDestroy()}。</li>
  * </ul>
+ *
+ * <p>🆕 TASK-103（`task-104`，2026-10-14）：**按 HOME / 返回回桌面后卡片必须重现**（A+B 方案）。
+ * 上一版只在「本页正在收尾」时补收尾（{@link #onPause} 的 {@code isFinishing()} 分支 +
+ * {@link #onDestroy}），而**按 HOME 不会 finish** ⇒ 会话永不收尾、卡片一直停在让位态
+ * （BACK 一直好，就是因为 BACK 会走 {@code isFinishing()} 那条）。现在补一条「用户离开」判定
+ * （{@link #onUserLeaveHint} 为主 + {@link #onStop} 兜底），命中即**先**
+ * {@link CardA11yService#endDesk(int)} **再** {@link #finish()}（顺序不可颠倒，避免回调次序差异
+ * 导致不重算）。两条守卫：**分享面板在途**（{@link #onShareRequested()} 置位 /
+ * {@link #onResume()} 清位）与**灭屏**（{@code PowerManager.isInteractive()==false}）都**不算**离开
+ * —— 分享回来墨台原样、灭屏解锁墨台仍在。
  *
  * <p>🔴 三条硬纪律（`a11y/CardA11yService.java` 顶部注释 + 本卡卡面）：
  * <ol>
@@ -60,6 +71,15 @@ public final class DeskActivity extends Activity implements DeskPageView.Listene
 
     /** 🔴 D1（task-94）：墨台页字段 —— {@code onNewIntent} 复用时要复位它。 */
     private DeskPageView page;
+
+    /**
+     * 🆕 TASK-103：**分享面板在途** —— {@link #onShareRequested()} 置位、{@link #onResume()} 清位。
+     * 在途时即使收到「用户离开」信号也**不得**关墨台（分享完返回，墨台必须原样）。
+     */
+    private boolean shareInFlight;
+
+    /** 🆕 TASK-103：本实例是否已因「用户离开」走过收尾（避免 onStop 兜底重复走）。 */
+    private boolean leftByUser;
 
     /** 关闭墨台（{@code wb_desk_hide} 与 {@code CardA11yService.hideDesk()} 的口）。 */
     public static void finishIfAlive() {
@@ -108,19 +128,101 @@ public final class DeskActivity extends Activity implements DeskPageView.Listene
         super.onResume();
         sInstance = this;
         epoch = CardA11yService.currentDeskEpoch();
+        // 🆕 TASK-103：回到前台 ⇒ 分享不再"在途"（从分享面板返回走的就是这里）。
+        if (shareInFlight) {
+            shareInFlight = false;
+            CardDebug.note(this, "DeskActivity onResume：分享面板已返回，shareInFlight 清位");
+        }
         // 🔴 硬要求：进自家界面 ⇒ 卡片立刻让位（否则覆盖窗压在墨台页上面）。见类注释。
         CardA11yService.noteOwnUiForeground(true);
+        CardDebug.note(this, "DeskActivity onResume（epoch=" + epoch + " 分享在途=" + shareInFlight
+                + " 亮屏=" + isInteractive() + "）");
     }
 
     @Override
     protected void onPause() {
         super.onPause();
+        CardDebug.note(this, "DeskActivity onPause（收尾中=" + isFinishing() + " 分享在途=" + shareInFlight
+                + " 亮屏=" + isInteractive() + "）");
         CardA11yService.noteOwnUiForeground(false);
         // 🔴 onDestroy 兜底：只在**本页正在收尾**（finish / 被回收）时补一次会话收尾，
         //    纯粹的暂停（拉分享面板 / 灭屏）不算结束 —— 那时用户还在墨台里，
         //    提前 endDesk 会让回来后的那次收尾变成幂等空操作，卡片就再也回不来。
         //    与 onDestroy 的调用是幂等的（见 `CardA11yService.endDesk`）。
         if (isFinishing()) CardA11yService.endDesk(epoch);
+    }
+
+    /**
+     * 🆕 TASK-103：**按 HOME 的系统信号**（主判据）。
+     *
+     * <p>按 HOME 时本页只是「离开前台」——既不 {@code finish} 也不 {@code onDestroy}，
+     * 所以上一版的收尾链路整条不会触发。这里当场把「用户离开」走完：
+     * **先** {@code endDesk(epoch)}（让卡片显隐链有机会重算）**再** {@code finish()}。
+     */
+    @Override
+    protected void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        CardDebug.note(this, "DeskActivity onUserLeaveHint（分享在途=" + shareInFlight
+                + " 亮屏=" + isInteractive() + "）");
+        leaveDesk("onUserLeaveHint");
+    }
+
+    /**
+     * 🆕 TASK-103：**兜底判据** —— 某些 ROM 不发 {@link #onUserLeaveHint}，那么按 HOME 后
+     * 本页只会走到 {@code onStop}。灭屏 / 分享面板同样会走 {@code onStop}，
+     * 由 {@link #leaveDesk(String)} 里的两条守卫区分（那两种不算离开）。
+     */
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (isFinishing()) {
+            CardDebug.note(this, "DeskActivity onStop：本页正在收尾，跳过用户离开兜底");
+            return;
+        }
+        CardDebug.note(this, "DeskActivity onStop（收尾中=false 分享在途=" + shareInFlight
+                + " 亮屏=" + isInteractive() + "）");
+        leaveDesk("onStop 兜底");
+    }
+
+    /**
+     * 🆕 TASK-103：**「用户离开」收尾** —— 先 {@link CardA11yService#endDesk(int)} 再 {@link #finish()}。
+     *
+     * <p>两条守卫（卡面口径）：
+     * <ul>
+     *   <li><b>分享在途</b>：从墨台起系统分享面板，回来墨台必须原样 ⇒ 不关；</li>
+     *   <li><b>灭屏</b>（{@code isInteractive()==false}）：灭屏/锁屏不算离开 ⇒ 不关。</li>
+     * </ul>
+     * {@code endDesk} 自带会话序号 + 幂等守卫（见其注释），这里再加 {@link #leftByUser}
+     * 避免主判据与兜底判据各走一遍。
+     */
+    private void leaveDesk(String why) {
+        if (leftByUser) {
+            CardDebug.note(this, "DeskActivity 用户离开：本实例已收尾过，跳过（判据=" + why + "）");
+            return;
+        }
+        if (shareInFlight) {
+            CardDebug.note(this, "DeskActivity 用户离开被拦：分享面板在途，墨台保留（判据=" + why + "）");
+            return;
+        }
+        if (!isInteractive()) {
+            CardDebug.note(this, "DeskActivity 用户离开被拦：屏幕不亮（灭屏不算离开）（判据=" + why + "）");
+            return;
+        }
+        leftByUser = true;
+        CardDebug.note(this, "DeskActivity 用户离开 ⇒ 先 endDesk 再 finish（判据=" + why
+                + " epoch=" + epoch + "）");
+        CardA11yService.endDesk(epoch);   // 🔴 顺序：先收尾（补重算），再关页
+        finish();
+    }
+
+    /** 🆕 TASK-103：屏幕此刻是否亮着（灭屏不算「用户离开」）。取不到服务时按亮屏处理（不因探测失败卡住收尾）。 */
+    private boolean isInteractive() {
+        try {
+            PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+            return pm == null || pm.isInteractive();
+        } catch (Throwable t) {
+            return true;
+        }
     }
 
     @Override
@@ -146,10 +248,15 @@ public final class DeskActivity extends Activity implements DeskPageView.Listene
      *
      * <p>原覆盖窗形态下宿主必须先摘窗（{@code TYPE_ACCESSIBILITY_OVERLAY} 层级高于 ChooserActivity，
      * 不让位则面板被盖住）；迁成 Activity 后本页与面板是**普通 Activity 叠放**，
-     * 且 {@link #onPause} 已把让位交给卡片显隐链 ⇒ 这里无需再做任何事，留空即可
+     * 且 {@link #onPause} 已把让位交给卡片显隐链 ⇒ 这里无需再做让位动作
      * （{@code DeskPageView.startShare()} 自己带 {@code FLAG_ACTIVITY_NEW_TASK} 起面板）。
+     *
+     * <p>🆕 TASK-103：本回调**置位 {@link #shareInFlight}** —— 面板在途时用户若按 HOME，
+     * 那也不算「离开墨台」（回来要原样），由 {@link #leaveDesk(String)} 拦下。
      */
     @Override
     public void onShareRequested() {
+        shareInFlight = true;
+        CardDebug.note(this, "DeskActivity onShareRequested：分享在途置位（墨台保留）");
     }
 }
