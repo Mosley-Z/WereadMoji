@@ -4,6 +4,8 @@ import android.content.Context;
 import android.content.SharedPreferences;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -25,8 +27,8 @@ import java.util.Set;
  * <p>**TASK-076** 追加**模块系统**三项（定稿设计 §3.2 / §10）：
  * <ul>
  *   <li>{@code desk_enabled} —— 墨台总开关（默认 true）</li>
- *   <li>{@code desk_order} —— **2 个**模块（墨单 / 阅读资产）的**有序全表**（CSV；🔴 顺序即渲染顺序）</li>
- *   <li>{@code desk_on_mask} —— 开启模块的**位掩码**（默认 = 墨单 | 阅读资产）</li>
+ *   <li>{@code desk_order} —— **3 个**模块（墨单 / 阅读资产 / 阅读指纹）的**有序全表**（CSV；🔴 顺序即渲染顺序）</li>
+ *   <li>{@code desk_on_mask} —— 开启模块的**位掩码**（默认 = 墨单 | 阅读资产；🔴 **不含阅读指纹** ⇒ 默认关）</li>
  * </ul>
  * 口径照抄现有习惯（{@code StatsStore.CARD_ORDER} + {@code CardPrefs.getCardPoolMask} /
  * {@code CARD._ORDER}）：**键值是 CSV / 掩码、读出来一律做一遍"认不认识 / 越界"的净化**，
@@ -36,9 +38,10 @@ public final class PagePrefs {
 
     // ══════════════════════ 🆕 TASK-076：模块系统 ══════════════════════
     //
-    // 模块目录（🔴 第七批 W1 删除「阅读画像 / 今日一签 / 年度视图」后 · 全集 = 2 个）：
+    // 模块目录（🔴 第七批 W1 删除「阅读画像 / 今日一签 / 年度视图」后 · 全集 = 3 个）：
     //   bill    墨单       ✅ 默认开   （内容卡：TASK-077）
     //   rank    阅读资产   ✅ 默认开   （内容卡：TASK-086 第六批B —— 就地取代原「读书排行」）
+    //   fp      阅读指纹   ⬜ 默认**关**（内容卡：TASK-089a —— 位 8 ⇒ 不在 DEFAULT_ON_MASK 里）
     //
     // 🆕 第七批 W1（2026-10-12 用户拍板）：墨台「内容模块」备选里的
     //   `profile`（阅读画像）/ `note`（今日一签）/ `annual`（年度视图，用户笔误「年度识图」）
@@ -60,21 +63,30 @@ public final class PagePrefs {
 
     public static final String MOD_BILL    = "bill";
     public static final String MOD_RANK    = "rank";
+    // 🆕 TASK-089a：阅读指纹模块（第八批）。id 恒为 `fp`；位 8。
+    public static final String MOD_FP      = "fp";
 
     /** 模块全集（**新增模块只管往这里加** —— 顺序 = 出厂默认顺序 = 设置页行序的兜底）。 */
     public static final String[] MODULE_ORDER = {
-            MOD_BILL, MOD_RANK };
+            MOD_BILL, MOD_RANK, MOD_FP };
 
     public static final int BIT_BILL    = 1;
     public static final int BIT_RANK    = 2;
     // 🔴 TASK-086 第六批B：`BIT_TODO = 4` 已随「待办摘要」模块删除 —— **位 4 不复用**。
     // 🔴 第七批 W1：`BIT_PROFILE = 16` / `BIT_NOTE = 32` / `BIT_ANNUAL = 64` 已随
     //    「阅读画像 / 今日一签 / 年度视图」三项删除 —— **位 16/32/64 不复用**（同 D24 口径）。
+    // 🆕 TASK-089a：`fp` 取位 8（4 与 16 之间唯一未被废弃的空位）。
+    public static final int BIT_FP      = 8;
 
     /** 本版认识的位全集（未知位一律丢弃；位 4/16/32/64 已废弃 ⇒ 老值里的这些位在这里被丢掉）。 */
-    public static final int MODULE_ALL = BIT_BILL | BIT_RANK;
+    public static final int MODULE_ALL = BIT_BILL | BIT_RANK | BIT_FP;
 
-    /** 出厂默认开启集 = 「墨单 | 阅读资产」（原含待办，TASK-086 第六批B 随模块删除）。 */
+    /**
+     * 出厂默认开启集 = 「墨单 | 阅读资产」。
+     *
+     * <p>🔴 **不含 {@link #BIT_FP}** —— 阅读指纹是"要用户先选书才有内容"的模块，
+     * 出厂默认**关**（用户在设置页打开）。本卡不写任何"首启动自动打开"的逻辑。
+     */
     public static final int DEFAULT_ON_MASK = BIT_BILL | BIT_RANK;
 
 
@@ -95,6 +107,7 @@ public final class PagePrefs {
     public static int moduleBit(String id) {
         if (MOD_BILL.equals(id))    return BIT_BILL;
         if (MOD_RANK.equals(id))    return BIT_RANK;
+        if (MOD_FP.equals(id))      return BIT_FP;
         return 0;                                   // 含已废弃的 `todo`（位 4）与 `profile`/`note`/`annual`（位 16/32/64）—— 均不复用
     }
 
@@ -119,6 +132,8 @@ public final class PagePrefs {
         //    （原「读书排行」）—— 内容卡换成 AssetSection，但 **id 恒为 `rank`**、
         //    位/顺序/开关**零迁移**（`desk_order` / `desk_on_mask` 里的 `rank`/位 2 原样有效）。
         if (MOD_RANK.equals(id))    return "阅读资产";
+        // 🆕 TASK-089a（第八批）：`fp` 的对外名 = **「阅读指纹」**（id 恒为 `fp`）。
+        if (MOD_FP.equals(id))      return "阅读指纹";
         // 🔴 第七批 W1：`profile`/`note`/`annual`（阅读画像/今日一签/年度视图）已删除 ⇒ 无分支。
         return id == null ? "" : id;
     }
@@ -147,7 +162,7 @@ public final class PagePrefs {
      *
      * <p>净化规则（照 `StatsStore.readOrder` 的习惯）：
      * ① 丢弃不认识的 id 与重复项；② 把漏掉的模块**按出厂顺序补到末尾**。
-     * ⇒ 返回值永远是"本版全集（**2 个：墨单 / 阅读资产**）的一个排列"，调用方无需再做防御。
+     * ⇒ 返回值永远是"本版全集（**3 个：墨单 / 阅读资产 / 阅读指纹**）的一个排列"，调用方无需再做防御。
      * （第七批 W1 删掉三项后，旧 `desk_order` 里的 `profile`/`note`/`annual` 在此按"不认识"丢掉。）
      */
     public static String[] getDeskOrder(Context c) {
@@ -332,6 +347,78 @@ public final class PagePrefs {
     /** 清空隐藏集（幂等；直接删键 ⇒ 与"空集"同义，不留残值）。 */
     public static void clearAssetHidden(Context c) {
         sp(c).edit().remove(K_ASSET_HIDDEN_IDS).commit();
+    }
+
+    // ══════════════════════ 🆕 TASK-089a：阅读指纹偏好（🔴 跨卡冻结接口） ══════════════════════
+    //
+    // 消费方 = `feature/FingerprintPoster`（本卡）与 TASK-089b（`task-95`：选书 / 搜索 / 保存分享）。
+    // **签名与键名一律不许改**；落盘沿用本文件既有 prefs 文件 `cfg`（与 `desk_*` 同源）。
+
+    private static final String K_FP_FONT_PX = "fp_font_px";
+    private static final String K_FP_BOOKS   = "fp_books";
+
+    /** 阅读指纹可选字号（px）—— 与离线四档常数表同源（`阅读指纹/_lab/out/四档常数表.txt`）。 */
+    public static final int[] FP_FONT_CHOICES = { 16, 17, 18, 19 };
+
+    /** 出厂默认字号 = 离线推荐档 **18px**（墨覆盖四档最高；用户最终拍板可改本常量）。 */
+    public static final int FP_FONT_DEFAULT = 18;
+
+    /** `fp_books` 上限（本卡口径：≤ 50 本）。 */
+    public static final int FP_BOOKS_MAX = 50;
+
+    /** 阅读指纹字号（px）。合法值 = {@link #FP_FONT_CHOICES}；**非法值一律回落 18**。 */
+    public static int fpFontPx(Context c) {
+        int v = sp(c).getInt(K_FP_FONT_PX, FP_FONT_DEFAULT);
+        for (int k : FP_FONT_CHOICES) if (k == v) return v;
+        return FP_FONT_DEFAULT;
+    }
+
+    /** 设字号；非法值直接忽略（不写盘 ⇒ 读回仍是 18）。 */
+    public static void setFpFontPx(Context c, int px) {
+        for (int k : FP_FONT_CHOICES) {
+            if (k == px) { sp(c).edit().putInt(K_FP_FONT_PX, px).commit(); return; }
+        }
+    }
+
+    /**
+     * 选中的书 id 列表（`fp_books`）。
+     *
+     * <p>🔴 净化：丢 null / 空白 / 重复；**上限 {@link #FP_BOOKS_MAX} 本**。
+     *
+     * <p>🔴 **排 id 升序**：`StringSet` 本身无序，不改写落盘但读出时固定顺序
+     * ⇒ 「同一选中集 ⇒ 同一张指纹」（否则同集两次渲染的文字流顺序会漂，无法复现/无法比对）。
+     */
+    public static List<String> fpBooks(Context c) {
+        Set<String> raw = sp(c).getStringSet(K_FP_BOOKS, null);
+        Set<String> uniq = new HashSet<String>();
+        if (raw != null) {
+            for (String id : raw) {
+                if (id == null) continue;
+                String t = id.trim();
+                if (t.length() > 0) uniq.add(t);
+            }
+        }
+        List<String> out = new ArrayList<String>(uniq);
+        Collections.sort(out);
+        if (out.size() > FP_BOOKS_MAX) out = new ArrayList<String>(out.subList(0, FP_BOOKS_MAX));
+        return out;
+    }
+
+    /** 写选中集（同样净化 + 去重 + 上限；`null` / 净化后为空 ⇒ 删键，与"空集"同义）。 */
+    public static void setFpBooks(Context c, Collection<String> ids) {
+        Set<String> uniq = new HashSet<String>();
+        if (ids != null) {
+            for (String id : ids) {
+                if (id == null) continue;
+                String t = id.trim();
+                if (t.length() > 0) uniq.add(t);
+            }
+        }
+        if (uniq.isEmpty()) { sp(c).edit().remove(K_FP_BOOKS).commit(); return; }
+        List<String> sorted = new ArrayList<String>(uniq);
+        Collections.sort(sorted);
+        if (sorted.size() > FP_BOOKS_MAX) sorted = sorted.subList(0, FP_BOOKS_MAX);
+        sp(c).edit().putStringSet(K_FP_BOOKS, new HashSet<String>(sorted)).commit();
     }
 
     // ══════════════════════ 🔴 已删除：墨台背景图 + 白纱 ══════════════════════

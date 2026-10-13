@@ -7,21 +7,39 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.net.Uri;
+import android.text.Editable;
+import android.text.InputType;
+import android.text.TextWatcher;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowManager;
 // 🆕 第七批 W2（task-72）：`import android.widget.Toast;` 已删 —— 反馈改屏上自绘（见 `showTip`）。
+// 🆕 TASK-089b（(b′) 裁定）：选书用**标准 Dialog**（Activity 形态下 IME 可用），UI 全代码构建。
+import android.app.Dialog;
+import android.widget.Button;
+import android.widget.CheckBox;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
 
 import com.inkread.weekread.R;
 // 🔴 2026-10-11（TASK-18）：`import com.inkread.weekread.core.BgImageUtil;` 已随墨台背景图功能删除
 //    （本类不再加载任何背景位图；背景由 `DeskRenderer` 直接画纯白）。
 import com.inkread.weekread.core.CardDebug;
 import com.inkread.weekread.core.MenuPrefs;
+import com.inkread.weekread.core.NoteStore;
 import com.inkread.weekread.core.PagePrefs;
 import com.inkread.weekread.core.PeriodRange;
+import com.inkread.weekread.core.StatsStore;
+import com.inkread.weekread.net.NoteSync;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 
@@ -70,14 +88,16 @@ public final class DeskPageView extends View {
         void onDeskClose();
 
         /**
-         * 🆕 2026-10-10 用户 ⑤：本页即将去起**外部界面**（系统分享面板）⇒ 宿主必须**先让位**。
+         * 🆕 2026-10-10 用户 ⑤：本页即将去起**外部界面**（系统分享面板）⇒ 通知宿主一声。
          *
-         * <p>墨台是 {@code TYPE_ACCESSIBILITY_OVERLAY} 的全屏覆盖窗，窗口层级**高于普通 Activity**
-         * ⇒ 不让位则分享面板会被整个盖住（真机实测：`Displayed ChooserActivity` 确实发生，
-         * 但屏上仍是墨台，用户点不到任何可分享目标）。宿主须在 {@code startActivity} 之前摘掉本窗。
+         * <p>🔴 TASK-088 Phase 1（task-94，2026-10-13）：宿主已从「{@code TYPE_ACCESSIBILITY_OVERLAY}
+         * 全屏覆盖窗」迁成自家 Activity（{@code shell/DeskActivity}）⇒ 本页与分享面板是**普通
+         * Activity 叠放**，不再存在"覆盖窗把面板盖住"的问题；让位由宿主 Activity 的
+         * {@code onPause} 交给卡片显隐链。本回调因此**可以留空**，保留只是为了不改调用点
+         * （见 {@link #startShare(android.net.Uri)}）。
          *
-         * <p>🔴 与 {@link #onDeskClose()} 的区别：让位后**墨台不再自动回来**（外界面接管前台），
-         * 这是有意为之 —— 分享完回桌面即可由卡片重新呼出。
+         * <p>与 {@link #onDeskClose()} 的区别：分享面板接管前台后**墨台不再自动回来**（用户在面板里），
+         * 之后回墨台还是回桌面都交给系统任务栈。
          */
         void onShareRequested();
     }
@@ -135,11 +155,33 @@ public final class DeskPageView extends View {
     };
     private String previewMode = null;
     private long previewStart = 0L;
+    /** 🆕 TASK-089b：落盘名基三态 —— 本张预览的**来源**（bill / asset / fp）。 */
+    private static final int WP_SRC_BILL = 0;
+    private static final int WP_SRC_ASSET = 1;
+    private static final int WP_SRC_FP = 2;
+
     /**
-     * 🆕 TASK-087-A2：本张预览的**来源** —— false = 墨单海报（{@link BillWallpaper}），
-     * true = 阅读资产海报（{@link AssetPoster}）。只影响诊断文案；保存 / 分享 / 关闭共用同一套。
+     * 本张预览的**来源**（同时是落盘名基选择器）：
+     * {@link #WP_SRC_BILL} = 墨单海报（{@link BillWallpaper#PREFIX_BILL} `modan_*`）·
+     * {@link #WP_SRC_ASSET} = 阅读资产海报（{@link BillWallpaper#PREFIX_ASSET} `yuezi_*`）·
+     * {@link #WP_SRC_FP} = 阅读指纹海报（{@link BillWallpaper#PREFIX_FP} `fp_*`）。
+     *
+     * <p>🆕 TASK-089b（Lead 批准的三态命名基）：本字段由 boolean 改为三态；默认
+     * {@link #WP_SRC_BILL} ⇒ **旧行为一字不变**。保存 / 分享在进后台线程**之前**把它抓成
+     * `final` 局部量（后台线程里读实例字段会与 `releasePreview()` 抢时序）。
+     *
+     * <p>🔴 `card_debug` 诊断**不**认它：`saveWallpaper()` 不写任何诊断；
+     * `shareWallpaper()` 里那条 `CardDebug.note`（改后 :659-661）文案固定为「墨单壁纸：…」，与本字段无关
+     * （F2，`task-93` A 半复核 `243`）。
      */
-    private boolean wpFromAsset = false;
+    private int wpFrom = WP_SRC_BILL;
+
+    /** 当前来源对应的落盘名基（**必须在进后台线程之前**调用取值）。 */
+    private String wpPrefix() {
+        if (wpFrom == WP_SRC_ASSET) return BillWallpaper.PREFIX_ASSET;
+        if (wpFrom == WP_SRC_FP) return BillWallpaper.PREFIX_FP;
+        return BillWallpaper.PREFIX_BILL;
+    }
     private final RectF btnSave = new RectF();
     private final RectF btnShare = new RectF();   // 🆕 2026-10-10 用户 ⑤：分享（发到手机）
     private final RectF btnClose = new RectF();
@@ -456,9 +498,13 @@ public final class DeskPageView extends View {
      * <p>🔴 与 {@link #enterWallpaper()} **同一套态与同一条后台范式**：纯后台渲染 → 回主线程换帧；
      * 保存 / 分享 / 关闭三个按钮、落盘目录、分享面板全部复用（只有位图来源不同）。
      *
-     * <p>🔴 文件名基（`previewMode` / `previewStart`）仍取墨单的当期口径 —— {@code BillWallpaper.save}
-     * 只用它拼 `modan_&lt;mode&gt;_&lt;start&gt;_&lt;ts&gt;.png` 的文件名，与画面内容无关；墨单分区没有当期
-     * 口径时（本该不发生）退到**本周**，保证文件名始终合法。
+     * <p>🔴 落盘名基由 {@link #wpFrom} 决定（本路径必为 {@link #WP_SRC_ASSET}）⇒
+     * {@link BillWallpaper#PREFIX_ASSET}（`yuezi_&lt;mode&gt;_&lt;start&gt;_&lt;ts&gt;.png`）；它在进后台线程
+     * **之前**算好（`saveWallpaper()` :568-569 / `shareWallpaper()` :617-618）。{@code previewMode} /
+     * {@code previewStart} 只提供 `&lt;mode&gt;` / `&lt;start&gt;` 两段，与画面内容无关；墨单分区没有
+     * 当期口径时（本该不发生）退到**本周**，保证文件名始终合法。
+     *
+     * <p>旧 4 参 {@code BillWallpaper.save} 仍固定 `modan_*`，只由墨单路径使用。
      */
     private void enterAssetWallpaper() {
         String m = billSection.shownMode();
@@ -480,7 +526,7 @@ public final class DeskPageView extends View {
         previewBusy = true;
         previewMode = fm;
         previewStart = fs;
-        wpFromAsset = true;
+        wpFrom = WP_SRC_ASSET;
         invalidate();
 
         final Context app = getContext().getApplicationContext();
@@ -510,6 +556,56 @@ public final class DeskPageView extends View {
         }).start();
     }
 
+    /**
+     * 🆕 TASK-089b：「阅读指纹」分区的「生成壁纸」——渲染**阅读指纹**海报（480×800）。
+     *
+     * <p>🔴 与 {@link #enterAssetWallpaper()} **同一套态、同一条后台范式**（纯后台渲染 → 回主线程
+     * 换帧，期间用户退出则丢弃位图）；保存 / 分享 / 关闭三键、落盘目录、分享面板全部复用，
+     * 只有两处不同：位图来源 = {@link FingerprintPoster#renderToBitmap}，落盘名基 =
+     * {@link #WP_SRC_FP} ⇒ {@link BillWallpaper#PREFIX_FP}（`fp_&lt;mode&gt;_&lt;start&gt;_&lt;ts&gt;.png`）。
+     *
+     * <p>🔴 **渲染期零网络、零权限**：{@code renderToBitmap} 只读本地（缺字的书留白，不拉取）。
+     */
+    private void enterFpWallpaper() {
+        final int w = FingerprintPoster.CANVAS_W;
+        final int h = FingerprintPoster.CANVAS_H;
+        mode = MODE_WALLPAPER;
+        scrollY = 0f;
+        axis = AXIS_NONE;
+        releasePreview();
+        previewBusy = true;
+        previewMode = PeriodRange.WEEKLY;
+        previewStart = PeriodRange.startOf(PeriodRange.WEEKLY, PeriodRange.nowSec());
+        wpFrom = WP_SRC_FP;
+        invalidate();
+
+        final Context app = getContext().getApplicationContext();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final Bitmap bmp = FingerprintPoster.SECTION.renderToBitmap(w, h, null);
+                final String diag = FingerprintPoster.SECTION.statsLine();
+                final String miss = FingerprintPoster.SECTION.hintText();
+                post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (mode != MODE_WALLPAPER) {          // 期间用户已退出 ⇒ 直接丢弃
+                            if (bmp != null) bmp.recycle();
+                            return;
+                        }
+                        previewBusy = false;
+                        preview = bmp;
+                        previewErr = (bmp == null)
+                                ? (miss == null ? "阅读指纹生成失败" : miss) : "";
+                        CardDebug.note(getContext(), "指纹壁纸渲染：" + diag);
+                        if (preview == null && previewErr.length() > 0) showTip(previewErr);
+                        invalidate();
+                    }
+                });
+            }
+        }).start();
+    }
+
     /** 出预览态（`‹ 返回` / 「关闭」）。 */
     private void exitWallpaper() {
         mode = MODE_LIST;
@@ -529,7 +625,7 @@ public final class DeskPageView extends View {
         previewErr = "";
         previewMode = null;
         previewStart = 0L;
-        wpFromAsset = false;
+        wpFrom = WP_SRC_BILL;
         btnSave.setEmpty();
         btnShare.setEmpty();
         btnClose.setEmpty();
@@ -550,12 +646,14 @@ public final class DeskPageView extends View {
         final Bitmap bmp = preview;
         final String m = previewMode;
         final long s = previewStart;
+        // 🆕 TASK-087-W0：名基在**进线程之前**定死（后台线程里读 wpFrom 会与 releasePreview() 抢时序）。
+        final String prefix = wpPrefix();
         final Context app = getContext().getApplicationContext();
         showTip(getContext().getString(R.string.desk_wallpaper_saving));
         new Thread(new Runnable() {
             @Override
             public void run() {
-                final BillWallpaper.Saved r = BillWallpaper.save(app, bmp, m, s);
+                final BillWallpaper.Saved r = BillWallpaper.save(app, bmp, m, s, prefix);
                 post(new Runnable() {
                     @Override
                     public void run() {
@@ -597,12 +695,14 @@ public final class DeskPageView extends View {
         final Bitmap bmp = preview;
         final String m = previewMode;
         final long s = previewStart;
+        // 🆕 TASK-087-W0：与 saveWallpaper() 同口径 —— 名基进线程前定死（资产海报 ⇒ yuezi_*）。
+        final String prefix = wpPrefix();
         final Context app = getContext().getApplicationContext();
         showTip(getContext().getString(R.string.desk_wallpaper_sharing));
         new Thread(new Runnable() {
             @Override
             public void run() {
-                final BillWallpaper.Saved r = BillWallpaper.save(app, bmp, m, s);
+                final BillWallpaper.Saved r = BillWallpaper.save(app, bmp, m, s, prefix);
                 post(new Runnable() {
                     @Override
                     public void run() {
@@ -625,7 +725,8 @@ public final class DeskPageView extends View {
 
     /** 起系统分享面板；本机没有能收图的应用（或起不来）⇒ 如实提示。 */
     private void startShare(Uri uri) {
-        // 🆕 用户 ⑤：先请宿主**摘掉墨台覆盖窗** —— 它层级高于 Activity，不让位则面板看不见。
+        // 🆕 用户 ⑤：通知宿主一声（TASK-088 Phase 1 起宿主是 Activity，已无覆盖窗需要摘；
+        //    见 Listener#onShareRequested 的说明）。保留调用点，宿主实现可留空。
         if (listener != null) listener.onShareRequested();
         try {
             Intent send = new Intent(Intent.ACTION_SEND);
@@ -868,6 +969,229 @@ public final class DeskPageView extends View {
             return true;
         }
         return false;
+    }
+
+    // ══════════════════════ 🆕 TASK-089b：阅读指纹分区头部命中 ══════════════════════
+
+    /** 阅读指纹分区**顶边**的屏幕坐标 y；-1 = 分区不在分区表里（模块关了）。 */
+    private float fpTop() {
+        int idx = renderer.indexOf(FingerprintPoster.SECTION);
+        if (idx < 0) return -1f;
+        return renderer.sectionTop(idx, getWidth(), getHeight(), unit) - scrollY;
+    }
+
+    /**
+     * 🆕 TASK-089b：阅读指纹**控制行**命中 —— 字号 4 档 → 选书 → 生成壁纸。
+     *
+     * <p>顺序即优先级：三个矩形互不相交（{@link FingerprintPoster} 里 4 个字号码左对齐、
+     * 「选书」右对齐到「生成壁纸」左侧，间距 8×unit）⇒ 点字号绝不会误触「生成壁纸」。
+     *
+     * <p>🔴 字号切换**零请求**：只写 prefs + 让分区按新字号重排（{@code refresh} 的 stateKey
+     * 含字号 ⇒ 才会真重算）。
+     */
+    private boolean hitFpHead(float x, float y) {
+        float top = fpTop();
+        if (top == -1f) return false;
+        final float w = getWidth();
+        int f = FingerprintPoster.SECTION.hitFont(x, y, w, unit, top);
+        if (f >= 0) {
+            final int[] ch = PagePrefs.FP_FONT_CHOICES;
+            if (f < ch.length) {
+                PagePrefs.setFpFontPx(getContext(), ch[f]);
+                FingerprintPoster.SECTION.refresh(getContext());
+                remeasure(getWidth(), getHeight());
+                invalidate();
+            }
+            return true;
+        }
+        if (FingerprintPoster.SECTION.hitPick(x, y, w, unit, top)) {
+            pickFpBooks();
+            return true;
+        }
+        if (FingerprintPoster.SECTION.hitWall(x, y, w, unit, top)) {
+            enterFpWallpaper();
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 🆕 TASK-089b（Lead (b′) 裁定）：**本记选书** —— 标准 {@link Dialog}。
+     *
+     * <p>为什么是 {@code Dialog} 而不是覆盖层菜单：墨台自 TASK-088 Phase 1 起跑在
+     * {@code shell.DeskActivity}（Activity 形态）里，{@code Dialog} 窗默认可获焦 ⇒
+     * {@code EditText} + 系统输入法直接可用；且 {@code Dialog} **不触发 Activity.onPause**，
+     * 不会误走「让位链」。（旧的覆盖窗菜单 `OverlayController.paramsMenu` 是
+     * {@code FLAG_NOT_FOCUSABLE}，收不了键入 ⇒ 不能复用。）
+     *
+     * <p>UI 全部**代码构建**（本卡写域不含 {@code res/layout}）：搜索框 + 滚动多选 + 清空/取消/确定。
+     * 数据源 {@link NoteStore#bookList} = **本地索引**（零新请求）；写回 {@link PagePrefs#setFpBooks}
+     * （上限 50 本，由 prefs 侧截断）。
+     */
+    private void pickFpBooks() {
+        final Context ctx = getContext();
+        if (!(ctx instanceof android.app.Activity)) {   // 旧覆盖窗形态：不打对话框，如实说
+            showTip("选书需在墨台页内使用（Activity 形态）");
+            return;
+        }
+        final List<NoteStore.BookRef> all = NoteStore.bookList(ctx);
+        if (all.isEmpty()) {
+            showTip("还没有可选的本地书");
+            return;
+        }
+        final LinkedHashSet<String> sel = new LinkedHashSet<String>(PagePrefs.fpBooks(ctx));
+
+        final Dialog dlg = new Dialog(ctx);
+        final LinearLayout root = new LinearLayout(ctx);
+        root.setOrientation(LinearLayout.VERTICAL);
+        final EditText search = new EditText(ctx);
+        search.setHint("搜索书名");
+        search.setSingleLine(true);
+        search.setInputType(InputType.TYPE_CLASS_TEXT);
+        root.addView(search, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        final LinearLayout box = new LinearLayout(ctx);
+        box.setOrientation(LinearLayout.VERTICAL);
+        // 🆕 TASK-089b（Lead m04008 第 5 条）：显示总数与已展示条数 —— 屏上有 300 条上限闸，
+        //    但不许让用户以为"只有 300 本"。
+        final TextView info = new TextView(ctx);
+        root.addView(info, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        final ScrollView sv = new ScrollView(ctx);
+        sv.addView(box, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        root.addView(sv, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        final LinearLayout bar = new LinearLayout(ctx);
+        final Button clear = new Button(ctx);
+        clear.setText("清空");
+        final Button cancel = new Button(ctx);
+        cancel.setText("取消");
+        final Button ok = new Button(ctx);
+        ok.setText("确定");
+        bar.addView(clear);
+        bar.addView(cancel);
+        bar.addView(ok);
+        root.addView(bar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        dlg.setContentView(root);
+
+        final Runnable refill = new Runnable() {
+            @Override
+            public void run() {
+                final String q = search.getText().toString().trim();
+                box.removeAllViews();
+                int shown = 0;
+                int match = 0;
+                for (int i = 0; i < all.size(); i++) {
+                    final NoteStore.BookRef b = all.get(i);
+                    final String t = (b.title == null) ? b.id : b.title;
+                    if (q.length() > 0 && t.indexOf(q) < 0) continue;
+                    match++;
+                    if (shown >= 300) continue;                 // 屏上条目上限（防超大书库卡顿）
+                    final CheckBox cb = new CheckBox(ctx);
+                    cb.setText(t + (b.ready ? "" : "（未同步）"));
+                    cb.setChecked(sel.contains(b.id));
+                    cb.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() {
+                        @Override
+                        public void onCheckedChanged(android.widget.CompoundButton v, boolean on) {
+                            if (on) sel.add(b.id); else sel.remove(b.id);
+                            // 勾选即时反映到「确定」按钮（不重建列表 ⇒ 不跳滚动位）
+                            ok.setText("确定（已选 " + sel.size() + "）");
+                        }
+                    });
+                    box.addView(cb);
+                    shown++;
+                }
+                // 🔴 如实报数：总数 / 匹配数 / 已展示数三档都要能看见（上限 300 不许"藏书"）。
+                info.setText("共 " + all.size() + " 本" + (q.length() > 0 ? "，匹配 " + match + " 本" : "")
+                        + "，显示 " + shown + " 本"
+                        + (match > shown ? "（上限 300，用搜索缩小范围）" : "")
+                        + "；已选 " + sel.size() + " 本");
+                ok.setText("确定（已选 " + sel.size() + "）");
+                if (shown == 0) {
+                    final TextView tv = new TextView(ctx);
+                    tv.setText("没有匹配的书");
+                    box.addView(tv);
+                }
+            }
+        };
+        search.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int a, int b, int c) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int a, int b, int c) {
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                refill.run();
+            }
+        });
+        clear.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                sel.clear();
+                refill.run();
+            }
+        });
+        cancel.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                dlg.dismiss();
+            }
+        });
+        ok.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                PagePrefs.setFpBooks(getContext(), sel);
+                FingerprintPoster.SECTION.refresh(getContext());
+                remeasure(getWidth(), getHeight());
+                invalidate();
+                dlg.dismiss();
+                kickFpSync();                                   // 未就绪的书才起同步（零网络 ⇒ 有书缺料才拉）
+            }
+        });
+        refill.run();
+        dlg.show();
+        Window win = dlg.getWindow();
+        if (win != null) {   // 🔴 只设窗级软键盘模式，**不动** AndroidManifest（写域外）
+            win.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+                    | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+        }
+        if (sel.isEmpty()) search.requestFocus();
+    }
+
+    /**
+     * 🆕 TASK-089b：选中书里有「本地无划线」的 ⇒ 起一轮 {@link NoteSync}（范式照
+     * {@code a11y/CardContentController#noteSync}：无 Key 如实提示、in-flight 去重、不加退避强拉）。
+     *
+     * <p>🔴 全类**唯一**起网络的地方，且只由用户点「确定」触发；渲染期一律零网络。
+     */
+    private void kickFpSync() {
+        final List<String> pend = FingerprintPoster.SECTION.pendingBooks();
+        if (pend.isEmpty()) return;
+        final Context ctx = getContext();
+        final String key = StatsStore.getKey(ctx);
+        if (key == null || key.trim().length() == 0) {
+            showTip("选中的书有 " + pend.size() + " 本还没同步；先填 API Key 才能拉取");
+            return;
+        }
+        if (NoteSync.isRunning()) return;
+        showTip("正在拉取选中书的划线…");
+        NoteSync.sync(ctx, key, false, NoteSync.DEFAULT_PREFETCH, new NoteSync.Listener() {
+            @Override
+            public void onDone(int pool, int ideas, int total, String error, int state) {
+                FingerprintPoster.SECTION.refresh(getContext());
+                remeasure(getWidth(), getHeight());
+                invalidate();
+                if (state != NoteSync.STATE_OK && error != null && error.length() > 0) showTip(error);
+            }
+        });
     }
 
     // ══════════════════════ 🆕 TASK-077：账单分区头部命中 ══════════════════════
@@ -1164,6 +1488,9 @@ public final class DeskPageView extends View {
                         // 🆕 TASK-086 第六批B：阅读资产头部（排序三键 / 展开·收起）
                         //    🔴 与账单头、页签条互不重叠（分属不同分区），先后无碍；
                         //       「‹ 返回」必须留在最后（它最靠边、面积最小）。
+                    } else if (hitFpHead(e.getX(), e.getY())) {
+                        // 🆕 TASK-089b：阅读指纹控制行（字号 4 档 / 选书 / 生成壁纸）
+                        //    🔴 同理：本行矩形与其它分区不重叠，守在「‹ 返回」之前。
                     } else if (renderer.hitBack(e.getX(), e.getY(), getWidth(), unit)) {
                         if (listener != null) listener.onDeskClose();   // 点 `‹ 返回`
                     }

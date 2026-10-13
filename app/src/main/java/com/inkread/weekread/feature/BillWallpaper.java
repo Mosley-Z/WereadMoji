@@ -142,21 +142,42 @@ public final class BillWallpaper {
         public String err;
     }
 
+    /** 🆕 TASK-087-W0：墨单海报的落盘名基（用户可见文件名前缀，**行为一字不变**）。 */
+    public static final String PREFIX_BILL = "modan_";
+    /** 🆕 TASK-087-W0：阅读资产海报的落盘名基（用户 2026-10-13 指令「资产海报保存文件名用 yuezi_* 前缀」）。 */
+    public static final String PREFIX_ASSET = "yuezi_";
+    /** 🆕 TASK-089b：阅读指纹海报的落盘名基（`fp_*`；与墨单 `modan_` / 资产 `yuezi_` 并列，互不回归）。 */
+    public static final String PREFIX_FP = "fp_";
+
     /**
-     * 把已渲染好的海报存成 PNG。
+     * 把已渲染好的海报存成 PNG（**墨单海报**，名基 {@link #PREFIX_BILL}）。
      *
      * <p>🔴 **保存口径与「本记导出」逐字一致**（{@link NoteExport#renderAndSave}）：
      * MediaStore → {@code Pictures/微读墨记}（targetSdk 30 分区存储的正规姿势，**零新增权限**）；
      * 失败再退回 App 私有 {@code files/wallbill}（同样零权限）。
      */
     public static Saved save(Context c, Bitmap bmp, String mode, long periodStart) {
+        return save(c, bmp, mode, periodStart, PREFIX_BILL);
+    }
+
+    /**
+     * 同上，但显式指定落盘**文件名基**。
+     *
+     * <p>🆕 TASK-087-W0（用户 2026-10-13 指令）：墨单海报 = {@link #PREFIX_BILL}（`modan_*`，
+     * 语义与旧 4 参版本完全一致）；阅读资产海报 = {@link #PREFIX_ASSET}（`yuezi_*`）。
+     * 目录口径不变（{@code Pictures/微读墨记}；失败回退 {@code files/wallbill}，**回退时用同一个 name**）。
+     *
+     * @param prefix 名基；null 或空串 ⇒ 退回 {@link #PREFIX_BILL}
+     */
+    public static Saved save(Context c, Bitmap bmp, String mode, long periodStart, String prefix) {
         Saved r = new Saved();
         if (c == null || bmp == null) {
             r.err = "没有可保存的图片";
             return r;
         }
         final String m = PeriodRange.MONTHLY.equals(mode) ? PeriodRange.MONTHLY : PeriodRange.WEEKLY;
-        final String name = "modan_" + m + "_" + periodStart + "_" + System.currentTimeMillis() + ".png";
+        final String base = (prefix == null || prefix.length() == 0) ? PREFIX_BILL : prefix;
+        final String name = base + m + "_" + periodStart + "_" + System.currentTimeMillis() + ".png";
 
         try {
             ContentValues cv = new ContentValues();
@@ -473,7 +494,7 @@ public final class BillWallpaper {
                 //    收紧到与 `BillSection.Row#draw` **同值**（列式界 `−8f*s`、墨迹界 `−6f*s`，原来各多留 2–4f*s）
                 //    ⇒ 同样的列宽能多显示 0.3–0.5 个字。
                 //    🔴 2026-10-12（Lead 复核**订正我的错误判断**）：书名显示少与序号前缀**无关** ——
-                //    两侧前缀逐字相同（此处与墨台 `BillSection.java:1022` 都是 `no + "  " + title`，
+                //    两侧前缀逐字相同（此处与墨台 `BillSection.java:1028` 都是 `no + "  " + title`，
                 //    `no` 也都是 `String.format(Locale.US, "NO.%02d", i + 1)`）⇒ 真因是**字号**：
                 //    可用宽 412px 下 22f ≈ 31 字符/行、15f ≈ 46 字符/行。⑤④ 方案 B 已按此收敛字号
                 //    （见本方法开头 `sBody` 注释与 `验证记录/232_…§5.1` 换算表）。

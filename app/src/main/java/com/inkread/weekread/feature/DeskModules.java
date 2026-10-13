@@ -11,7 +11,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * 🆕 TASK-076：**墨台模块注册表** —— 本版 **2 个**模块的**唯一登记处**（定稿设计 §3.1）。
+ * 🆕 TASK-076：**墨台模块注册表** —— 本版 **3 个**模块的**唯一登记处**（定稿设计 §3.1）。
  *
  * <p>注册表与本包内的渲染器/容器一起构成"加模块只改一处"的闭环：
  * <pre>
@@ -54,7 +54,8 @@ final class DeskModules {
 
     private static final List<DeskModule> ALL = Arrays.<DeskModule>asList(
             new BillModule(),
-            new RankModule());
+            new RankModule(),
+            new FpModule());
 
     private DeskModules() {
     }
@@ -86,6 +87,14 @@ final class DeskModules {
      * 实例里也留一份，免得每帧读盘）。
      */
     static BillSection billSection() { return BillModule.SECTION; }
+
+    /**
+     * 🆕 TASK-089a：「阅读指纹」分区的**常驻实例**。
+     *
+     * <p>同样要常驻：布局（几何解析 + 四档排版）只随「字号 / 选中书」变，跨帧复用一份缓存，
+     * 免得每帧重解析 530 行几何；TASK-089b 的触摸选书 / 保存分享也要拿到**同一个**实例。
+     */
+    static FingerprintPoster fpSection() { return FingerprintPoster.SECTION; }
 
     // 🔴 第七批 W1 删除：`private static int yearsOf(PeriodStats)`（原 `:92-96`）
     //    它只为已下线的「年度视图」模块服务（口径与 `shell/MainActivity.yearsOf` 一致，
@@ -122,6 +131,19 @@ final class DeskModules {
             //    续补在 `AssetRefresher.ensure`（幂等 + TTL 闸门 + 后台线程，D19 与本月卡片同时机）。
             SECTION.refresh(c);
             return SECTION;
+        }
+    }
+
+    // ══════════════════════ ③ 阅读指纹（🆕 TASK-089a）══════════════════════
+
+    private static final class FpModule implements DeskModule {
+        public String id() { return PagePrefs.MOD_FP; }
+
+        public InsightRenderer.Section build(Context c) {
+            // 🔴 只读本地：`res/raw/fp_paths.txt`（APK 内置几何）+ `NoteStore.marks`（已落盘的划线）
+            //    ⇒ 本渲染路径**零网络**。未就绪的书在 `NoteSync` 的既有异步路径里补，与渲染分离。
+            FingerprintPoster.SECTION.refresh(c);
+            return FingerprintPoster.SECTION;
         }
     }
 

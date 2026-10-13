@@ -6,6 +6,7 @@ import com.inkread.weekread.core.CardPrefs;
 import com.inkread.weekread.core.LockPrefs;
 import com.inkread.weekread.core.PagePrefs;
 import com.inkread.weekread.net.NoteSync;
+import com.inkread.weekread.shell.DeskActivity;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
@@ -113,8 +114,17 @@ public class CardA11yService extends AccessibilityService {
     private ElaHomeProbe homeProbe;
     /** TASK-022 应用级软锁的全屏覆盖窗（与卡片窗口相互独立，见 {@link LockOverlay}） */
     private LockOverlay lock;
-    /** 🆕 TASK-075 墨台的全屏覆盖窗（**第三窗**，与卡片 / 软锁相互独立，见 {@link DeskOverlay}） */
-    private DeskOverlay desk;
+    /**
+     * 🆕 TASK-088 Phase 1（task-94）：墨台**会话序号**（覆盖窗形态已退役，见 {@link DeskActivity}）。
+     *
+     * <p>每次 {@link #showDesk()} 发起一次新会话就 +1；{@link DeskActivity} 在
+     * onCreate / onResume / onNewIntent 向 {@link #currentDeskEpoch()} 对表，收尾时带着它回
+     * {@link #endDesk(int)} —— **序号不符者整段作废**，防「用户退出 → 马上再点卡片」时
+     * 老实例的收尾把新会话关掉。只在主线程读写（生命周期与触摸都在主线程）。
+     */
+    private static int sDeskEpoch = 0;
+    /** 本会话是否已经收过尾（{@link #endDesk(int)} 的幂等闸）。 */
+    private static boolean sDeskEnded = false;
 
     // ── 供同进程其它组件调用 ──
 
@@ -147,11 +157,20 @@ public class CardA11yService extends AccessibilityService {
         if (sInstance != null) sInstance.refresh();
     }
 
-    // ── 🆕 TASK-075：墨台（第三覆盖窗）入口 ──
+    // ── 🆕 TASK-075 / TASK-088 Phase 1：墨台（入口 = 卡片左上角「打开墨台」按钮） ──
 
     /**
-     * 呼出墨台。触发端 = 卡片左上角「打开墨台」按钮（**TASK-080**）。
-     * 🔴 服务未连上 / 窗口未建时静默无操作（与 {@link #sync()} 同纪律，绝不因调用方早到而崩）。
+     * 呼出墨台。触发端 = 卡片左上角「打开墨台」按钮（**TASK-080**，调用点
+     * {@code OverlayController:294 / :318}）。
+     *
+     * <p>🆕 TASK-088 Phase 1（task-94，2026-10-13）：不再挂覆盖窗，改为起 {@link DeskActivity}
+     * （带 {@code FLAG_ACTIVITY_NEW_TASK}）。Phase 0 探针 `task-90` 已实测：这条从**服务上下文**
+     * 发起的 {@code startActivity} 不被 Android 11 的后台启动限制拦（见 `验证记录/245`）。
+     *
+     * <p>🔴 服务未连上 / 总开关关时静默无操作（与 {@link #sync()} 同纪律，绝不因调用方早到而崩）。
+     * 卡片覆盖窗的让位由 {@link DeskActivity#onResume()} 里的
+     * {@link #noteOwnUiForeground(boolean)} 负责 —— **不要**在这里直接调
+     * {@link OverlayController#applyVisibility()}，那会在起页前先闪一帧。
      */
     public static void showDesk() {
         // 🆕 第六批A（D2，2026-10-11）：**开墨台**是一次"可达时机"（用户特意来看账单，最该是最新的）
@@ -162,21 +181,80 @@ public class CardA11yService extends AccessibilityService {
         //    与用户拍板口径（早退只挡窗口显示；快照保留与账单计算照旧）不符。这里只挪位置，未改判断。
         if (sInstance != null) BillScheduler.ensureBills(sInstance);
         // 🆕 第七批 W1（用户 2026-10-12 拍板 ④）：总开关关掉后，桌面卡片**不再显示墨台入口**
-        //    ⇒ 即使有残留调用点（或竞态早到的触摸）也一律不挂窗。这是"入口显隐"的第二道闸，
+        //    ⇒ 即使有残留调用点（或竞态早到的触摸）也一律不起页。这是"入口显隐"的第二道闸，
         //    第一道在 `OverlayController` 的 `deskView` 可见性判据、第三道在 `DeskPageView` 的空态。
-        //    🔴 只挡"显示"（窗口不挂），不挡上面的 `ensureBills`。
-        if (sInstance != null && !PagePrefs.isDeskEnabled(sInstance)) return;
-        if (sInstance != null && sInstance.desk != null) sInstance.desk.show();
+        //    🔴 只挡"显示"（不起页），不挡上面的 `ensureBills`。
+        if (sInstance == null || !PagePrefs.isDeskEnabled(sInstance)) return;
+        // 🔴 软锁互斥（定稿设计 §8.3：软锁先弹则墨台不叠加）—— 原判定在 `DeskOverlay.show()`，
+        //    随覆盖窗一起迁到这里（判定口仍是 `lockShowing()`，与 LockOverlay 侧同源）。
+        if (lockShowing()) {
+            CardDebug.note(sInstance, "墨台呼出被拒：软锁正在显示（互斥）");
+            return;
+        }
+        sDeskEpoch++;
+        sDeskEnded = false;
+        try {
+            Intent i = new Intent(sInstance, DeskActivity.class);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            sInstance.startActivity(i);
+            CardDebug.note(sInstance, "墨台：起 DeskActivity（epoch=" + sDeskEpoch + "）");
+        } catch (Throwable t) {
+            CardDebug.note(sInstance, "墨台起 Activity 失败：" + t);
+        }
     }
 
-    /** 关闭墨台。 */
+    /** 关闭墨台（自测钩子 `wb_desk_hide` 走这里）。 */
     public static void hideDesk() {
-        if (sInstance != null && sInstance.desk != null) sInstance.desk.hide();
+        DeskActivity.finishIfAlive();
     }
 
-    /** 墨台此刻是否挂屏（供排查 / 自测断言）。 */
+    /** 墨台此刻是否挂屏（供排查 / 自测断言 / 亮屏软锁互斥）。 */
     public static boolean isDeskShowing() {
-        return sInstance != null && sInstance.desk != null && sInstance.desk.isShowing();
+        return DeskActivity.isAlive();
+    }
+
+    /** 当前墨台会话序号（{@link DeskActivity} 对表用）。 */
+    public static int currentDeskEpoch() {
+        return sDeskEpoch;
+    }
+
+    /**
+     * 🆕 TASK-088 Phase 1（task-94）：**墨台会话收尾** —— 由 {@link DeskActivity} 在
+     * {@code onDestroy}（并在 {@code onPause} 且本页正在收尾时兜底）调用。
+     *
+     * <p>为什么必须有它（Phase 0 探针 `task-90` 的 P3 实测结论，见 `验证记录/245`）：
+     * Activity 收尾**不产生**桌面窗口事件，而 {@link #noteOwnUiForeground(boolean)} 的
+     * {@code false} 分支刻意"什么都不做"（防闪屏）⇒ 不补这一次重算，用户从墨台返回桌面后
+     * 卡片会一直卡在"让位"状态（真机实测 40s / &gt;60s 都不回来）。
+     *
+     * <p>🔴 三条约束：
+     * <ul>
+     *   <li>**会话序号守卫**：{@code epoch != sDeskEpoch} ⇒ 整段作废（老实例的回调不得关掉新会话）；</li>
+     *   <li>**幂等**：同一会话只收一次尾（{@code sDeskEnded}）；</li>
+     *   <li>**绝不复活墨台覆盖窗**：只做「清会话 → ownUi=false → 显式重算」，
+     *       不碰任何窗口的 add/remove（墨台已是 Activity，覆盖窗形态已退役）。</li>
+     * </ul>
+     *
+     * @param epoch 调用方认领的会话序号（见 {@link #currentDeskEpoch()}）
+     */
+    public static void endDesk(int epoch) {
+        if (sInstance == null) return;
+        if (epoch != sDeskEpoch || sDeskEnded) {
+            CardDebug.note(sInstance, "墨台会话收尾作废（epoch=" + epoch
+                    + " 当前=" + sDeskEpoch + " 已收尾=" + sDeskEnded + "）");
+            return;
+        }
+        sDeskEnded = true;
+        noteOwnUiForeground(false);                 // 离开自家界面（此刻刻意不重算）
+        // 🔴 D2（task-94）：收尾时**不再信旧值** —— 用现成探针实测一次前台是谁，按 calibrate 的
+        // 同一套映射落状态，然后才重算。不引定时器、不做重试轮（无投机防御）。
+        if (sInstance.homeProbe != null) {
+            int r = sInstance.homeProbe.checkCurrentScreen();
+            sInstance.applyScreenProbe(r);
+            CardDebug.note(sInstance, "endDesk 探针实测 r=" + r + "（落状态后重算）");
+        }
+        recomputeVisibilityNow();                   // 🔴 显式补一次：让卡片从"让位"状态回来
+        CardDebug.note(sInstance, "墨台会话收尾完成（epoch=" + epoch + "）");
     }
 
     /** 软锁此刻是否挂屏 —— 与墨台的**互斥判定**（定稿设计 §8.3：软锁先弹则墨台不叠加）。 */
@@ -281,8 +359,6 @@ public class CardA11yService extends AccessibilityService {
         }
         // TASK-022：软锁覆盖窗（只建一次；不参与卡片的显隐让位链，自己管自己）
         if (lock == null) lock = new LockOverlay(this, ui);
-        // 🆕 TASK-075：墨台覆盖窗（只建一次；同纪律 —— 自己管自己，不并入 OverlayController）
-        if (desk == null) desk = new DeskOverlay(this, ui);
         st.resetAll();
         sForceRecomputeOnLeave = false;             // v0.8.1：重连时旧的一次性意图作废
         registerScreenOn();
@@ -327,8 +403,23 @@ public class CardA11yService extends AccessibilityService {
      * {@code OverlayController.applyVisibility()} 是唯一出口。
      */
     private void calibrateOnReconnect() {
-        int r = homeProbe.checkCurrentScreen();
+        applyScreenProbe(homeProbe.checkCurrentScreen());
+    }
+
+    /**
+     * 🔴 D2（task-94）：把**一次现场探针实测**结果落成状态 —— 与 {@link #calibrateOnReconnect()}
+     * 共用同一套映射（收尾时不再信旧值；判断顺序与日志文案沿用原 {@code calibrateOnReconnect()}）。
+     *
+     * <ul>
+     *   <li>{@link ElaHomeProbe#CUR_HOME_P1} ⇒ {@code onDesktop=true} + {@code pageGate=false}；</li>
+     *   <li>{@link ElaHomeProbe#CUR_HOME_NOT_P1} ⇒ {@code onDesktop=true} + {@code pageGate=true}（让位）；</li>
+     *   <li>{@link ElaHomeProbe#CUR_NOT_HOME} ⇒ {@code onDesktop=false}（让位）；</li>
+     *   <li>{@link ElaHomeProbe#CUR_UNKNOWN} ⇒ 一个字段都不动（维持乐观初值 = 原行为）。</li>
+     * </ul>
+     */
+    private void applyScreenProbe(int r) {
         if (r == ElaHomeProbe.CUR_HOME_NOT_P1) {
+            st.onDesktop = true;
             router.setPageGate(true);               // A4：经统一入口（含 180s 兜底超时维护）
             CardDebug.note(this, "reconnect calibrate: 在桌面但非第 1 页 ⇒ pageGate=true（让位）");
         } else if (r == ElaHomeProbe.CUR_NOT_HOME) {
@@ -337,6 +428,8 @@ public class CardA11yService extends AccessibilityService {
         } else if (r == ElaHomeProbe.CUR_UNKNOWN) {
             CardDebug.note(this, "reconnect calibrate: 拿不准 ⇒ 维持乐观初值（按桌面第 1 页）");
         } else {
+            st.onDesktop = true;
+            router.setPageGate(false);
             CardDebug.note(this, "reconnect calibrate: 确认在桌面第 1 页");
         }
     }
@@ -357,7 +450,6 @@ public class CardA11yService extends AccessibilityService {
         cancelPending();
         ov.removeWindow();
         if (lock != null) lock.remove();
-        if (desk != null) desk.remove();
         sInstance = null;
         return super.onUnbind(intent);
     }
@@ -368,7 +460,6 @@ public class CardA11yService extends AccessibilityService {
         cancelPending();
         ov.removeWindow();
         if (lock != null) lock.remove();
-        if (desk != null) desk.remove();
         sInstance = null;
         super.onDestroy();
     }

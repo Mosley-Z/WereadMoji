@@ -99,7 +99,13 @@ final class AssetSection implements InsightRenderer.Section {
     /** 三键与「生成壁纸」的间距（×unit；🔴 Lead 冻结下限 = 4）。 */
     private static final float WALL_GAP_UNITS = 4f;
 
-    /** 🆕 TASK-087-A1：抬头「生成壁纸」的全部条目高（×unit）—— 与 `BillSection.WP_H_UNITS` 同款。 */
+    /**
+     * 🆕 TASK-087-A1：抬头右端「生成壁纸」按钮**字号的最小缩放比** —— 标签放不下时，
+     * 字号按 0.4f 步长从 `SZ_SMALL * unit` 往下降，**降到 `SZ_SMALL * unit * 本值` 为止**；
+     * 若到此仍超宽，则让文字自然溢出（不再继续缩），保证小字不糊。
+     * （用途见 {@link #drawSortChips} 的「生成壁纸」分支。）与 {@code BillSection.WP_H_UNITS}
+     * **无关**（后者是海报条目高，不是缩放比）。
+     */
     private static final float WALL_MAX_SHRINK = 0.7f;
 
     private static final String EMPTY = "暂无数据";

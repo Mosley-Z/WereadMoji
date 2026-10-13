@@ -68,6 +68,20 @@
             </intent-filter>
         </activity>
 
+        <!-- 🆕 TASK-088 Phase 1（task-94，2026-10-13）：墨台页从「a11y 第三覆盖窗」迁为自家 Activity
+             （`shell/DeskActivity`，原 `a11y/DeskOverlay` 退役）。
+             exported=false ⇒ 只由本应用拉起（入口 = 桌面卡片左上角「打开墨台」按钮）；
+             launchMode=singleTask ⇒ 连点卡片按钮复用同一实例、不叠层；
+             主题与 ConsoleActivity 同款（无 ActionBar，全屏自绘）。
+             🔴 零新增权限、零新增服务、a11y 配置一字不改。 -->
+        <activity
+            android:name=".shell.DeskActivity"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.inkread.weekread.desk"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+
         <!-- 🆕 V1.0.3-beta：设置页换用自定义主题 Theme.WereadMoji.Settings
              （仅把 ActionBar 高度 56dp → 45dp，让顶部大标题矮 15px、下方标签栏随之上移；字号不变）。 -->
         <activity
