@@ -227,14 +227,23 @@ public final class BillWallpaper {
         return c.getApplicationContext();
     }
 
-    /** 真实屏尺寸（取不到就退回 480×800）；同时把过小的值钳掉（防 0 宽位图）。 */
+    /**
+     * 真实屏尺寸（取不到就退回 480×800）；同时把过小的值钳掉（防 0 宽位图）。
+     *
+     * <p>🔴 TASK-111（2026-10-14）：**短边恒作宽、长边恒作高**（480×800 竖屏设计），与当前旋转无关。
+     * 旧实现直接抄 `dm.widthPixels / heightPixels`，而本函数是**一次性取尺**（壁纸与资产海报都按
+     * `s = H / 800f` 换算全部字号与几何、位图尺寸也随它）：若那次调用恰好落在横屏配置上
+     * （服务重启 / 开机时设备是横的），整幅竖屏壁纸会被画成 800×480 且字号缩到 60%，并一直沿用。
+     */
     static int[] screenSize(Context c) {
         int w = BASE_W, h = BASE_H;
         try {
             DisplayMetrics dm = c.getResources().getDisplayMetrics();
             if (dm != null) {
-                if (dm.widthPixels > 0) w = dm.widthPixels;
-                if (dm.heightPixels > 0) h = dm.heightPixels;
+                int shortEdge = Math.min(dm.widthPixels, dm.heightPixels);   // 480 → 宽
+                int longEdge = Math.max(dm.widthPixels, dm.heightPixels);    // 800 → 高
+                if (shortEdge > 0) w = shortEdge;
+                if (longEdge > 0) h = longEdge;
             }
         } catch (Throwable ignored) {
         }

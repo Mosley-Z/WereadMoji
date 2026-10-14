@@ -65,7 +65,7 @@ public class NavDropView extends View {
 
     public NavDropView(Context c, AttributeSet a) {
         super(c, a);
-        unit = c.getResources().getDisplayMetrics().heightPixels * 0.0015f;
+        unit = InkTheme.unitPx(c);
         density = c.getResources().getDisplayMetrics().density;
         headerH = 40f * density;
         rowH = 36f * density;

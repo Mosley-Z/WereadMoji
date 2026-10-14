@@ -3,6 +3,7 @@ package com.inkread.weekread.ui;
 import android.content.Context;
 import android.graphics.Paint;
 import android.graphics.Typeface;
+import android.util.DisplayMetrics;
 import android.util.TypedValue;
 
 import com.inkread.weekread.core.CardPrefs;
@@ -30,6 +31,26 @@ import com.inkread.weekread.core.CardPrefs;
 public final class InkTheme {
 
     private InkTheme() {
+    }
+
+    // ── 墨水屏端排版尺（unit）──
+
+    /** 1 号 = 面板长边 × 该系数（480×800 屏上 = 1.2px）。**全项目唯一真源**（TASK-111 起）。 */
+    public static final float UNIT_RATIO = 0.0015f;
+
+    /**
+     * 墨水屏端「号 → px」的排版尺（unit）：1 号 = {@link #UNIT_RATIO} × 面板**长边**。
+     *
+     * <p>🔴 TASK-111（2026-10-14）：取长边 `max(widthPixels, heightPixels)`，与当前旋转无关。
+     * 旧实现在各 View 里取 `heightPixels`，而这些 View 是**构造时算一次**（桌面卡片 View 更是活在
+     * 无障碍服务进程里、此后再无第二次），于是若构造那一瞬应用的资源配置是横屏（服务重启 / 开机时
+     * 设备恰好横着），`heightPixels` 由 800 变成 480 ⇒ unit 被锁死为 0.72（正常 1.2），此后卡面
+     * 所有「号 × unit」的文字永久缩到 **60%**，而几何全不变（用户 2026-10-14 实测：同一份数据
+     * 两帧同串墨宽比 **0.601 ≈ 480/800**）。取长边后，竖屏 S4 上 max 仍是 800 ⇒ 正常态零变化。
+     */
+    public static float unitPx(Context c) {
+        DisplayMetrics dm = c.getResources().getDisplayMetrics();
+        return Math.max(dm.widthPixels, dm.heightPixels) * UNIT_RATIO;
     }
 
     // ── 色彩（亮 · 与 colors.xml 一一对应）──

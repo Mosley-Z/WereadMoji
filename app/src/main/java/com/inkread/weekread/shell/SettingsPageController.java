@@ -12,6 +12,7 @@ import com.inkread.weekread.feature.WeekCardView;
 import com.inkread.weekread.net.UpdateChecker;
 import com.inkread.weekread.net.WereadApi;
 import com.inkread.weekread.remote.RemoteRole;
+import com.inkread.weekread.ui.InkTheme;
 import com.inkread.weekread.update.ApkInstaller;
 
 import android.app.Activity;
@@ -981,12 +982,11 @@ public class SettingsPageController {
      * 「17 号 · 20.4px」—— 本记字号（卡片）滑杆当前值的显示文案（v0.9，TASK-016）。
      *
      * 为什么要把 px 也写出来：「号」是本项目的内部单位，用户没有这个概念；
-     * 只写"17 号"他无从判断大小。px 用 {@link WeekCardView#UNIT_RATIO} 换算
+     * 只写"17 号"他无从判断大小。px 用 {@link InkTheme#unitPx} 换算
      * （"号 → px"的唯一真源，别在这里另抄一份 0.0015）。
      */
     private String noteCardSizeLabel(int num) {
-        float px = num * host.getResources().getDisplayMetrics().heightPixels
-                * WeekCardView.UNIT_RATIO;
+        float px = num * InkTheme.unitPx(host);
         return num + " 号 · " + String.format(Locale.CHINA, "%.1f", px) + "px";
     }
 

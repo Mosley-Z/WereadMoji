@@ -36,6 +36,7 @@ import com.inkread.weekread.core.PagePrefs;
 import com.inkread.weekread.core.PeriodRange;
 import com.inkread.weekread.core.StatsStore;
 import com.inkread.weekread.net.NoteSync;
+import com.inkread.weekread.ui.InkTheme;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -69,9 +70,6 @@ import java.util.Locale;
  * <p>🔴 **无惯性 / 无回弹 / 无动画**（墨水屏铁律）；一帧一次重绘。
  */
 public final class DeskPageView extends View {
-
-    /** 与周卡 / 洞察页同尺 —— 同一 App 同一观感。 */
-    private static final float UNIT_RATIO = 0.0015f;
 
     /** 手势轴判定阈值（px）：超过它才锁定"横"或"纵"。 */
     private static final float SLOP_PX = 14f;
@@ -274,7 +272,7 @@ public final class DeskPageView extends View {
     public DeskPageView(Context c, AttributeSet a) {
         super(c, a);
         setBackgroundColor(0xFFFFFFFF);                 // 墨屏：白底，不做任何背景装饰
-        unit = c.getResources().getDisplayMetrics().heightPixels * UNIT_RATIO;
+        unit = InkTheme.unitPx(c);
         renderer.setEmptyText(c.getString(R.string.desk_empty));
         renderer.setLabels(c.getString(R.string.desk_title), c.getString(R.string.desk_back));
         renderer.setActionText(c.getString(R.string.desk_settings));

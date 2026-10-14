@@ -56,7 +56,7 @@ public class SegTabView extends View {
     public SegTabView(Context c, AttributeSet a) {
         super(c, a);
         setBackgroundColor(0xFFFFFFFF);
-        unit = c.getResources().getDisplayMetrics().heightPixels * 0.0015f;
+        unit = InkTheme.unitPx(c);
     }
 
     /** 🆕 TASK-041：切深色（设置页在 phone + dark 时调用；默认不调 ⇒ 零差异）。 */

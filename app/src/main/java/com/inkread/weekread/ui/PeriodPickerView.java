@@ -45,9 +45,6 @@ public class PeriodPickerView extends View {
     /** 不可用状态（已经在当前周期，不能再往后）*/
     private static final int LIGHT = 0xFFA8A8A8;
 
-    /** 1 号 = 屏高 × 0.0015（480×800 屏上 = 1.2px），与 WeekCardView 同一套 */
-    private static final float UNIT_RATIO = 0.0015f;
-
     /** 单个箭头按钮占屏宽的比例（480 屏上 ≈ 55px，手指按得准） */
     private static final float BTN_W_RATIO = 0.115f;
 
@@ -66,7 +63,7 @@ public class PeriodPickerView extends View {
     public PeriodPickerView(Context c, AttributeSet a) {
         super(c, a);
         setBackgroundColor(0xFFFFFFFF);
-        unit = c.getResources().getDisplayMetrics().heightPixels * UNIT_RATIO;
+        unit = InkTheme.unitPx(c);
     }
 
     public void setListener(Listener l) { listener = l; }

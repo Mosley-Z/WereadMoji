@@ -80,7 +80,7 @@ public class FoldHintView extends View {
     private void recompute() {
         DisplayMetrics dm = getResources().getDisplayMetrics();
         if (isEink()) {
-            float unit = dm.heightPixels * 0.0015f;
+            float unit = InkTheme.unitPx(getContext());
             mTextSize = 16f * unit;
             mPadH = 10f * unit;
             mPadV = 12f * unit;

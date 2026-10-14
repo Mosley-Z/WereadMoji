@@ -4,6 +4,7 @@ import com.inkread.weekread.core.BookStats;
 import com.inkread.weekread.core.NoteStats;
 import com.inkread.weekread.core.PeriodRange;
 import com.inkread.weekread.core.PeriodStats;
+import com.inkread.weekread.ui.InkTheme;
 
 import android.content.Context;
 import android.graphics.Canvas;
@@ -40,18 +41,19 @@ import android.view.View;
  * bmpDst 与各命中矩形），三个协作类持 host 引用按包级可见访问；代码逐行平移零改动 ——
  * 拆分前后像素级行为必须完全一致（TASK-007 像素基线 9 场景逐张比对把关）。
  *
- * 字号约定：1「号」= 屏幕高度 × 0.0015（480×800 屏上 = 1.2px）。
- * 以屏幕高度为基准而不是本 View 高度，这样卡片只占 370px 高时字号不会被连带缩小。
+ * 字号约定：1「号」= 屏幕长边 × 0.0015（480×800 屏上 = 1.2px）。
+ * 以屏幕长边为基准而不是本 View 高度，这样卡片只占 370px 高时字号不会被连带缩小。
  */
 public class WeekCardView extends View {
 
     /**
-     * 1 号 = 屏高 × 该系数（480×800 屏上 = 1.2px）。
+     * 1 号 = 屏幕长边 × 该系数（480×800 屏上 = 1.2px）。
      *
-     * ⚠️ 本常量是"号 → px"的**唯一真源**：设置页要按它把"17 号"显示成"20.4px"，
-     * 所以改成 public —— 别在别处再抄一份 0.0015（TASK-016）。
+     * ⚠️ 真源已搬到 {@link com.inkread.weekread.ui.InkTheme#unitPx}：那里取屏宽/屏高的
+     * **长边**，这样卡片 View 恰在横屏时刻构造（或系统把卡片建在宽屏显示器上）时，
+     * 字号不会被算成 60%（TASK-111）。本常量保留为公开别名，设置页仍按它把"17 号"显示成"20.4px"。
      */
-    public static final float UNIT_RATIO = 0.0015f;
+    public static final float UNIT_RATIO = InkTheme.UNIT_RATIO;
 
     /** 导出长图的宽度（与屏幕同宽，等比；高度按内容算）—— {@link NoteExport} 用 */
     public static final int EXPORT_W = 480;
@@ -377,7 +379,7 @@ public class WeekCardView extends View {
     public WeekCardView(Context c, AttributeSet a) {
         super(c, a);
         setBackgroundColor(0xFFFFFFFF);
-        unit = c.getResources().getDisplayMetrics().heightPixels * UNIT_RATIO;
+        unit = InkTheme.unitPx(c);
         layout = new CardLayout(this);
         renderer = new CardRenderer(this);
         interaction = new CardInteraction(this);

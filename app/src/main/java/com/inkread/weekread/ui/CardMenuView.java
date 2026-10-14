@@ -29,8 +29,6 @@ public class CardMenuView extends View {
     private static final int GRAY = 0xFF5A5A5A;
     private static final int LINE = 0xFFD0D0D0;
 
-    private static final float UNIT_RATIO = 0.0015f;
-
     /** 框宽（px）。368 宽的卡片上占一半多一点，四个字 + 两个字的选项都放得下 */
     private static final float BOX_W = 196f;
     /** 实际生效的框宽（🆕 TASK-069：书名的候选列表要更宽，见 {@link #setBoxWidth}） */
@@ -65,7 +63,7 @@ public class CardMenuView extends View {
 
     public CardMenuView(Context c, AttributeSet a) {
         super(c, a);
-        unit = c.getResources().getDisplayMetrics().heightPixels * UNIT_RATIO;
+        unit = InkTheme.unitPx(c);
     }
 
     public void setListener(Listener l) { listener = l; }

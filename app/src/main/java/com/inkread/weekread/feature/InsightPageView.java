@@ -29,9 +29,7 @@ import java.util.List;
  */
 public final class InsightPageView extends View {
 
-    /** 与 {@link WeekCardView#UNIT_RATIO} 同尺 —— 两个页面字号必须一致，否则视觉上"换页就变了"。 */
-    private static final float UNIT_RATIO = 0.0015f;
-
+    /** 字号尺一律取 {@link InkTheme#unitPx} —— 与周卡 / 墨台同一套，否则视觉上"换页就变了"。 */
     private float unit;
 
     private final InsightRenderer renderer = new InsightRenderer();
@@ -83,7 +81,7 @@ public final class InsightPageView extends View {
     public InsightPageView(Context c, AttributeSet a) {
         super(c, a);
         setBackgroundColor(0xFFFFFFFF);                 // 墨水屏：白底，不做任何背景装饰
-        unit = c.getResources().getDisplayMetrics().heightPixels * UNIT_RATIO;
+        unit = InkTheme.unitPx(c);
         rebuildSections();
     }
 
